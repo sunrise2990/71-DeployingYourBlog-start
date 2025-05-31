@@ -113,10 +113,6 @@ with app.app_context():
     db.create_all()
 
 
-@app.route('/')
-def home():
-    return render_template("index.html")
-
 
 # Create an admin-only decorator
 def admin_only(f):
@@ -306,5 +302,5 @@ def contact():
 #         connection.sendmail(MAIL_ADDRESS, MAIL_APP_PW, email_message)
 
 
-if __name__ == "__main__":
-    app.run(debug=False, port=5001)
+# if __name__ == "__main__":
+#     app.run(debug=False, port=5001)
