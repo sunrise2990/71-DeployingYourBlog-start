@@ -113,6 +113,11 @@ with app.app_context():
     db.create_all()
 
 
+@app.route('/')
+def home():
+    return render_template("index.html")
+
+
 # Create an admin-only decorator
 def admin_only(f):
     @wraps(f)
