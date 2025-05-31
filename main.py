@@ -15,7 +15,7 @@ from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
 import os
 from dotenv import load_dotenv
 load_dotenv()
-
+# test
 
 '''
 Make sure the required packages are installed: 
