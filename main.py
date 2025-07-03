@@ -36,12 +36,12 @@ app.config['SECRET_KEY'] = os.environ.get("FLASK_KEY")
 ckeditor = CKEditor(app)
 Bootstrap5(app)
 
-# Configure Flask-Login
-login_manager = LoginManager()
-login_manager.init_app(app)
-@login_manager.user_loader
-def load_user(user_id):
-    return db.get_or_404(User, user_id)
+# Configure Flask-Login # 🌟🌟 comment out for register first log-in
+# login_manager = LoginManager()
+# login_manager.init_app(app)
+# @login_manager.user_loader
+# def load_user(user_id):
+#     return db.get_or_404(User, user_id)
 
 
 # For adding profile images to the comment section
