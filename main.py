@@ -300,6 +300,6 @@ def contact():
 #         connection.login(MAIL_ADDRESS, MAIL_APP_PW)
 #         connection.sendmail(MAIL_ADDRESS, MAIL_APP_PW, email_message)
 
-
-if __name__ == "__main__":
-    app.run(debug=False, port=5001)
+## Comment Out for actual deployment via AWS EC2
+# if __name__ == "__main__":
+#     app.run(debug=False, port=5001)
