@@ -64,7 +64,7 @@ class Base(DeclarativeBase):
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
     'DB_URI',
-    'postgresql://bloguser:pgs_9651lKm@127.0.0.1/blogdb')
+    'postgresql://bloguser:pgs9651l_Km@127.0.0.1/blogdb')
 db = SQLAlchemy(model_class=Base)
 db.init_app(app)
 
