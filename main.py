@@ -62,9 +62,7 @@ gravatar = Gravatar(app,
 class Base(DeclarativeBase):
     pass
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DB_URI',
-    'postgresql://bloguser:pgs9651l_Km@127.0.0.1/blogdb')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://bloguser:pgs9651l_Km@127.0.0.1/blogdb' # no fallback logic
 db = SQLAlchemy(model_class=Base)
 db.init_app(app)
 
