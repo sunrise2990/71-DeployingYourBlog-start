@@ -40,7 +40,7 @@ app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 ckeditor = CKEditor(app)
 Bootstrap5(app)
 
-# Configure Flask-Login # 🌟🌟 comment out for register first log-in
+# Configure Flask-Login # 🌟🌟 comment out for register first log-in -- not required for EC2 deployment
 login_manager = LoginManager()
 login_manager.init_app(app)
 @login_manager.user_loader
