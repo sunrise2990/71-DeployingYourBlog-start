@@ -1,3 +1,4 @@
+
 from datetime import date
 from flask import Flask, abort, render_template, redirect, url_for, flash, request
 from flask_bootstrap import Bootstrap5
@@ -58,7 +59,9 @@ gravatar = Gravatar(app,
 class Base(DeclarativeBase):
     pass
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI", f"sqlite:///{os.path.join(basedir, 'instance', 'posts.db')}")
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'DB_URI',
+    'postgresql://bloguser:pgs_9651lKm@18.212.5.41/blogdb')
 db = SQLAlchemy(model_class=Base)
 db.init_app(app)
 
@@ -301,6 +304,6 @@ def contact():
 #         connection.login(MAIL_ADDRESS, MAIL_APP_PW)
 #         connection.sendmail(MAIL_ADDRESS, MAIL_APP_PW, email_message)
 
-## Comment Out for actual deployment via AWS EC2
-# if __name__ == "__main__":
-#     app.run(debug=False, port=5001)
+# Comment Out for actual deployment via AWS EC2
+if __name__ == "__main__":
+    app.run(debug=False, port=5001)
