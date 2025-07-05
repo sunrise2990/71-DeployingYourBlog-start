@@ -14,6 +14,8 @@ from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
 # Optional: add contact me email functionality (Day 60)
 # import smtplib
 import os
+import logging
+logging.basicConfig(level=logging.DEBUG)
 from dotenv import load_dotenv
 load_dotenv()
 
