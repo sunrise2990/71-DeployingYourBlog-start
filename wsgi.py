@@ -9,6 +9,7 @@ if project_home not in sys.path:
 
 # === Load .env if running locally (optional) ===
 load_dotenv(os.path.join(project_home, '.env'))
+load_dotenv(os.path.join(project_home, '.env.local'))  # <- add this line
 
 # === Ensure Flask Key is loaded (required for CSRF) ===
 if not os.environ.get("FLASK_KEY"):
@@ -17,6 +18,8 @@ if not os.environ.get("FLASK_KEY"):
 # === Launch Flask App ===
 from main import app as application
 
+if __name__ == "__main__":
+    application.run(host="0.0.0.0", port=5000)
 
 
 
