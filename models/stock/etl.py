@@ -5,22 +5,22 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from pathlib import Path
 
-# ✅ Load env
+# ✅ Load environment variables from .env or .env.local
 if Path(".env.local").exists():
     load_dotenv(dotenv_path=".env.local")
 else:
     load_dotenv()
 
-# ✅ Fetch DB URI
+# ✅ Read DB URI securely
 DATABASE_URL = os.getenv("DB_URI")
 if not DATABASE_URL:
-    raise ValueError("❌ DATABASE_URL is missing from .env")
+    raise ValueError("❌ Missing DB_URI in .env file")
 
-# ✅ Create DB engine
+# ✅ Create PostgreSQL engine
 engine = create_engine(DATABASE_URL)
 
-# ✅ Create stock_prices table if not exists
-with engine.connect() as conn:
+# ✅ Ensure schema and table exist
+with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
 
@@ -36,11 +36,16 @@ with engine.connect() as conn:
             volume BIGINT
         );
     """))
-    print("✅ Table `analytics.stock_prices` ready.")
+    print("✅ PostgreSQL table `analytics.stock_prices` is ready.")
 
-def fetch_and_store_stock(symbol="AAPL", table_name="stock_prices"):
-    print(f"📥 Downloading {symbol} from Yahoo Finance...")
+# ✅ Main ETL function
+def load_stock_data(symbol="AAPL", table_name="stock_prices"):
+    print(f"📥 Fetching data for: {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
+    if df.empty:
+        print(f"⚠️ No data returned for {symbol}")
+        return
+
     df.reset_index(inplace=True)
     df["symbol"] = symbol
 
@@ -54,20 +59,19 @@ def fetch_and_store_stock(symbol="AAPL", table_name="stock_prices"):
         "Volume": "volume"
     }, inplace=True)
 
-    print("🔍 Sample data:")
-    print(df.head())
+    print(f"🔍 Sample data:\n{df.head()}")
+    print(f"🗃 Inserting into analytics.{table_name}...")
 
-    print(f"🗃 Writing to PostgreSQL → schema=analytics, table={table_name}")
     df.to_sql(
         table_name,
-        engine,
+        con=engine,
         schema="analytics",
         if_exists="append",
         index=False
     )
 
-    print("✅ Upload complete!")
+    print("✅ Upload complete.")
 
-# ✅ Run it
+# ✅ If run standalone (test/dev)
 if __name__ == "__main__":
-    fetch_and_store_stock()
+    load_stock_data("AAPL")
