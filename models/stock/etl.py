@@ -45,9 +45,11 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
     # Flatten MultiIndex if present
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
-    df.reset_index(inplace=True)  # bring Date into column
+
+    df.reset_index(inplace=True)
     df.columns.name = None
     df["symbol"] = symbol
+
     df.rename(columns={
         "Date": "date",
         "Open": "open",
@@ -57,6 +59,9 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         "Adj Close": "adj_close",
         "Volume": "volume"
     }, inplace=True)
+
+    # ✅ Crucial line to force clean column names
+    df.columns = [str(col) for col in df.columns]
 
     print(f"🔍 Sample:\n{df.head()}")
     print(f"🗃 Inserting into analytics.{table_name}...")
