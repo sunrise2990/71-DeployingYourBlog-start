@@ -47,11 +47,11 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         print(f"⚠️ No data returned for {symbol}")
         return
 
-    df.columns.name = None  # remove name from columns
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [col[0] for col in df.columns]  # flatten MultiIndex columns
+        df.columns = [col[0] for col in df.columns]  # flatten MultiIndex columns first
 
-    df.reset_index(inplace=True)
+    df.reset_index(inplace=True)  # then move 'Date' index to a column
+    df.columns.name = None  # optional, clears leftover name
     df["symbol"] = symbol
 
     df.rename(columns={
