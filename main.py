@@ -308,6 +308,14 @@ def contact():
 #         connection.login(MAIL_ADDRESS, MAIL_APP_PW)
 #         connection.sendmail(MAIL_ADDRESS, MAIL_APP_PW, email_message)
 
+from models import db
+
+@app.route("/test_db")
+def test_db():
+    return str(db.engine.url)
+
+
+
 # Comment Out for actual deployment via AWS EC2
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
