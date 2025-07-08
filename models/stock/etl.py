@@ -5,25 +5,22 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from pathlib import Path
 
-# ✅ Load environment variables from .env or .env.local
+# Load env vars
 if Path(".env.local").exists():
     load_dotenv(dotenv_path=".env.local")
 else:
     load_dotenv()
 
-# ✅ Read DB URI securely
 DATABASE_URL = os.getenv("DB_URI")
 if not DATABASE_URL:
-    raise ValueError("❌ Missing DB_URI in .env file")
+    raise ValueError("❌ Missing DB_URI in .env")
 
-# ✅ Create PostgreSQL engine
 engine = create_engine(DATABASE_URL)
 
-# ✅ Ensure schema and table exist
+# Ensure schema/table exists
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
-
         CREATE TABLE IF NOT EXISTS analytics.stock_prices (
             id SERIAL PRIMARY KEY,
             symbol TEXT,
@@ -36,26 +33,21 @@ with engine.begin() as conn:
             volume BIGINT
         );
     """))
-    print("✅ PostgreSQL table `analytics.stock_prices` is ready.")
+    print("✅ Table analytics.stock_prices is ready.")
 
-# ✅ Main ETL function
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
     print(f"📥 Fetching data for: {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
-
     if df.empty:
-        print(f"⚠️ No data returned for {symbol}")
+        print(f"⚠️ No data for {symbol}")
         return
 
-    # ✅ Force all column names to be strings (flatten MultiIndex if any)
-    df.columns = ['_'.join([str(c) for c in col if c]) if isinstance(col, tuple) else str(col) for col in
-                      df.columns]
-
-    # ✅ Prepare DataFrame
-    df.reset_index(inplace=True)
+    # Flatten MultiIndex if present
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+    df.reset_index(inplace=True)  # bring Date into column
     df.columns.name = None
     df["symbol"] = symbol
-
     df.rename(columns={
         "Date": "date",
         "Open": "open",
@@ -66,7 +58,7 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         "Volume": "volume"
     }, inplace=True)
 
-    print(f"🔍 Sample data:\n{df.head()}")
+    print(f"🔍 Sample:\n{df.head()}")
     print(f"🗃 Inserting into analytics.{table_name}...")
 
     df.to_sql(
@@ -74,11 +66,9 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         con=engine,
         schema="analytics",
         if_exists="append",
-        index=False
+        index=False  # important: *don't* write index
     )
-
     print("✅ Upload complete.")
 
-# ✅ If run standalone (test/dev)
 if __name__ == "__main__":
     load_stock_data("AAPL")
