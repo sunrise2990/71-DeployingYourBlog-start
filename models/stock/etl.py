@@ -44,13 +44,13 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         print(f"⚠️ No data for {symbol}")
         return
 
-    # ✅ Flatten column MultiIndex IMMEDIATELY
+    # ✅ FIX: flatten MultiIndex FIRST
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
     df.reset_index(inplace=True)
 
-    # ✅ Rename columns to match DB table
+    # ✅ Rename to match PostgreSQL schema
     df.rename(columns={
         "Date": "date",
         "Open": "open",
@@ -62,10 +62,9 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
     }, inplace=True)
 
     df["symbol"] = symbol
+    df.columns = [str(col).strip() for col in df.columns]  # clean column names
 
-    # ✅ Clean column names
-    df.columns = [col.strip() for col in df.columns]
-    print("🧪 Final Columns:", df.columns.tolist())
+    print(f"🧪 Final Columns: {df.columns.tolist()}")
     print(df.head())
 
     # ✅ Upload to PostgreSQL
