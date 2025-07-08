@@ -42,9 +42,14 @@ with engine.begin() as conn:
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
     print(f"📥 Fetching data for: {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
+
     if df.empty:
         print(f"⚠️ No data returned for {symbol}")
         return
+
+    df.columns.name = None  # remove name from columns
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] for col in df.columns]  # flatten MultiIndex columns
 
     df.reset_index(inplace=True)
     df["symbol"] = symbol
