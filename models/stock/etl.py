@@ -47,11 +47,12 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         print(f"⚠️ No data returned for {symbol}")
         return
 
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+    # ✅ Flatten MultiIndex if needed
+    df.columns = df.columns.map(lambda col: col if isinstance(col, str) else col[0])
 
-    df.reset_index(inplace=True)  # then move 'Date' index to a column
-    df.columns.name = None  # optional, clears leftover name
+    # ✅ Prepare DataFrame
+    df.reset_index(inplace=True)
+    df.columns.name = None
     df["symbol"] = symbol
 
     df.rename(columns={
