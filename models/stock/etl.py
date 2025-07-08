@@ -48,7 +48,8 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         return
 
     # ✅ Flatten MultiIndex if needed
-    df.columns = df.columns.map(lambda col: col if isinstance(col, str) else col[0])
+    # Force string column names even for MultiIndex
+    df.columns = ['_'.join([str(c) for c in col if c]) if isinstance(col, tuple) else col for col in df.columns]
 
     # ✅ Prepare DataFrame
     df.reset_index(inplace=True)
