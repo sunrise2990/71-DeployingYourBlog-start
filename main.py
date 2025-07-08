@@ -18,6 +18,8 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 from dotenv import load_dotenv
 load_dotenv()
+from models.stock.stock_routes import bp_stock
+
 
 
 '''
@@ -39,6 +41,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 ckeditor = CKEditor(app)
 Bootstrap5(app)
+app.register_blueprint(bp_stock)
 
 # Configure Flask-Login # 🌟🌟 comment out for register first log-in -- not required for EC2 deployment
 login_manager = LoginManager()
