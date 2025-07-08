@@ -21,7 +21,7 @@ def run_etl():
 def stock_data():
     try:
         result = db.session.execute(
-            text('SELECT * FROM analytics.stock_prices ORDER BY "date" DESC LIMIT 20')
+            text('SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20')
         )
         rows = result.fetchall()
         return render_template("stock_data.html", rows=rows)
