@@ -5,17 +5,21 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from pathlib import Path
 
+# ✅ Load environment variables
 if Path(".env.local").exists():
     load_dotenv(dotenv_path=".env.local")
 else:
     load_dotenv()
 
+# ✅ Get DB URI
 DATABASE_URL = os.getenv("DB_URI")
 if not DATABASE_URL:
     raise ValueError("Missing DB_URI in .env")
 
+# ✅ Connect to PostgreSQL
 engine = create_engine(DATABASE_URL)
 
+# ✅ Ensure schema and table exist
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
@@ -33,10 +37,8 @@ with engine.begin() as conn:
     """))
     print("✅ analytics.stock_prices ready")
 
+# ✅ Main ETL Function
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
-    import yfinance as yf
-    import pandas as pd
-
     print(f"📥 Fetching data for: {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
 
@@ -44,13 +46,14 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         print(f"⚠️ No data for {symbol}")
         return
 
-    # ✅ FIX: flatten MultiIndex FIRST
+    # ✅ Clean MultiIndex columns if needed
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+        df.columns = ['_'.join([str(i) for i in col]).strip("_") for col in df.columns]
 
+    # ✅ Reset index and rename
     df.reset_index(inplace=True)
+    df.columns.name = None
 
-    # ✅ Rename to match PostgreSQL schema
     df.rename(columns={
         "Date": "date",
         "Open": "open",
@@ -62,15 +65,17 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
     }, inplace=True)
 
     df["symbol"] = symbol
-    df.columns = [str(col).strip() for col in df.columns]  # clean column names
 
-    print(f"🧪 Final Columns: {df.columns.tolist()}")
+    # ✅ Final check
+    print(f"🧪 Cleaned Columns: {df.columns.tolist()}")
     print(df.head())
 
-    # ✅ Upload to PostgreSQL
+    # ✅ Upload to DB
     df.to_sql(table_name, con=engine, schema="analytics", index=False, if_exists="append")
     print("✅ Insert complete")
 
+# ✅ For manual testing
 if __name__ == "__main__":
     load_stock_data("AAPL")
+
 
