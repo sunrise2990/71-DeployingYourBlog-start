@@ -5,7 +5,6 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Load environment
 if Path(".env.local").exists():
     load_dotenv(dotenv_path=".env.local")
 else:
@@ -17,7 +16,6 @@ if not DATABASE_URL:
 
 engine = create_engine(DATABASE_URL)
 
-# Ensure schema + table exists
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
@@ -33,44 +31,44 @@ with engine.begin() as conn:
             volume BIGINT
         );
     """))
-    print("✅ Table ready.")
+    print("✅ analytics.stock_prices ready")
 
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
-    print(f"📥 Fetching {symbol}")
+    print(f"📥 Fetching data for: {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
+
     if df.empty:
-        print("⚠️ No data.")
+        print(f"⚠️ No data returned for {symbol}")
         return
 
-    # Fix multi‐index issues
+    # 1️⃣ Flatten MultiIndex column names
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] for col in df.columns]
 
+    # 2️⃣ Reset index and drop leftover name
     df.reset_index(inplace=True)
-    df.columns.name = None      # clear leftover names
-    df["symbol"] = symbol
+    df.columns.name = None
 
+    # 3️⃣ Clean everything to strings (avoid tuples)
+    df.columns = [str(col) for col in df.columns]
+
+    # 4️⃣ Add symbol and rename
+    df["symbol"] = symbol
     df.rename(columns={
-        "Date": "date", "Open": "open", "High": "high",
-        "Low": "low", "Close": "close",
-        "Adj Close": "adj_close", "Volume": "volume"
+        "Date": "date",
+        "Open": "open",
+        "High": "high",
+        "Low": "low",
+        "Close": "close",
+        "Adj Close": "adj_close",
+        "Volume": "volume"
     }, inplace=True)
 
-    # 🔑 Convert every column name to plain string
-    df.columns = [str(c) for c in df.columns]
-
-    print("🔍 Clean columns:", df.columns.tolist())
     print(df.head())
-
-    df.to_sql(
-        table_name,
-        con=engine,
-        schema="analytics",
-        if_exists="append",
-        index=False,
-    )
-
-    print("✅ Upload complete.")
+    df.to_sql(table_name, con=engine, schema="analytics",
+              if_exists="append", index=False)
+    print("✅ Uploaded")
 
 if __name__ == "__main__":
     load_stock_data("AAPL")
+
