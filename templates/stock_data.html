@@ -1,43 +1,36 @@
-{% extends "base.html" %}
-
-{% block content %}
-<header class="masthead" style="background-image: url('../static/assets/img/about-bg.jpg')">
-  <div class="container position-relative px-4 px-lg-5">
-    <div class="row gx-4 gx-lg-5 justify-content-center">
-      <div class="col-md-10 col-lg-8 col-xl-7">
-        <div class="page-heading">
-          <h1>Stock Price Data</h1>
-          <span class="subheading">Most recent 20 records</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</header>
-
-<main class="mb-4">
-  <div class="container">
-    <table class="table table-bordered table-hover mt-4">
-      <thead class="table-light">
-        <tr>
-          {% if rows %}
-            {% for col in rows[0].keys() %}
-              <th>{{ col }}</th>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stock Data</title>
+</head>
+<body>
+    <h1>Latest Stock Prices</h1>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Symbol</th>
+                <th>Open</th>
+                <th>High</th>
+                <th>Low</th>
+                <th>Close</th>
+                <th>Volume</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td>{{ row.date }}</td>
+                <td>{{ row.symbol }}</td>
+                <td>{{ row.open }}</td>
+                <td>{{ row.high }}</td>
+                <td>{{ row.low }}</td>
+                <td>{{ row.close }}</td>
+                <td>{{ row.volume }}</td>
+            </tr>
             {% endfor %}
-          {% else %}
-            <th>No data</th>
-          {% endif %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-          <tr>
-            {% for cell in row %}
-              <td>{{ cell }}</td>
-            {% endfor %}
-          </tr>
-        {% endfor %}
-      </tbody>
+        </tbody>
     </table>
-  </div>
-</main>
-{% endblock %}
+</body>
+</html>
