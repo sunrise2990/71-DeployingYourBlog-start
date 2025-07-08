@@ -47,9 +47,9 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         print(f"⚠️ No data returned for {symbol}")
         return
 
-    # ✅ Flatten MultiIndex if needed
-    # Force string column names even for MultiIndex
-    df.columns = ['_'.join([str(c) for c in col if c]) if isinstance(col, tuple) else col for col in df.columns]
+    # ✅ Force all column names to be strings (flatten MultiIndex if any)
+    df.columns = ['_'.join([str(c) for c in col if c]) if isinstance(col, tuple) else str(col) for col in
+                      df.columns]
 
     # ✅ Prepare DataFrame
     df.reset_index(inplace=True)
