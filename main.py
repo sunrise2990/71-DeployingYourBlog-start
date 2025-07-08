@@ -22,23 +22,13 @@ load_dotenv()
 from models.stock.stock_routes import bp_stock
 
 
-
-'''
-Make sure the required packages are installed: 
-Open the Terminal in PyCharm (bottom left). 
-
-On Windows type:
-python -m pip install -r requirements.txt
-
-On MacOS type:
-pip3 install -r requirements.txt
-
-This will install the packages from the requirements.txt for this project.
-'''
-
-
 # app = Flask(__name__)
 app = Flask(__name__)
+
+import logging
+app.logger.setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
+
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 ckeditor = CKEditor(app)
 Bootstrap5(app)

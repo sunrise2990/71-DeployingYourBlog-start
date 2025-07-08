@@ -19,8 +19,15 @@ def run_etl():
 
 @bp_stock.route("/stock_data")
 def stock_data():
-    result = db.session.execute(
-        text('SELECT * FROM analytics.stock_prices ORDER BY "date" DESC LIMIT 20')
-    )
-    return render_template("stock_data.html", rows=result.fetchall())
+    try:
+        result = db.session.execute(
+            text('SELECT * FROM analytics.stock_prices ORDER BY "date" DESC LIMIT 20')
+        )
+        rows = result.fetchall()
+        return render_template("stock_data.html", rows=rows)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(tb)  # logs to terminal
+        return f"<h2>❌ Error</h2><pre>{tb}</pre>", 500
 
