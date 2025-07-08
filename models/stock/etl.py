@@ -11,15 +11,15 @@ if Path(".env.local").exists():
 else:
     load_dotenv()
 
-# ✅ Get DB URI
+# ✅ Get DB URI from .env
 DATABASE_URL = os.getenv("DB_URI")
 if not DATABASE_URL:
-    raise ValueError("Missing DB_URI in .env")
+    raise ValueError("❌ Missing DB_URI in .env or .env.local")
 
 # ✅ Connect to PostgreSQL
 engine = create_engine(DATABASE_URL)
 
-# ✅ Ensure schema and table exist
+# ✅ Ensure schema/table exist
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
@@ -35,25 +35,24 @@ with engine.begin() as conn:
             volume BIGINT
         );
     """))
-    print("✅ analytics.stock_prices ready")
+    print("✅ analytics.stock_prices table is ready")
 
-# ✅ Main ETL Function
+# ✅ ETL function
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
-    print(f"📥 Fetching data for: {symbol}")
-    df = yf.download(symbol, period="1d", interval="1d")
+    print(f"\n📥 Fetching data for {symbol}")
+    df = yf.download(symbol, period="7d", interval="1d")
 
     if df.empty:
-        print(f"⚠️ No data for {symbol}")
+        print(f"⚠️ No data found for {symbol}")
         return
 
-    # ✅ Clean MultiIndex columns if needed
+    # ✅ Clean MultiIndex if exists
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = ['_'.join([str(i) for i in col]).strip("_") for col in df.columns]
+        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
 
-    # ✅ Reset index and rename
+    # ✅ Rename columns
     df.reset_index(inplace=True)
     df.columns.name = None
-
     df.rename(columns={
         "Date": "date",
         "Open": "open",
@@ -65,17 +64,17 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
     }, inplace=True)
 
     df["symbol"] = symbol
+    df = df[["symbol", "date", "open", "high", "low", "close", "adj_close", "volume"]]
 
-    # ✅ Final check
-    print(f"🧪 Cleaned Columns: {df.columns.tolist()}")
+    # ✅ Sanity check
+    print(f"🧪 Columns: {df.columns.tolist()}")
     print(df.head())
 
-    # ✅ Upload to DB
+    # ✅ Upload to PostgreSQL
     df.to_sql(table_name, con=engine, schema="analytics", index=False, if_exists="append")
-    print("✅ Insert complete")
+    print("✅ Insert complete for", symbol)
 
-# ✅ For manual testing
+# ✅ Run manually
 if __name__ == "__main__":
     load_stock_data("AAPL")
-
 
