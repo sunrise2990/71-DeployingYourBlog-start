@@ -48,7 +48,7 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         return
 
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [col[0] for col in df.columns]  # flatten MultiIndex columns first
+        df.columns = df.columns.get_level_values(0)
 
     df.reset_index(inplace=True)  # then move 'Date' index to a column
     df.columns.name = None  # optional, clears leftover name
