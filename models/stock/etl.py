@@ -34,26 +34,24 @@ with engine.begin() as conn:
     print("✅ analytics.stock_prices ready")
 
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
+    import yfinance as yf
+    import pandas as pd
+
     print(f"📥 Fetching data for: {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
 
     if df.empty:
-        print(f"⚠️ No data returned for {symbol}")
+        print(f"⚠️ No data for {symbol}")
         return
 
-    # 1️⃣ Flatten MultiIndex column names
+    # 🔥 Fix MultiIndex on columns
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] for col in df.columns]
 
-    # 2️⃣ Reset index and drop leftover name
     df.reset_index(inplace=True)
     df.columns.name = None
 
-    # 3️⃣ Clean everything to strings (avoid tuples)
-    df.columns = [str(col) for col in df.columns]
-
-    # 4️⃣ Add symbol and rename
-    df["symbol"] = symbol
+    # ✅ Rename columns to match DB table
     df.rename(columns={
         "Date": "date",
         "Open": "open",
@@ -64,10 +62,16 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         "Volume": "volume"
     }, inplace=True)
 
+    df["symbol"] = symbol
+
+    # 🔥 Flatten again and print to confirm
+    df.columns = [str(col) for col in df.columns]
+    print(f"🧪 Cleaned Columns: {df.columns.tolist()}")
     print(df.head())
-    df.to_sql(table_name, con=engine, schema="analytics",
-              if_exists="append", index=False)
-    print("✅ Uploaded")
+
+    # 🚀 Upload
+    df.to_sql(table_name, con=engine, schema="analytics", index=False, if_exists="append")
+    print("✅ Insert complete")
 
 if __name__ == "__main__":
     load_stock_data("AAPL")
