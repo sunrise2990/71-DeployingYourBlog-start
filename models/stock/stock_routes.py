@@ -18,6 +18,6 @@ def run_etl():
 
 @bp_stock.route("/stock_data")
 def stock_data():
-    result = db.session.execute(text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20"))
+    result = db.session.execute(text('SELECT * FROM analytics.stock_prices ORDER BY "date" DESC LIMIT 20'))
     return render_template("stock_data.html", rows=result.fetchall())
 

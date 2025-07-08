@@ -67,7 +67,6 @@ class Base(DeclarativeBase):
     pass
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI")
-# db = SQLAlchemy(model_class=Base)
 db.init_app(app)
 
 
