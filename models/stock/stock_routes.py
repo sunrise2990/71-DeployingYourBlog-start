@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, redirect, url_for, flash, render_template
 from models.stock.etl import load_stock_data
-from main import db
+from models import db
 
 bp_stock = Blueprint("bp_stock", __name__)
 

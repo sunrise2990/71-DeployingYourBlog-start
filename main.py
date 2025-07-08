@@ -5,7 +5,8 @@ from flask_bootstrap import Bootstrap5
 from flask_ckeditor import CKEditor
 from flask_gravatar import Gravatar
 from flask_login import UserMixin, login_user, LoginManager, current_user, logout_user
-from flask_sqlalchemy import SQLAlchemy
+# from flask_sqlalchemy import SQLAlchemy
+from models import db
 from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Integer, String, Text
 from functools import wraps
@@ -66,7 +67,7 @@ class Base(DeclarativeBase):
     pass
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI")
-db = SQLAlchemy(model_class=Base)
+# db = SQLAlchemy(model_class=Base)
 db.init_app(app)
 
 
