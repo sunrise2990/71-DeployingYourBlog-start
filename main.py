@@ -5,30 +5,31 @@ from flask_bootstrap import Bootstrap5
 from flask_ckeditor import CKEditor
 from flask_gravatar import Gravatar
 from flask_login import UserMixin, login_user, LoginManager, current_user, logout_user
-# from flask_sqlalchemy import SQLAlchemy
-from models import db
+
 from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Integer, String, Text
+
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
+
 from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
-# Optional: add contact me email functionality (Day 60)
-# import smtplib
+
 import os
 import logging
-logging.basicConfig(level=logging.DEBUG)
 from dotenv import load_dotenv
+
+# 🔧 Initialize logging + environment
+logging.basicConfig(level=logging.DEBUG)
 load_dotenv()
-from models.stock.stock_routes import bp_stock
-# from models.stock.etl import import_load_stock_data
+
+# 🔁 Internal imports (deferred to avoid circular dependency)
+from models import db
+from models.stock import stock_routes  # import module only
 from __init__ import create_app
 
+# 🔧 Create app instance
 app = create_app()
 
-# app = Flask(__name__)
-# app = Flask(__name__)
-
-import logging
 app.logger.setLevel(logging.DEBUG)
 logging.basicConfig(level=logging.DEBUG)
 
@@ -301,7 +302,7 @@ def contact():
 #         connection.login(MAIL_ADDRESS, MAIL_APP_PW)
 #         connection.sendmail(MAIL_ADDRESS, MAIL_APP_PW, email_message)
 
-from models import db
+
 
 @app.route("/test_db")
 def test_db():
