@@ -14,17 +14,17 @@ else:
 # ✅ Get DB URI
 DATABASE_URL = os.getenv("DB_URI")
 if not DATABASE_URL:
-    raise ValueError("❌ Missing DB_URI in .env or .env.local")
+    raise ValueError("Missing DB_URI in .env")
 
 # ✅ Connect to PostgreSQL
 engine = create_engine(DATABASE_URL)
 
-# ✅ Ensure schema and table exist
+# ✅ Ensure schema and clean table
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
-
-        CREATE TABLE IF NOT EXISTS analytics.stock_prices (
+        DROP TABLE IF EXISTS analytics.stock_prices;
+        CREATE TABLE analytics.stock_prices (
             id SERIAL PRIMARY KEY,
             symbol TEXT,
             date TIMESTAMP,
@@ -36,25 +36,25 @@ with engine.begin() as conn:
             volume BIGINT
         );
     """))
-    print("✅ Created analytics.stock_prices (if not exists)")
+    print("✅ analytics.stock_prices ready")
 
-
-# ✅ ETL FUNCTION
+# ✅ Main ETL Function
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
-    print(f"\n📥 Downloading: {symbol}")
+    print(f"📥 Fetching data for: {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
 
     if df.empty:
-        print("⚠️ No data returned from Yahoo Finance")
+        print(f"⚠️ No data for {symbol}")
         return
 
-    # ✅ FLATTEN MultiIndex columns
-    df.columns = [col if isinstance(col, str) else col[0] for col in df.columns]
+    # ✅ Flatten MultiIndex if needed
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
 
-    # ✅ Reset index to move date into column
+    # ✅ Reset index and rename
     df.reset_index(inplace=True)
+    df.columns.name = None
 
-    # ✅ Rename columns
     df.rename(columns={
         "Date": "date",
         "Open": "open",
@@ -65,20 +65,15 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         "Volume": "volume"
     }, inplace=True)
 
-    # ✅ Add symbol column
     df["symbol"] = symbol
 
-    # ✅ Reorder columns to match DB table
-    df = df[["symbol", "date", "open", "high", "low", "close", "adj_close", "volume"]]
-
-    print("📊 Prepared Data:")
+    print(f"🧪 Cleaned Columns: {df.columns.tolist()}")
     print(df.head())
 
-    # ✅ Load to database
-    df.to_sql(name=table_name, con=engine, schema="analytics", index=False, if_exists="append")
-    print("✅ Inserted to analytics.stock_prices")
+    # ✅ Upload to PostgreSQL
+    df.to_sql(table_name, con=engine, schema="analytics", index=False, if_exists="append")
+    print("✅ Insert complete")
 
-
-# ✅ Manual trigger
+# ✅ Run directly if needed
 if __name__ == "__main__":
     load_stock_data("AAPL")
