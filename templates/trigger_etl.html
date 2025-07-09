@@ -1,18 +1,25 @@
-<!-- templates/trigger_etl.html -->
-<h1>Run ETL for Stock Symbol</h1>
+{% extends "base.html" %}
 
-<form action="{{ url_for('bp_stock.run_etl') }}" method="POST">
-  <label for="symbol">Stock Symbol:</label>
-  <input type="text" id="symbol" name="symbol" placeholder="AAPL" required>
-  <button type="submit">Run ETL</button>
-</form>
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4">Run ETL for Stock Symbol</h2>
 
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    <ul>
-      {% for message in messages %}
-        <li>{{ message }}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-{% endwith %}
+    <form method="POST" action="{{ url_for('bp_stock.run_etl') }}">
+        <div class="form-group">
+            <label for="symbol">Stock Symbol:</label>
+            <input type="text" class="form-control" id="symbol" name="symbol" placeholder="e.g., AAPL" required>
+        </div>
+        <button type="submit" class="btn btn-primary mt-2">Run ETL</button>
+    </form>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alert alert-info mt-3">
+          {% for message in messages %}
+            <p>✅ {{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+</div>
+{% endblock %}

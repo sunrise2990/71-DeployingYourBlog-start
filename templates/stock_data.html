@@ -1,13 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Stock Data</title>
-</head>
-<body>
-    <h1>Latest Stock Prices</h1>
-    <table border="1">
-        <thead>
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4">Latest Stock Prices</h2>
+
+    <table class="table table-striped table-bordered">
+        <thead class="thead-dark">
             <tr>
                 <th>Date</th>
                 <th>Symbol</th>
@@ -21,7 +19,7 @@
         <tbody>
             {% for row in rows %}
             <tr>
-                <td>{{ row.date }}</td>
+                <td>{{ row.date.strftime('%Y-%m-%d') }}</td>
                 <td>{{ row.symbol }}</td>
                 <td>{{ row.open }}</td>
                 <td>{{ row.high }}</td>
@@ -32,5 +30,5 @@
             {% endfor %}
         </tbody>
     </table>
-</body>
-</html>
+</div>
+{% endblock %}
