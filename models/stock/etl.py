@@ -1,47 +1,65 @@
 import os
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+# ✅ Load environment variables
+if Path(".env.local").exists():
+    load_dotenv(".env.local")
+else:
+    load_dotenv()
+
 DATABASE_URL = os.getenv("DB_URI")
+if not DATABASE_URL:
+    raise ValueError("Missing DB_URI in .env")
+
+# ✅ Connect to PostgreSQL
 engine = create_engine(DATABASE_URL)
 
-def load_stock_data(symbol: str):
+# ✅ Create schema and clean table once (remove this block later if stable)
+with engine.begin() as conn:
+    conn.execute(text("""
+        CREATE SCHEMA IF NOT EXISTS analytics;
+        DROP TABLE IF EXISTS analytics.stock_prices;
+        CREATE TABLE analytics.stock_prices (
+            id SERIAL PRIMARY KEY,
+            symbol TEXT,
+            date TIMESTAMP,
+            open FLOAT,
+            high FLOAT,
+            low FLOAT,
+            close FLOAT,
+            adj_close FLOAT,
+            volume BIGINT
+        );
+    """))
+    print("✅ Table analytics.stock_prices is ready")
+
+# ✅ Load data and insert
+def load_stock_data(symbol="AAPL", table_name="stock_prices"):
+    print(f"🔄 Fetching {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
 
     if df.empty:
-        raise ValueError(f"No data returned for symbol {symbol}")
+        print("⚠️ No data returned")
+        return
 
+    # ✅ Clean columns
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0].lower() for col in df.columns]
     df.reset_index(inplace=True)
-    df["symbol"] = symbol.upper()
-    df.rename(columns={
-        "Date": "date",
-        "Open": "open",
-        "High": "high",
-        "Low": "low",
-        "Close": "close",
-        "Adj Close": "adj_close",
-        "Volume": "volume"
-    }, inplace=True)
+    df.columns = [col.lower() for col in df.columns]
+    df.rename(columns={"adj close": "adj_close"}, inplace=True)
+    df["symbol"] = symbol
 
-    with engine.begin() as conn:
-        # Create schema and table if needed
-        conn.execute(text("""
-            # CREATE SCHEMA IF NOT EXISTS analytics;
-            CREATE TABLE IF NOT EXISTS analytics.stock_prices (
-                id SERIAL PRIMARY KEY,
-                symbol TEXT,
-                date TIMESTAMP,
-                open FLOAT,
-                high FLOAT,
-                low FLOAT,
-                close FLOAT,
-                adj_close FLOAT,
-                volume BIGINT
-            );
-        """))
-        # Insert
-        df.to_sql("stock_prices", con=conn, schema="analytics", if_exists="append", index=False)
-        print(f"✅ Successfully loaded data for {symbol}")
+    print("📊 Cleaned columns:", df.columns.tolist())
+    print(df.head())
+
+    # ✅ Upload to PostgreSQL
+    df.to_sql(table_name, con=engine, schema="analytics", index=False, if_exists="append")
+    print("✅ Inserted to DB")
+
+if __name__ == "__main__":
+    load_stock_data("AAPL")

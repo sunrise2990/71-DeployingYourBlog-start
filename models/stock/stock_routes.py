@@ -1,7 +1,7 @@
 from flask import Blueprint, request, redirect, url_for, flash, render_template
 from sqlalchemy import text
 from models import db
-from models.stock.etl import load_stock_data
+from models.stock.etl import load_stock_data  # ✅ Correct import
 
 bp_stock = Blueprint("bp_stock", __name__)
 
