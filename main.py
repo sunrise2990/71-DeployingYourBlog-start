@@ -5,15 +5,11 @@ from flask_bootstrap import Bootstrap5
 from flask_ckeditor import CKEditor
 from flask_gravatar import Gravatar
 from flask_login import UserMixin, login_user, LoginManager, current_user, logout_user
-
 from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Integer, String, Text
-
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
-
 from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
-
 import os
 import logging
 from dotenv import load_dotenv
@@ -24,11 +20,16 @@ load_dotenv()
 
 # 🔁 Internal imports (deferred to avoid circular dependency)
 from models import db
+from models.stock import etl
+from models.stock.etl import load_stock_data
+from models.stock.stock_routes import bp_stock
+from flask import Flask
 from models.stock import stock_routes  # import module only
-from __init__ import create_app
+app = Flask(__name__)
+app.config.from_object("config.Config")  # or whatever you're using
+db.init_app(app)
 
-# 🔧 Create app instance
-app = create_app()
+app.register_blueprint(bp_stock)
 
 app.logger.setLevel(logging.DEBUG)
 logging.basicConfig(level=logging.DEBUG)
