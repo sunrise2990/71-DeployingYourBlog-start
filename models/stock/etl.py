@@ -5,9 +5,9 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from pathlib import Path
 
-# ✅ Load environment variables from .env.local or .env
+# ✅ Load environment variables
 if Path(".env.local").exists():
-    load_dotenv(dotenv_path=".env.local")
+    load_dotenv(".env.local")
 else:
     load_dotenv()
 
@@ -18,7 +18,7 @@ if not DATABASE_URL:
 # ✅ Connect to PostgreSQL
 engine = create_engine(DATABASE_URL)
 
-# ✅ Ensure schema and correct table exist
+# ✅ Create schema and clean table once (remove this block later if stable)
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
@@ -35,44 +35,31 @@ with engine.begin() as conn:
             volume BIGINT
         );
     """))
-    print("✅ analytics.stock_prices is ready")
+    print("✅ Table analytics.stock_prices is ready")
 
-# ✅ Main ETL Function
+# ✅ Load data and insert
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
-    print(f"📥 Fetching data for: {symbol}")
+    print(f"🔄 Fetching {symbol}")
     df = yf.download(symbol, period="1d", interval="1d")
 
     if df.empty:
-        print(f"⚠️ No data for {symbol}")
+        print("⚠️ No data returned")
         return
 
-    # ✅ Flatten MultiIndex columns if necessary
+    # ✅ Clean columns
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = ['_'.join(filter(None, map(str, col))) for col in df.columns]
-
-    # ✅ Reset index and clean column names
+        df.columns = [col[0].lower() for col in df.columns]
     df.reset_index(inplace=True)
-    df.columns.name = None
-
-    df.rename(columns={
-        "Date": "date",
-        "Open": "open",
-        "High": "high",
-        "Low": "low",
-        "Close": "close",
-        "Adj Close": "adj_close",
-        "Volume": "volume"
-    }, inplace=True)
-
+    df.columns = [col.lower() for col in df.columns]
+    df.rename(columns={"adj close": "adj_close"}, inplace=True)
     df["symbol"] = symbol
 
-    print("🧪 Cleaned DataFrame Columns:", df.columns.tolist())
+    print("📊 Cleaned columns:", df.columns.tolist())
     print(df.head())
 
-    # ✅ Upload to database
+    # ✅ Upload to PostgreSQL
     df.to_sql(table_name, con=engine, schema="analytics", index=False, if_exists="append")
-    print("✅ Data inserted into analytics.stock_prices")
+    print("✅ Inserted to DB")
 
-# ✅ For testing
 if __name__ == "__main__":
     load_stock_data("AAPL")
