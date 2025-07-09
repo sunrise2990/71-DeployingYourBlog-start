@@ -1,7 +1,6 @@
 from flask import Blueprint, request, redirect, url_for, flash, render_template
 from sqlalchemy import text
 from models import db
-# from main import db  # ✅ Use actual app file name here (e.g., main.py)
 from models.stock.etl import load_stock_data
 
 # ✅ Create Blueprint
