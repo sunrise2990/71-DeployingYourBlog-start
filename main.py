@@ -21,10 +21,12 @@ from dotenv import load_dotenv
 load_dotenv()
 from models.stock.stock_routes import bp_stock
 # from models.stock.etl import import_load_stock_data
+from __init__ import create_app
 
+app = create_app()
 
 # app = Flask(__name__)
-app = Flask(__name__)
+# app = Flask(__name__)
 
 import logging
 app.logger.setLevel(logging.DEBUG)
