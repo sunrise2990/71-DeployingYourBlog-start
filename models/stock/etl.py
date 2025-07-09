@@ -5,13 +5,12 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from pathlib import Path
 
-# ✅ Load environment variables
+# ✅ Load environment variables from .env.local or .env
 if Path(".env.local").exists():
     load_dotenv(dotenv_path=".env.local")
 else:
     load_dotenv()
 
-# ✅ Get DB URI
 DATABASE_URL = os.getenv("DB_URI")
 if not DATABASE_URL:
     raise ValueError("Missing DB_URI in .env")
@@ -19,7 +18,7 @@ if not DATABASE_URL:
 # ✅ Connect to PostgreSQL
 engine = create_engine(DATABASE_URL)
 
-# ✅ Ensure schema and clean table
+# ✅ Ensure schema and correct table exist
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
@@ -36,7 +35,7 @@ with engine.begin() as conn:
             volume BIGINT
         );
     """))
-    print("✅ analytics.stock_prices ready")
+    print("✅ analytics.stock_prices is ready")
 
 # ✅ Main ETL Function
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
@@ -47,11 +46,11 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         print(f"⚠️ No data for {symbol}")
         return
 
-    # ✅ Flatten MultiIndex if needed
+    # ✅ Flatten MultiIndex columns if necessary
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+        df.columns = ['_'.join(filter(None, map(str, col))) for col in df.columns]
 
-    # ✅ Reset index and rename
+    # ✅ Reset index and clean column names
     df.reset_index(inplace=True)
     df.columns.name = None
 
@@ -67,13 +66,13 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
 
     df["symbol"] = symbol
 
-    print(f"🧪 Cleaned Columns: {df.columns.tolist()}")
+    print("🧪 Cleaned DataFrame Columns:", df.columns.tolist())
     print(df.head())
 
-    # ✅ Upload to PostgreSQL
+    # ✅ Upload to database
     df.to_sql(table_name, con=engine, schema="analytics", index=False, if_exists="append")
-    print("✅ Insert complete")
+    print("✅ Data inserted into analytics.stock_prices")
 
-# ✅ Run directly if needed
+# ✅ For testing
 if __name__ == "__main__":
     load_stock_data("AAPL")
