@@ -1,9 +1,7 @@
-# models/stock/stock_routes.py
-
-from sqlalchemy import text
 from flask import Blueprint, request, redirect, url_for, flash, render_template
+from sqlalchemy import text
+from models import db
 from models.stock.etl import load_stock_data
-from models import db  # ✅ this is correct
 
 bp_stock = Blueprint("bp_stock", __name__)
 
@@ -19,15 +17,7 @@ def run_etl():
 
 @bp_stock.route("/stock_data")
 def stock_data():
-    try:
-        result = db.session.execute(
-            text('SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20')
-        )
-        rows = result.fetchall()
-        return render_template("stock_data.html", rows=rows)
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        print(tb)  # logs to terminal
-        return f"<h2>❌ Error</h2><pre>{tb}</pre>", 500
-
+    result = db.session.execute(
+        text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20")
+    )
+    return render_template("stock_data.html", rows=result.fetchall())
