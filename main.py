@@ -26,7 +26,7 @@ from models.stock.stock_routes import bp_stock
 from flask import Flask
 from models.stock import stock_routes  # import module only
 app = Flask(__name__)
-app.config.from_object("config.Config")  # or whatever you're using
+# app.config.from_object("config.Config")  # or whatever you're using
 db.init_app(app)
 
 app.register_blueprint(bp_stock)
