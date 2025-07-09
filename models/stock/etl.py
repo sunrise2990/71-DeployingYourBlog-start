@@ -21,7 +21,6 @@ engine = create_engine(DATABASE_URL)
 # ✅ Create schema and clean table once (remove this block later if stable)
 with engine.begin() as conn:
     conn.execute(text("""
-        CREATE SCHEMA IF NOT EXISTS analytics;
         DROP TABLE IF EXISTS analytics.stock_prices;
         CREATE TABLE analytics.stock_prices (
             id SERIAL PRIMARY KEY,
