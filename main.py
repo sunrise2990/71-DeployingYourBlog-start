@@ -20,6 +20,7 @@ logging.basicConfig(level=logging.DEBUG)
 from dotenv import load_dotenv
 load_dotenv()
 # from models.stock.stock_routes import bp_stock
+# from models.stock.etl import import_load_stock_data
 
 
 # app = Flask(__name__)
