@@ -21,24 +21,24 @@ engine = create_engine(DATABASE_URL)
 
 # ✅ Function to create schema and table — ONLY call manually if needed
 def create_stock_table():
-    with engine.begin() as conn:
-        conn.execute(text("""
-            CREATE SCHEMA IF NOT EXISTS analytics;
-
-            DROP TABLE IF EXISTS analytics.stock_prices;
-
-            CREATE TABLE analytics.stock_prices (
-                id SERIAL PRIMARY KEY,
-                symbol TEXT,
-                date TIMESTAMP,
-                open FLOAT,
-                high FLOAT,
-                low FLOAT,
-                close FLOAT,
-                adj_close FLOAT,
-                volume BIGINT
-            );
-        """))
+    # with engine.begin() as conn:
+    #     conn.execute(text("""
+    #         CREATE SCHEMA IF NOT EXISTS analytics;
+    #
+    #         DROP TABLE IF EXISTS analytics.stock_prices;
+    #
+    #         CREATE TABLE analytics.stock_prices (
+    #             id SERIAL PRIMARY KEY,
+    #             symbol TEXT,
+    #             date TIMESTAMP,
+    #             open FLOAT,
+    #             high FLOAT,
+    #             low FLOAT,
+    #             close FLOAT,
+    #             adj_close FLOAT,
+    #             volume BIGINT
+    #         );
+    #     """))
         print("✅ Table analytics.stock_prices is ready")
 
 # ✅ Function to fetch and store stock data

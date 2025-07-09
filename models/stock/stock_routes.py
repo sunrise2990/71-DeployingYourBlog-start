@@ -19,6 +19,7 @@ def run_etl():
 
     return redirect(url_for("get_all_posts"))  # Redirect to blog homepage
 
+
 # ✅ GET route to preview the most recent 20 stock prices from DB
 @bp_stock.route("/stock_data")
 def stock_data():
