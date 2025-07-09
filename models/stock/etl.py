@@ -29,7 +29,7 @@ def load_stock_data(symbol: str):
     with engine.begin() as conn:
         # Create schema and table if needed
         conn.execute(text("""
-            CREATE SCHEMA IF NOT EXISTS analytics;
+            # CREATE SCHEMA IF NOT EXISTS analytics;
             CREATE TABLE IF NOT EXISTS analytics.stock_prices (
                 id SERIAL PRIMARY KEY,
                 symbol TEXT,
