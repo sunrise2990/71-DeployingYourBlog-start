@@ -11,7 +11,7 @@ if Path(".env.local").exists():
 else:
     load_dotenv()
 
-# ✅ Get DB URI from .env
+# ✅ Get DB URI
 DATABASE_URL = os.getenv("DB_URI")
 if not DATABASE_URL:
     raise ValueError("❌ Missing DB_URI in .env or .env.local")
@@ -19,10 +19,11 @@ if not DATABASE_URL:
 # ✅ Connect to PostgreSQL
 engine = create_engine(DATABASE_URL)
 
-# ✅ Ensure schema/table exist
+# ✅ Ensure schema and table exist
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE SCHEMA IF NOT EXISTS analytics;
+
         CREATE TABLE IF NOT EXISTS analytics.stock_prices (
             id SERIAL PRIMARY KEY,
             symbol TEXT,
@@ -35,24 +36,25 @@ with engine.begin() as conn:
             volume BIGINT
         );
     """))
-    print("✅ analytics.stock_prices table is ready")
+    print("✅ Created analytics.stock_prices (if not exists)")
 
-# ✅ ETL function
+
+# ✅ ETL FUNCTION
 def load_stock_data(symbol="AAPL", table_name="stock_prices"):
-    print(f"\n📥 Fetching data for {symbol}")
-    df = yf.download(symbol, period="7d", interval="1d")
+    print(f"\n📥 Downloading: {symbol}")
+    df = yf.download(symbol, period="1d", interval="1d")
 
     if df.empty:
-        print(f"⚠️ No data found for {symbol}")
+        print("⚠️ No data returned from Yahoo Finance")
         return
 
-    # ✅ Clean MultiIndex if exists
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+    # ✅ FLATTEN MultiIndex columns
+    df.columns = [col if isinstance(col, str) else col[0] for col in df.columns]
+
+    # ✅ Reset index to move date into column
+    df.reset_index(inplace=True)
 
     # ✅ Rename columns
-    df.reset_index(inplace=True)
-    df.columns.name = None
     df.rename(columns={
         "Date": "date",
         "Open": "open",
@@ -63,18 +65,20 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
         "Volume": "volume"
     }, inplace=True)
 
+    # ✅ Add symbol column
     df["symbol"] = symbol
+
+    # ✅ Reorder columns to match DB table
     df = df[["symbol", "date", "open", "high", "low", "close", "adj_close", "volume"]]
 
-    # ✅ Sanity check
-    print(f"🧪 Columns: {df.columns.tolist()}")
+    print("📊 Prepared Data:")
     print(df.head())
 
-    # ✅ Upload to PostgreSQL
-    df.to_sql(table_name, con=engine, schema="analytics", index=False, if_exists="append")
-    print("✅ Insert complete for", symbol)
+    # ✅ Load to database
+    df.to_sql(name=table_name, con=engine, schema="analytics", index=False, if_exists="append")
+    print("✅ Inserted to analytics.stock_prices")
 
-# ✅ Run manually
+
+# ✅ Manual trigger
 if __name__ == "__main__":
     load_stock_data("AAPL")
-
