@@ -52,7 +52,7 @@ def load_stock_data(symbol="AAPL", table_name="stock_prices"):
 
     # ✅ Clean DataFrame columns
     df.reset_index(inplace=True)
-    df.columns = [col.lower() for col in df.columns]
+    df.columns = [col[0].lower() if isinstance(col, tuple) else col.lower() for col in df.columns]
     df.rename(columns={"adj close": "adj_close"}, inplace=True)
     df["symbol"] = symbol
 
