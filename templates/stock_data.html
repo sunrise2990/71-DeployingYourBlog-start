@@ -1,11 +1,20 @@
 {% extends "base.html" %}
-
 {% block content %}
-<div class="container mt-5">
-    <h2 class="mb-4">Latest Stock Prices</h2>
+<div class="container mt-4">
+    <h2>📈 Latest Stock Data (Top 20)</h2>
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="alert alert-info mt-3">
+                {% for msg in messages %}
+                    <p>{{ msg }}</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
 
-    <table class="table table-striped table-bordered">
-        <thead class="thead-dark">
+    {% if rows %}
+    <table class="table table-bordered table-striped mt-4">
+        <thead>
             <tr>
                 <th>Date</th>
                 <th>Symbol</th>
@@ -13,6 +22,7 @@
                 <th>High</th>
                 <th>Low</th>
                 <th>Close</th>
+                <th>Adj Close</th>
                 <th>Volume</th>
             </tr>
         </thead>
@@ -25,10 +35,15 @@
                 <td>{{ row.high }}</td>
                 <td>{{ row.low }}</td>
                 <td>{{ row.close }}</td>
+                <td>{{ row.adj_close }}</td>
                 <td>{{ row.volume }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    {% else %}
+        <p class="mt-4 text-muted">No data available to display.</p>
+    {% endif %}
+
 </div>
 {% endblock %}
