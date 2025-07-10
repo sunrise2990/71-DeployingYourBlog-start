@@ -173,7 +173,7 @@ def add_new_post():
         new_post = BlogPost(title=form.title.data,
                             subtitle=form.subtitle.data,
                             body=form.body.data,
-                            img_url=f"assets/img/{form.img_url.data}",
+                            img_url = form.img_url.data.strip(),
                             author=current_user,
                             date=date.today().strftime("%B %d, %Y"))
         db.session.add(new_post)
@@ -187,7 +187,7 @@ def edit_post(post_id):
     form = CreatePostForm()
     post = db.get_or_404(BlogPost, post_id)
     edit_form = CreatePostForm(title=post.title, subtitle=post.subtitle,
-                               img_url=post.img_url.replace("assets/img/", ""), author=post.author,
+                               img_url = form.img_url.data.strip(), author=post.author,
                                body=post.body)
     if edit_form.validate_on_submit():
         post.title = edit_form.title.data
