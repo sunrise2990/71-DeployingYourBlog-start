@@ -23,7 +23,7 @@
     <div class="col-md-8">
       {% for post in all_posts %}
       <div class="card mb-4">
-        <img src="{{ post.img_url }}" class="card-img-top" alt="Post image">
+        <img src="{{ url_for('static', filename=post.img_url) }}" class="card-img-top" alt="Post image">
         <div class="card-body">
           <h3 class="card-title">{{ post.title }}</h3>
           <h5 class="text-muted">{{ post.subtitle }}</h5>

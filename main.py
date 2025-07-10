@@ -173,7 +173,7 @@ def add_new_post():
         new_post = BlogPost(title=form.title.data,
                             subtitle=form.subtitle.data,
                             body=form.body.data,
-                            img_url=form.img_url.data,
+                            img_url=f"assets/img/{form.img_url.data}",
                             author=current_user,
                             date=date.today().strftime("%B %d, %Y"))
         db.session.add(new_post)
@@ -184,14 +184,15 @@ def add_new_post():
 @app.route("/edit-post/<int:post_id>", methods=["GET", "POST"])
 @admin_only
 def edit_post(post_id):
+    form = CreatePostForm()
     post = db.get_or_404(BlogPost, post_id)
     edit_form = CreatePostForm(title=post.title, subtitle=post.subtitle,
-                               img_url=post.img_url, author=post.author,
+                               img_url=f"assets/img/{form.img_url.data}", author=post.author,
                                body=post.body)
     if edit_form.validate_on_submit():
         post.title = edit_form.title.data
         post.subtitle = edit_form.subtitle.data
-        post.img_url = edit_form.img_url.data
+        post.img_url = f"assets/img/{edit_form.img_url.data}"
         post.body = edit_form.body.data
         db.session.commit()
         return redirect(url_for("show_post", post_id=post.id))
