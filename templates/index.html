@@ -1,50 +1,77 @@
+<!-- templates/index.html -->
 {% extends "base.html" %}
-{% block title %}Home | Data by Kevin{% endblock %}
-
 {% block content %}
-<!-- 🚧 Construction Notice -->
-<div class="bg-warning text-dark text-center py-2">
-  🚧 This site is under construction. Content and features are being added. Stay tuned! 🚧
-</div>
-<!-- Hero Header -->
-<header class="py-5 text-white" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}'); background-size: cover; background-position: center;">
-    <div class="container text-center">
-        <h1 class="display-4 fw-bold">Kevin’s Blog</h1>
-        <p class="lead">A collection of random musings 🌟🌟</p>
+
+<!-- Hero Banner -->
+<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
+  <div class="container position-relative px-4 px-lg-5">
+    <div class="row gx-4 gx-lg-5 justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
+        <div class="site-heading">
+          <h1>Kevin's Blog</h1>
+          <span class="subheading">A collection of random musings ✴️ ✴️</span>
+        </div>
+      </div>
     </div>
+  </div>
 </header>
 
-<!-- Blog Posts Section -->
-<div class="container mt-5">
-    <div class="row justify-content-center">
-        <div class="col-md-10 col-lg-8">
-
-            {% for post in all_posts %}
-            <div class="mb-5">
-                <a href="{{ url_for('show_post', post_id=post.id) }}" class="text-decoration-none text-dark">
-                    <h2>{{ post.title }}</h2>
-                    <h5 class="text-muted">{{ post.subtitle }}</h5>
-                </a>
-                <p class="text-muted small">
-                    Posted by <strong>{{ post.author.name }}</strong> on {{ post.date }}
-                    {% if current_user.id == 1 %}
-                    • <a href="{{ url_for('delete_post', post_id=post.id) }}" class="text-danger">✘ Delete</a>
-                    {% endif %}
-                </p>
-                <hr>
-            </div>
-            {% endfor %}
-
-            {% if current_user.id == 1 %}
-            <div class="d-flex justify-content-end mb-4">
-                <a class="btn btn-primary" href="{{ url_for('add_new_post') }}">Create New Post</a>
-            </div>
-            {% endif %}
-
-            <div class="d-flex justify-content-end mb-5">
-                <a class="btn btn-outline-secondary" href="#!">Older Posts →</a>
-            </div>
+<!-- Main Content with Sidebar -->
+<div class="container px-4 px-lg-5 mt-5">
+  <div class="row">
+    <!-- Blog Post List -->
+    <div class="col-md-8">
+      {% for post in all_posts %}
+      <div class="card mb-4">
+        <img src="{{ post.img_url }}" class="card-img-top" alt="Post image">
+        <div class="card-body">
+          <h3 class="card-title">{{ post.title }}</h3>
+          <h5 class="text-muted">{{ post.subtitle }}</h5>
+          <p class="card-text">{{ post.body[:200]|safe }}...</p>
+          <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
         </div>
+        <div class="card-footer text-muted">
+          📅 {{ post.date }} • by {{ post.author.name }}
+          {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <!-- Pagination -->
+      <nav aria-label="Blog page navigation">
+        <ul class="pagination justify-content-center">
+          <li class="page-item"><a class="page-link" href="#">1</a></li>
+          <li class="page-item"><a class="page-link" href="#">2</a></li>
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        </ul>
+      </nav>
     </div>
+
+    <!-- Sidebar Widgets -->
+    <div class="col-md-4">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h5 class="card-title">📚 Categories</h5>
+          <ul class="list-unstyled">
+            <li><a href="#">All Posts ({{ all_posts|length }})</a></li>
+            <li><a href="#">Python (5)</a></li>
+            <li><a href="#">NER Models (3)</a></li>
+            <li><a href="#">Real Estate (2)</a></li>
+            <li><a href="#">ML Projects (4)</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-body text-center">
+          <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}" class="img-fluid rounded-circle mb-2" width="80">
+          <h6 class="mb-0">Kevin Cho</h6>
+          <small class="text-muted">Real Estate Data Scientist</small>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
+
 {% endblock %}
+
