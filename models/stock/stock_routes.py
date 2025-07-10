@@ -21,20 +21,24 @@ def run_etl():
     return redirect(url_for("bp_stock.trigger_etl_form"))
 
 # ✅ Route: GET → Display 20 most recent rows
-@bp_stock.route("/stock_data", methods=["GET"])
+@bp_stock.route("/stock_data")
 def stock_data():
     try:
-        result = db.session.execute(
-            text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20")
-        )
-        rows = result.fetchall()
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20
+            """))
+            rows = result.fetchall()
+
+        print("✅ Pulled rows from DB:")
+        for row in rows:
+            print(row)
+
+        return render_template("stock_data.html", rows=rows)
+
     except Exception as e:
-        error_msg = f"❌ Failed to fetch stock data: {str(e)}"
-        print(error_msg)
-        traceback.print_exc()  # ← log full traceback to console
-        flash(error_msg)
-        rows = []
-    return render_template("stock_data.html", rows=rows)
+        print("❌ ERROR in /stock_data route:", e)
+        return "Internal error occurred: " + str(e), 500
 
 
 # ✅ Route: GET → JSON API to debug stock data
