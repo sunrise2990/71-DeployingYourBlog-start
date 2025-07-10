@@ -1,5 +1,6 @@
 # main.py
 from datetime import date
+from flask_migrate import Migrate
 from flask import Flask, abort, render_template, redirect, url_for, flash, request
 from flask_bootstrap import Bootstrap5
 from flask_ckeditor import CKEditor
@@ -31,6 +32,7 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI")
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 db.init_app(app)
+migrate = Migrate(app, db)
 
 # ✅ Extensions
 ckeditor = CKEditor(app)
