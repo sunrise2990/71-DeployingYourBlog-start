@@ -55,6 +55,18 @@ def stock_data_json():
         logger.error(f"/api/stock_data error: {e}")
         return jsonify({"error": str(e)}), 500
 
+# ✅ HTML Route (for browser display)
+@bp_stock.route("/stock_data", methods=["GET"])
+def stock_data_view():
+    try:
+        result = db.session.execute(
+            text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20")
+        )
+        rows = result.fetchall()
+        return render_template("stock_data.html", rows=rows)
+    except Exception as e:
+        print("❌ ERROR in /stock_data:", e)
+        return "Internal error occurred: " + str(e), 500
 
 
 # ✅ Route: GET → Trigger ETL form
