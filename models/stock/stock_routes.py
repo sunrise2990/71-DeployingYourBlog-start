@@ -3,6 +3,7 @@ from sqlalchemy import text
 from models import db
 from models.stock.etl import load_stock_data
 import logging
+import traceback
 
 bp_stock = Blueprint("bp_stock", __name__)
 logger = logging.getLogger(__name__)
@@ -23,20 +24,17 @@ def run_etl():
 @bp_stock.route("/stock_data", methods=["GET"])
 def stock_data():
     try:
-        with db.engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT symbol, date, open, high, low, close, adj_close, volume
-                FROM analytics.stock_prices
-                ORDER BY date DESC
-                LIMIT 20
-            """))
-            rows = result.fetchall()
-        return render_template("stock_data.html", rows=rows)
+        result = db.session.execute(
+            text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20")
+        )
+        rows = result.fetchall()
     except Exception as e:
-        # Log error to terminal
-        import traceback
-        traceback.print_exc()
-        return f"<h1>500 Internal Server Error</h1><p>{str(e)}</p>", 500
+        error_msg = f"❌ Failed to fetch stock data: {str(e)}"
+        print(error_msg)
+        traceback.print_exc()  # ← log full traceback to console
+        flash(error_msg)
+        rows = []
+    return render_template("stock_data.html", rows=rows)
 
 
 # ✅ Route: GET → JSON API to debug stock data
