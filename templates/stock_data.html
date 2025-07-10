@@ -1,40 +1,45 @@
 <!-- templates/stock_data.html -->
-{% extends "base.html" %}
-{% block content %}
-  <div class="container mt-5">
-    <h2>📈 Latest 20 Stock Records</h2>
-    {% if rows %}
-      <table class="table table-striped">
-        <thead>
+<!-- templates/stock_data.html -->
+{% include "header.html" %}
+
+<div class="container mt-5">
+  <h2>📈 Latest 20 Stock Records</h2>
+  {% if rows %}
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Date</th>
+          <th>Open</th>
+          <th>High</th>
+          <th>Low</th>
+          <th>Close</th>
+          <th>Adj Close</th>
+          <th>Volume</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
           <tr>
-            <th>Symbol</th>
-            <th>Date</th>
-            <th>Open</th>
-            <th>High</th>
-            <th>Low</th>
-            <th>Close</th>
-            <th>Adj Close</th>
-            <th>Volume</th>
+            <td>{{ row.symbol }}</td>
+            <td>{{ row.date[:10] if row.date else "N/A" }}</td>
+            <td>{{ row.open }}</td>
+            <td>{{ row.high }}</td>
+            <td>{{ row.low }}</td>
+            <td>{{ row.close }}</td>
+            <td>{{ row.adj_close }}</td>
+            <td>{{ row.volume }}</td>
           </tr>
-        </thead>
-        <tbody>
-          {% for row in rows %}
-            <tr>
-              <td>{{ row.symbol }}</td>
-              <td>{{ row.date[:10] if row.date else "N/A" }}</td>
-              <td>{{ row.open }}</td>
-              <td>{{ row.high }}</td>
-              <td>{{ row.low }}</td>
-              <td>{{ row.close }}</td>
-              <td>{{ row.adj_close }}</td>
-              <td>{{ row.volume }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p>No data available.</p>
-    {% endif %}
-  </div>
-{% endblock %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No data available.</p>
+  {% endif %}
+</div>
+
+{% include "footer.html" %}
+
+
+
 
