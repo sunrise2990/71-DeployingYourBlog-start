@@ -70,6 +70,9 @@ class BlogPost(db.Model):
     date: Mapped[str] = mapped_column(String(250), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     img_url: Mapped[str] = mapped_column(String(250), nullable=False)
+
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+
     comments = relationship("Comment", back_populates="parent_post")
 
 # ✅ User table
@@ -197,6 +200,13 @@ def edit_post(post_id):
         db.session.commit()
         return redirect(url_for("show_post", post_id=post.id))
     return render_template("make-post.html", form=edit_form, is_edit=True, current_user=current_user)
+
+
+@app.route("/category/<string:category_name>")
+def show_category(category_name):
+    posts = BlogPost.query.filter_by(category=category_name).all()
+    return render_template("index.html", all_posts=posts)
+
 
 @app.route("/delete/<int:post_id>")
 @admin_only

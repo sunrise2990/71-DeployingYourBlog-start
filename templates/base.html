@@ -35,11 +35,11 @@
                         <a class="nav-link dropdown-toggle" href="#" id="projectsDropdown" role="button" data-bs-toggle="dropdown">
                             Projects
                         </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="#">CAM Recovery</a></li>
-                            <li><a class="dropdown-item" href="#">CapEx Forecast</a></li>
-                            <li><a class="dropdown-item" href="#">NER Simulator</a></li>
-                        </ul>
+                    <ul class="dropdown-menu">
+                      <li><a class="dropdown-item" href="{{ url_for('show_category', category_name='CAM Recovery') }}">CAM Recovery</a></li>
+                      <li><a class="dropdown-item" href="{{ url_for('show_category', category_name='CapEx Forecast') }}">CapEx Forecast</a></li>
+                      <li><a class="dropdown-item" href="{{ url_for('show_category', category_name='NER Simulator') }}">NER Simulator</a></li>
+                    </ul>
                     </li>
 
                     <li class="nav-item dropdown">
