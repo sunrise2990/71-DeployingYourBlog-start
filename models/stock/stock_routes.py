@@ -27,10 +27,15 @@ def stock_data():
             text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20")
         )
         rows = result.fetchall()
-        return render_template("stock_data.html", rows=rows)
+        if not rows:
+            flash("⚠️ No data found in analytics.stock_prices.")
+        else:
+            flash(f"✅ Pulled {len(rows)} records from stock_prices.")
     except Exception as e:
-        logger.error(f"Failed to fetch stock data: {e}")
-        return render_template("stock_data.html", rows=[], error=str(e)), 500
+        print("❌ ERROR in /stock_data:", str(e))  # 👈 Log the error to terminal
+        flash(f"❌ Failed to fetch stock data: {str(e)}")
+        rows = []
+    return render_template("stock_data.html", rows=rows)
 
 # ✅ Route: GET → JSON API to debug stock data
 @bp_stock.route("/api/stock_data", methods=["GET"])
