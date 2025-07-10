@@ -187,7 +187,7 @@ def edit_post(post_id):
     form = CreatePostForm()
     post = db.get_or_404(BlogPost, post_id)
     edit_form = CreatePostForm(title=post.title, subtitle=post.subtitle,
-                               img_url=f"assets/img/{form.img_url.data}", author=post.author,
+                               img_url=post.img_url.replace("assets/img/", ""), author=post.author,
                                body=post.body)
     if edit_form.validate_on_submit():
         post.title = edit_form.title.data
