@@ -23,19 +23,21 @@ def run_etl():
 @bp_stock.route("/stock_data", methods=["GET"])
 def stock_data():
     try:
-        result = db.session.execute(
-            text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20")
-        )
-        rows = result.fetchall()
-        if not rows:
-            flash("⚠️ No data found in analytics.stock_prices.")
-        else:
-            flash(f"✅ Pulled {len(rows)} records from stock_prices.")
+        with db.engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT symbol, date, open, high, low, close, adj_close, volume
+                FROM analytics.stock_prices
+                ORDER BY date DESC
+                LIMIT 20
+            """))
+            rows = result.fetchall()
+        return render_template("stock_data.html", rows=rows)
     except Exception as e:
-        print("❌ ERROR in /stock_data:", str(e))  # 👈 Log the error to terminal
-        flash(f"❌ Failed to fetch stock data: {str(e)}")
-        rows = []
-    return render_template("stock_data.html", rows=rows)
+        # Log error to terminal
+        import traceback
+        traceback.print_exc()
+        return f"<h1>500 Internal Server Error</h1><p>{str(e)}</p>", 500
+
 
 # ✅ Route: GET → JSON API to debug stock data
 @bp_stock.route("/api/stock_data", methods=["GET"])

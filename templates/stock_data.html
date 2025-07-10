@@ -1,49 +1,40 @@
+<!-- templates/stock_data.html -->
 {% extends "base.html" %}
 {% block content %}
-<div class="container mt-4">
-    <h2>📈 Latest Stock Data (Top 20)</h2>
-    {% with messages = get_flashed_messages() %}
-        {% if messages %}
-            <div class="alert alert-info mt-3">
-                {% for msg in messages %}
-                    <p>{{ msg }}</p>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
-
+  <div class="container mt-5">
+    <h2>📈 Latest 20 Stock Records</h2>
     {% if rows %}
-    <table class="table table-bordered table-striped mt-4">
+      <table class="table table-striped">
         <thead>
-            <tr>
-                <th>Date</th>
-                <th>Symbol</th>
-                <th>Open</th>
-                <th>High</th>
-                <th>Low</th>
-                <th>Close</th>
-                <th>Adj Close</th>
-                <th>Volume</th>
-            </tr>
+          <tr>
+            <th>Symbol</th>
+            <th>Date</th>
+            <th>Open</th>
+            <th>High</th>
+            <th>Low</th>
+            <th>Close</th>
+            <th>Adj Close</th>
+            <th>Volume</th>
+          </tr>
         </thead>
         <tbody>
-            {% for row in rows %}
+          {% for row in rows %}
             <tr>
-                <td>{{ row.date.strftime('%Y-%m-%d') }}</td>
-                <td>{{ row.symbol }}</td>
-                <td>{{ row.open }}</td>
-                <td>{{ row.high }}</td>
-                <td>{{ row.low }}</td>
-                <td>{{ row.close }}</td>
-                <td>{{ row.adj_close }}</td>
-                <td>{{ row.volume }}</td>
+              <td>{{ row.symbol }}</td>
+              <td>{{ row.date }}</td>
+              <td>{{ row.open }}</td>
+              <td>{{ row.high }}</td>
+              <td>{{ row.low }}</td>
+              <td>{{ row.close }}</td>
+              <td>{{ row.adj_close }}</td>
+              <td>{{ row.volume }}</td>
             </tr>
-            {% endfor %}
+          {% endfor %}
         </tbody>
-    </table>
+      </table>
     {% else %}
-        <p class="mt-4 text-muted">No data available to display.</p>
+      <p>No data available.</p>
     {% endif %}
-
-</div>
+  </div>
 {% endblock %}
+
