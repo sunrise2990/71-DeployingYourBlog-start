@@ -173,7 +173,7 @@ def add_new_post():
         new_post = BlogPost(title=form.title.data,
                             subtitle=form.subtitle.data,
                             body=form.body.data,
-                            img_url = form.img_url.data.strip(),
+                            img_url = f"assets/img/{form.img_url.data.strip()}",
                             author=current_user,
                             date=date.today().strftime("%B %d, %Y"))
         db.session.add(new_post)
