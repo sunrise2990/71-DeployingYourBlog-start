@@ -22,7 +22,7 @@
         {% for row in rows %}
           <tr>
             <td>{{ row.symbol }}</td>
-            <td>{{ row.date[:10] if row.date else "N/A" }}</td>
+            <td>{{ row.date.strftime('%Y-%m-%d') if row.date else "N/A" }}</td>
             <td>{{ row.open }}</td>
             <td>{{ row.high }}</td>
             <td>{{ row.low }}</td>
