@@ -1,15 +1,13 @@
-from flask import Flask
+# models/__init__.py
+from sqlalchemy import create_engine
 from flask_sqlalchemy import SQLAlchemy
+import os
+from dotenv import load_dotenv
 
-db = SQLAlchemy()
+load_dotenv()
+DATABASE_URL = os.getenv("DB_URI")
 
-def create_app():
-    app = Flask(__name__)
-    app.config.from_pyfile('.env.local')
+# ✅ This should be declared here
+engine = create_engine(DATABASE_URL)
 
-    db.init_app(app)
-
-    from models.stock.stock_routes import bp_stock
-    app.register_blueprint(bp_stock)
-
-    return app
+db = SQLAlchemy()  # ✅ Add this

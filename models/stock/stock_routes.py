@@ -1,6 +1,6 @@
 from flask import Blueprint, request, redirect, url_for, flash, render_template, jsonify
 from sqlalchemy import text
-from models import db
+from models import db, engine  # ✅ FIXED: added engine import
 from models.stock.etl import load_stock_data
 import logging
 import traceback
