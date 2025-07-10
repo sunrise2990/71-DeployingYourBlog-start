@@ -1,12 +1,13 @@
-from flask import Blueprint, request, redirect, url_for, flash, render_template
+from flask import Blueprint, request, redirect, url_for, flash, render_template, jsonify
 from sqlalchemy import text
 from models import db
 from models.stock.etl import load_stock_data
+import logging
 
-# ✅ Create Blueprint
 bp_stock = Blueprint("bp_stock", __name__)
+logger = logging.getLogger(__name__)
 
-# ✅ Route: POST → Manually run ETL from form
+# ✅ Route: POST → Trigger ETL via form
 @bp_stock.route("/run_etl", methods=["POST"])
 def run_etl():
     symbol = request.form.get("symbol", "TSLA").upper()
@@ -14,10 +15,11 @@ def run_etl():
         load_stock_data(symbol)
         flash(f"✅ Successfully loaded {symbol}")
     except Exception as e:
+        logger.error(f"ETL failed for {symbol}: {e}")
         flash(f"❌ ETL failed: {str(e)}")
     return redirect(url_for("bp_stock.trigger_etl_form"))
 
-# ✅ Route: GET → Show latest 20 records
+# ✅ Route: GET → Display 20 most recent rows
 @bp_stock.route("/stock_data", methods=["GET"])
 def stock_data():
     try:
@@ -25,17 +27,31 @@ def stock_data():
             text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20")
         )
         rows = result.fetchall()
+        return render_template("stock_data.html", rows=rows)
     except Exception as e:
-        flash(f"❌ Failed to fetch stock data: {str(e)}")
-        rows = []
-    return render_template("stock_data.html", rows=rows)
+        logger.error(f"Failed to fetch stock data: {e}")
+        return render_template("stock_data.html", rows=[], error=str(e)), 500
 
-# ✅ Route: GET → Show ETL trigger form
+# ✅ Route: GET → JSON API to debug stock data
+@bp_stock.route("/api/stock_data", methods=["GET"])
+def stock_data_json():
+    try:
+        result = db.session.execute(
+            text("SELECT * FROM analytics.stock_prices ORDER BY date DESC LIMIT 20")
+        )
+        rows = result.fetchall()
+        data = [dict(row._mapping) for row in rows]
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"/api/stock_data error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ✅ Route: GET → Trigger ETL form
 @bp_stock.route("/trigger_etl", methods=["GET"])
 def trigger_etl_form():
     return render_template("trigger_etl.html")
 
-# ✅ Route: GET → Show basic 30-day line chart
+# ✅ Route: GET → Line chart for latest 30 closes
 @bp_stock.route("/stocks/<symbol>", methods=["GET"])
 def stock_chart(symbol):
     try:
@@ -48,7 +64,8 @@ def stock_chart(symbol):
         rows = result.fetchall()
         dates = [row.date.strftime("%Y-%m-%d") for row in rows]
         closes = [row.close for row in rows]
+        return render_template("stock_chart.html", symbol=symbol.upper(), dates=dates, closes=closes)
     except Exception as e:
+        logger.error(f"Chart data fetch failed for {symbol}: {e}")
         flash(f"❌ Failed to fetch chart data for {symbol}: {str(e)}")
-        dates, closes = [], []
-    return render_template("stock_chart.html", symbol=symbol.upper(), dates=dates, closes=closes)
+        return render_template("stock_chart.html", symbol=symbol.upper(), dates=[], closes=[]), 500
