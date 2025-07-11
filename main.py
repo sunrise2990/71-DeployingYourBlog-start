@@ -1,4 +1,5 @@
 # main.py
+from datetime import datetime
 from datetime import date
 from flask import Flask, abort, render_template, redirect, url_for, flash, request
 from flask_bootstrap import Bootstrap5
@@ -62,6 +63,7 @@ gravatar = Gravatar(app,
 # ✅ Base class for models
 class Base(DeclarativeBase):
     pass
+
 
 # ✅ BlogPost table
 class BlogPost(db.Model):
@@ -152,19 +154,20 @@ def logout():
     return redirect(url_for('get_all_posts'))
 
 
-@app.route('/')
+@app.route("/")
 def get_all_posts():
-    all_posts = BlogPost.query.order_by(BlogPost.date.desc()).all()
+    posts = BlogPost.query.all()
 
-    # Get category counts for the sidebar
-    category_counts = db.session.query(BlogPost.category, db.func.count(BlogPost.id)) \
-                                .group_by(BlogPost.category).all()
-    categories = [(cat, count) for cat, count in category_counts]
-
-    return render_template("index.html",
-                           all_posts=all_posts,
-                           categories=categories,
-                           selected_category=None)
+    # ✅ Match your WTForm categories exactly
+    categories = [
+        "Python",
+        "NER Models",
+        "Real Estate",
+        "Retirement Plan",
+        "ML Projects",
+        "Other"
+    ]
+    return render_template("index.html", all_posts=posts, categories=categories)
 
 
 @app.route("/post/<int:post_id>", methods=["GET", "POST"])
