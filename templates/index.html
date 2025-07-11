@@ -68,7 +68,7 @@
 
           {% for category, count in categories %}
             <li>
-              <a href="{{ url_for('category_posts', category_name=category) }}"
+<!--              <a href="{{ url_for('category_posts', category_name=category) }}"-->
                  class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
                 {{ category }} ({{ count }})
               </a>
