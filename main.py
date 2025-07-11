@@ -14,8 +14,6 @@ from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
 import os
 import logging
 from dotenv import load_dotenv
-from flask.cli import with_appcontext
-import click
 
 # 🔧 Initialize logging + environment
 logging.basicConfig(level=logging.DEBUG)
@@ -35,6 +33,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI")
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 db.init_app(app)
 migrate = Migrate(app, db)
+
+
 
 # ✅ Extensions
 ckeditor = CKEditor(app)
@@ -224,11 +224,6 @@ def contact():
 def test_db():
     return str(db.engine.url)
 
-# No-op: Ensures Migrate commands register
-@click.command()
-@with_appcontext
-def noop():
-    pass
 
 # 🔥 Local dev only — EC2 uses Gunicorn
 if __name__ == "__main__":
