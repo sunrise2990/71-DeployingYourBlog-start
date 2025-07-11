@@ -151,11 +151,21 @@ def logout():
     logout_user()
     return redirect(url_for('get_all_posts'))
 
+
 @app.route('/')
 def get_all_posts():
-    result = db.session.execute(db.select(BlogPost))
-    posts = result.scalars().all()
-    return render_template("index.html", all_posts=posts, current_user=current_user)
+    all_posts = BlogPost.query.order_by(BlogPost.date.desc()).all()
+
+    # Get category counts for the sidebar
+    category_counts = db.session.query(BlogPost.category, db.func.count(BlogPost.id)) \
+                                .group_by(BlogPost.category).all()
+    categories = [(cat, count) for cat, count in category_counts]
+
+    return render_template("index.html",
+                           all_posts=all_posts,
+                           categories=categories,
+                           selected_category=None)
+
 
 @app.route("/post/<int:post_id>", methods=["GET", "POST"])
 def show_post(post_id):
@@ -192,7 +202,7 @@ def add_new_post():
 def edit_post(post_id):
     form = CreatePostForm()
     post = db.get_or_404(BlogPost, post_id)
-    edit_form = CreatePostForm(title=post.title, subtitle=post.subtitle,
+    edit_form = CreatePostForm(title=post.title, subtitle=post.subtitle, category=post.category,  # ✅ Add this line
                                img_url = post.img_url.replace("assets/img/", "") if post.img_url else "", author=post.author,
                                body=post.body)
     if edit_form.validate_on_submit():
@@ -200,6 +210,7 @@ def edit_post(post_id):
         post.subtitle = edit_form.subtitle.data
         post.img_url = f"assets/img/{edit_form.img_url.data}"
         post.body = edit_form.body.data
+        post.category = edit_form.category.data  # ✅ Save new category
         db.session.commit()
         return redirect(url_for("show_post", post_id=post.id))
     return render_template("make-post.html", form=edit_form, is_edit=True, current_user=current_user)
@@ -223,6 +234,25 @@ def contact():
 @app.route("/test_db")
 def test_db():
     return str(db.engine.url)
+
+
+@app.route('/category/<string:category_name>')
+def category_posts(category_name):
+    # Filter posts by category
+    filtered_posts = BlogPost.query.filter_by(category=category_name).order_by(BlogPost.date.desc()).all()
+
+    # Count all categories again (for sidebar)
+    category_counts = db.session.query(BlogPost.category, db.func.count(BlogPost.id))\
+                                .group_by(BlogPost.category).all()
+    categories = [(cat, count) for cat, count in category_counts]
+
+    return render_template("index.html",
+                           all_posts=filtered_posts,
+                           categories=categories,
+                           selected_category=category_name)
+
+
+
 
 
 # 🔥 Local dev only — EC2 uses Gunicorn

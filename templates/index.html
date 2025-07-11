@@ -21,21 +21,27 @@
   <div class="row">
     <!-- Blog Post List -->
     <div class="col-md-8">
-      {% for post in all_posts %}
-      <div class="card mb-4">
-        <img src="{{ url_for('static', filename='assets/img/' + post.img_url) }}" class="card-img-top" alt="Post image">
-        <div class="card-body">
-          <h3 class="card-title">{{ post.title }}</h3>
-          <h5 class="text-muted">{{ post.subtitle }}</h5>
-          <p class="card-text">{{ post.body[:200]|safe }}...</p>
-          <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+      {% if all_posts %}
+        {% for post in all_posts %}
+        <div class="card mb-4">
+          <img src="{{ url_for('static', filename='assets/img/' + post.img_url) }}" class="card-img-top" alt="Post image">
+          <div class="card-body">
+            <h3 class="card-title">{{ post.title }}</h3>
+            <h5 class="text-muted">{{ post.subtitle }}</h5>
+            <p class="card-text">{{ post.body[:200]|safe }}...</p>
+            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+          </div>
+          <div class="card-footer text-muted">
+            📅 {{ post.date }} • by {{ post.author.name }}
+            {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
+          </div>
         </div>
-        <div class="card-footer text-muted">
-          📅 {{ post.date }} • by {{ post.author.name }}
-          {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
+        {% endfor %}
+      {% else %}
+        <div class="alert alert-warning">
+          No blog posts found for <strong>{{ selected_category }}</strong>.
         </div>
-      </div>
-      {% endfor %}
+      {% endif %}
 
       <!-- Pagination -->
       <nav aria-label="Blog page navigation">
@@ -53,11 +59,17 @@
         <div class="card-body">
           <h5 class="card-title">📚 Categories</h5>
           <ul class="list-unstyled">
-            <li><a href="#">All Posts ({{ all_posts|length }})</a></li>
-            <li><a href="#">Python (5)</a></li>
-            <li><a href="#">NER Models (3)</a></li>
-            <li><a href="#">Real Estate (2)</a></li>
-            <li><a href="#">ML Projects (4)</a></li>
+            <li>
+              <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
+            </li>
+            {% for category, count in categories %}
+            <li>
+              <a href="{{ url_for('category_posts', category_name=category) }}"
+                 class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
+                {{ category }} ({{ count }})
+              </a>
+            </li>
+            {% endfor %}
           </ul>
         </div>
       </div>
@@ -74,4 +86,6 @@
 </div>
 
 {% endblock %}
+
+
 
