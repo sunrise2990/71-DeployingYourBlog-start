@@ -66,15 +66,14 @@
               <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
             </li>
 
-            {% for category in categories %}
-              <li>
-                <a href="{{ url_for('category_posts', category_name=category) }}"
-                   class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
-                  {{ category }}
-                  {% if count is defined %} ({{ count }}) {% endif %}
-                </a>
-              </li>
-            {% endfor %}
+          {% for category, count in categories %}
+            <li>
+              <a href="{{ url_for('category_posts', category_name=category) }}"
+                 class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
+                {{ category }} ({{ count }})
+              </a>
+            </li>
+          {% endfor %}
 
           </ul>
         </div>
