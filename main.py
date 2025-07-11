@@ -152,7 +152,7 @@ def logout():
 def get_all_posts():
     posts = db.session.query(BlogPost).order_by(BlogPost.date.desc()).all()
 
-    # Replace None with 'Uncategorized' to prevent group_by from failing
+    # ✅ Replace NULL with 'Uncategorized' to prevent group_by crash
     category_counts = db.session.query(
         func.coalesce(BlogPost.category, "Uncategorized"),
         func.count(BlogPost.id)
