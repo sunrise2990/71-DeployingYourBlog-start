@@ -233,6 +233,24 @@ def contact():
 def test_db():
     return str(db.engine.url)
 
+@app.route("/category/<string:category_name>")
+def category_posts(category_name):
+    posts = db.session.query(BlogPost).filter(BlogPost.category == category_name).order_by(BlogPost.date.desc()).all()
+
+    category_counts = db.session.query(
+        func.coalesce(BlogPost.category, "Uncategorized"),
+        func.count(BlogPost.id)
+    ).group_by(func.coalesce(BlogPost.category, "Uncategorized")).all()
+
+    return render_template(
+        "index.html",
+        all_posts=posts,
+        categories=category_counts,
+        selected_category=category_name
+    )
+
+
+
 # 🔥 Local dev only — EC2 uses Gunicorn
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
