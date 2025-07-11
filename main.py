@@ -67,6 +67,7 @@ class BlogPost(db.Model):
     author = relationship("User", back_populates="posts")
     title: Mapped[str] = mapped_column(String(250), unique=True, nullable=False)
     subtitle: Mapped[str] = mapped_column(String(250), nullable=False)
+    category = db.Column(db.String(100), nullable=False)  # ✅ New
     date: Mapped[str] = mapped_column(String(250), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     img_url: Mapped[str] = mapped_column(String(250), nullable=False)
@@ -172,6 +173,7 @@ def add_new_post():
     if form.validate_on_submit():
         new_post = BlogPost(title=form.title.data,
                             subtitle=form.subtitle.data,
+                            category=form.category.data,  # ✅ Add this line
                             body=form.body.data,
                             img_url = f"assets/img/{form.img_url.data.strip()}",
                             author=current_user,
