@@ -1,6 +1,5 @@
 # main.py
 from datetime import date
-from flask_migrate import Migrate
 from flask import Flask, abort, render_template, redirect, url_for, flash, request
 from flask_bootstrap import Bootstrap5
 from flask_ckeditor import CKEditor
@@ -32,7 +31,6 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI")
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 db.init_app(app)
-migrate = Migrate(app, db)
 
 # ✅ Extensions
 ckeditor = CKEditor(app)
@@ -72,9 +70,6 @@ class BlogPost(db.Model):
     date: Mapped[str] = mapped_column(String(250), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     img_url: Mapped[str] = mapped_column(String(250), nullable=False)
-
-    category: Mapped[str] = mapped_column(String(50), nullable=False)
-
     comments = relationship("Comment", back_populates="parent_post")
 
 # ✅ User table
@@ -203,13 +198,6 @@ def edit_post(post_id):
         return redirect(url_for("show_post", post_id=post.id))
     return render_template("make-post.html", form=edit_form, is_edit=True, current_user=current_user)
 
-
-@app.route("/category/<string:category_name>")
-def show_category(category_name):
-    posts = BlogPost.query.filter_by(category=category_name).all()
-    return render_template("index.html", all_posts=posts)
-
-
 @app.route("/delete/<int:post_id>")
 @admin_only
 def delete_post(post_id):
@@ -233,4 +221,3 @@ def test_db():
 # 🔥 Local dev only — EC2 uses Gunicorn
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
-
