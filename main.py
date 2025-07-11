@@ -151,14 +151,20 @@ def logout():
 @app.route("/")
 def get_all_posts():
     posts = db.session.query(BlogPost).order_by(BlogPost.date.desc()).all()
-    category_counts = db.session.query(
-        BlogPost.category, func.count(BlogPost.id)
-    ).group_by(BlogPost.category).all()
 
-    return render_template("index.html",
-                           all_posts=posts,
-                           categories=category_counts,
-                           selected_category="All")
+    # Replace None with 'Uncategorized' to prevent group_by from failing
+    category_counts = db.session.query(
+        func.coalesce(BlogPost.category, "Uncategorized"),
+        func.count(BlogPost.id)
+    ).group_by(func.coalesce(BlogPost.category, "Uncategorized")).all()
+
+    return render_template(
+        "index.html",
+        all_posts=posts,
+        categories=category_counts,
+        selected_category="All"
+    )
+
 
 @app.route("/post/<int:post_id>", methods=["GET", "POST"])
 def show_post(post_id):
