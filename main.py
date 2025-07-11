@@ -8,7 +8,7 @@ from flask_ckeditor import CKEditor
 from flask_gravatar import Gravatar
 from flask_login import UserMixin, login_user, LoginManager, current_user, logout_user
 from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import Integer, String, Text, func
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
@@ -25,8 +25,6 @@ from models import db
 from models.stock import etl
 from models.stock.etl import load_stock_data
 from models.stock.stock_routes import bp_stock
-from flask import Flask
-from models.stock import stock_routes  # import module only
 
 # ✅ App configuration
 app = Flask(__name__)
@@ -34,8 +32,6 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI")
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 db.init_app(app)
 migrate = Migrate(app, db)
-
-
 
 # ✅ Extensions
 ckeditor = CKEditor(app)
@@ -64,7 +60,6 @@ gravatar = Gravatar(app,
 class Base(DeclarativeBase):
     pass
 
-
 # ✅ BlogPost table
 class BlogPost(db.Model):
     __tablename__ = "blog_posts"
@@ -73,7 +68,7 @@ class BlogPost(db.Model):
     author = relationship("User", back_populates="posts")
     title: Mapped[str] = mapped_column(String(250), unique=True, nullable=False)
     subtitle: Mapped[str] = mapped_column(String(250), nullable=False)
-    category = db.Column(db.String(100), nullable=True)  # <-- Temporarily allow NULL
+    category = db.Column(db.String(100), nullable=True)
     date: Mapped[str] = mapped_column(String(250), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     img_url: Mapped[str] = mapped_column(String(250), nullable=False)
@@ -153,22 +148,17 @@ def logout():
     logout_user()
     return redirect(url_for('get_all_posts'))
 
-
 @app.route("/")
 def get_all_posts():
-    posts = BlogPost.query.all()
+    posts = db.session.query(BlogPost).order_by(BlogPost.date.desc()).all()
+    category_counts = db.session.query(
+        BlogPost.category, func.count(BlogPost.id)
+    ).group_by(BlogPost.category).all()
 
-    # ✅ Match your WTForm categories exactly
-    categories = [
-        "Python",
-        "NER Models",
-        "Real Estate",
-        "Retirement Plan",
-        "ML Projects",
-        "Other"
-    ]
-    return render_template("index.html", all_posts=posts, categories=categories)
-
+    return render_template("index.html",
+                           all_posts=posts,
+                           categories=category_counts,
+                           selected_category="All")
 
 @app.route("/post/<int:post_id>", methods=["GET", "POST"])
 def show_post(post_id):
@@ -190,9 +180,9 @@ def add_new_post():
     if form.validate_on_submit():
         new_post = BlogPost(title=form.title.data,
                             subtitle=form.subtitle.data,
-                            category=form.category.data,  # ✅ Add this line
+                            category=form.category.data,
                             body=form.body.data,
-                            img_url = f"assets/img/{form.img_url.data.strip()}",
+                            img_url=f"assets/img/{form.img_url.data.strip()}",
                             author=current_user,
                             date=date.today().strftime("%B %d, %Y"))
         db.session.add(new_post)
@@ -203,17 +193,16 @@ def add_new_post():
 @app.route("/edit-post/<int:post_id>", methods=["GET", "POST"])
 @admin_only
 def edit_post(post_id):
-    form = CreatePostForm()
     post = db.get_or_404(BlogPost, post_id)
-    edit_form = CreatePostForm(title=post.title, subtitle=post.subtitle, category=post.category,  # ✅ Add this line
-                               img_url = post.img_url.replace("assets/img/", "") if post.img_url else "", author=post.author,
-                               body=post.body)
+    edit_form = CreatePostForm(title=post.title, subtitle=post.subtitle, category=post.category,
+                               img_url=post.img_url.replace("assets/img/", "") if post.img_url else "",
+                               author=post.author, body=post.body)
     if edit_form.validate_on_submit():
         post.title = edit_form.title.data
         post.subtitle = edit_form.subtitle.data
         post.img_url = f"assets/img/{edit_form.img_url.data}"
         post.body = edit_form.body.data
-        post.category = edit_form.category.data  # ✅ Save new category
+        post.category = edit_form.category.data
         db.session.commit()
         return redirect(url_for("show_post", post_id=post.id))
     return render_template("make-post.html", form=edit_form, is_edit=True, current_user=current_user)
@@ -238,31 +227,7 @@ def contact():
 def test_db():
     return str(db.engine.url)
 
-
-from flask import render_template
-from sqlalchemy import func
-from models import Post  # or however you import your models
-from flask_login import current_user
-
-@app.route('/')
-def get_all_posts():
-    # ✅ Pull all posts, most recent first
-    posts = db.session.query(Post).order_by(Post.date.desc()).all()
-
-    # ✅ Get list of (category, post_count)
-    category_counts = db.session.query(
-        Post.category, func.count(Post.id)
-    ).group_by(Post.category).all()
-
-    return render_template("index.html",
-                           all_posts=posts,
-                           categories=category_counts,
-                           selected_category="All")
-
-
-
-
-
 # 🔥 Local dev only — EC2 uses Gunicorn
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
+
