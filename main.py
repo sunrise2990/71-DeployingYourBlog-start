@@ -250,7 +250,6 @@ def category_posts(category_name):
     )
 
 
-
 # 🔥 Local dev only — EC2 uses Gunicorn
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
