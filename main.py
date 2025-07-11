@@ -239,20 +239,25 @@ def test_db():
     return str(db.engine.url)
 
 
-@app.route('/category/<string:category_name>')
-def category_posts(category_name):
-    # Filter posts by category
-    filtered_posts = BlogPost.query.filter_by(category=category_name).order_by(BlogPost.date.desc()).all()
+from flask import render_template
+from sqlalchemy import func
+from models import Post  # or however you import your models
+from flask_login import current_user
 
-    # Count all categories again (for sidebar)
-    category_counts = db.session.query(BlogPost.category, db.func.count(BlogPost.id))\
-                                .group_by(BlogPost.category).all()
-    categories = [(cat, count) for cat, count in category_counts]
+@app.route('/')
+def get_all_posts():
+    # ✅ Pull all posts, most recent first
+    posts = db.session.query(Post).order_by(Post.date.desc()).all()
+
+    # ✅ Get list of (category, post_count)
+    category_counts = db.session.query(
+        Post.category, func.count(Post.id)
+    ).group_by(Post.category).all()
 
     return render_template("index.html",
-                           all_posts=filtered_posts,
-                           categories=categories,
-                           selected_category=category_name)
+                           all_posts=posts,
+                           categories=category_counts,
+                           selected_category="All")
 
 
 
