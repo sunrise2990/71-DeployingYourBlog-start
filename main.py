@@ -71,7 +71,7 @@ class BlogPost(db.Model):
     author = relationship("User", back_populates="posts")
     title: Mapped[str] = mapped_column(String(250), unique=True, nullable=False)
     subtitle: Mapped[str] = mapped_column(String(250), nullable=False)
-    category = db.Column(db.String(100), nullable=False)  # ✅ New
+    category = db.Column(db.String(100), nullable=True)  # <-- Temporarily allow NULL
     date: Mapped[str] = mapped_column(String(250), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     img_url: Mapped[str] = mapped_column(String(250), nullable=False)
