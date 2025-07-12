@@ -1,50 +1,99 @@
+<!-- templates/index.html -->
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Hero and Sidebar Section -->
-<div class="hero-with-sidebar container">
-  <!-- Hero + Blog Posts -->
-  <div class="hero-left">
-    <!-- Hero Banner -->
-    <header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
-      <div class="px-4 px-lg-5">
+<!-- Hero Banner -->
+<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
+  <div class="container position-relative px-4 px-lg-5">
+    <div class="row gx-4 gx-lg-5 justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
         <div class="site-heading">
           <h1>Kevin's Blog</h1>
           <span class="subheading">A collection of analytics, coding, and more 💡</span>
         </div>
       </div>
-    </header>
-
-    <!-- Blog Posts -->
-    {% for post in all_posts %}
-    <div class="card mb-4">
-      {% if post.img_url %}
-        <img class="card-img-top" src="{{ post.img_url }}" alt="...">
-      {% endif %}
-      <div class="card-body">
-        <h5 class="card-title">{{ post.title }}</h5>
-        <p class="card-text">{{ post.subtitle }}</p>
-        <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
-      </div>
-      <div class="card-footer text-muted">
-        {{ post.date }} by {{ post.author.name }}
-      </div>
-    </div>
-    {% endfor %}
-
-    <!-- Pagination -->
-    <div class="d-flex justify-content-between mb-4">
-      <a class="btn btn-secondary" href="#">Previous</a>
-      <a class="btn btn-secondary" href="#">More</a>
     </div>
   </div>
+</header>
 
-  <!-- Sidebar -->
-  <div class="hero-right blog-sidebar">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="card-title">Sidebar Content</h6>
-        <p>Categories and blog info go here.</p>
+<!-- Main Content -->
+<div class="container px-4 px-lg-5 mt-5">
+  <div class="row">
+    <!-- Blog Post Cards -->
+    <div class="col-md-8">
+      {% if all_posts %}
+        {% for post in all_posts %}
+        <div class="card mb-4">
+          {% if post.img_url.startswith('http') %}
+            <img src="{{ post.img_url }}"
+                 class="card-img-top"
+                 alt="{{ post.title }}"
+                 loading="lazy">
+          {% else %}
+            <img src="{{ url_for('static', filename=post.img_url) }}"
+                 class="card-img-top"
+                 alt="{{ post.title }}"
+                 loading="lazy">
+          {% endif %}
+          <div class="card-body">
+            <h3 class="card-title">{{ post.title }}</h3>
+            <h5 class="text-muted">{{ post.subtitle }}</h5>
+            <p class="card-text">{{ post.body[:200]|safe }}...</p>
+            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+          </div>
+          <div class="card-footer text-muted">
+            📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
+            {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="alert alert-warning">
+          No blog posts found for <strong>{{ selected_category }}</strong>.
+        </div>
+      {% endif %}
+
+      <!-- Pagination Placeholder -->
+      <nav aria-label="Blog page navigation">
+        <ul class="pagination justify-content-center">
+          <li class="page-item"><a class="page-link" href="#">1</a></li>
+          <li class="page-item"><a class="page-link" href="#">2</a></li>
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        </ul>
+      </nav>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-md-4">
+      <!-- Categories -->
+      <div class="card mb-4">
+        <div class="card-body">
+          <h5 class="card-title">📚 Categories</h5>
+          <ul class="list-unstyled">
+            <li>
+              <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
+            </li>
+            {% for category, count in categories %}
+            <li>
+              <a href="{{ url_for('category_posts', category_name=category) }}"
+                 class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
+                {{ category }} ({{ count }})
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      <!-- Author Profile -->
+      <div class="card mb-4 text-center">
+        <div class="card-body">
+          <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
+               class="img-fluid rounded-circle mb-2"
+               width="80">
+          <h6 class="mb-0">Kevin Cho</h6>
+          <small class="text-muted">Real Estate Data Scientist</small>
+        </div>
       </div>
     </div>
   </div>
