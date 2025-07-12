@@ -1,0 +1,64 @@
+[2025-07-12 19:32:42 +0000] [156790] [INFO] Starting gunicorn 21.2.0
+[2025-07-12 19:32:42 +0000] [156790] [INFO] Listening at: http://127.0.0.1:8000 (156790)
+[2025-07-12 19:32:42 +0000] [156790] [INFO] Using worker: sync
+[2025-07-12 19:32:42 +0000] [156791] [INFO] Booting worker with pid: 156791
+[2025-07-12 19:33:36 +0000] [156796] [INFO] Starting gunicorn 21.2.0
+[2025-07-12 19:33:36 +0000] [156796] [ERROR] Connection in use: ('127.0.0.1', 8000)
+[2025-07-12 19:33:36 +0000] [156796] [ERROR] Retrying in 1 second.
+[2025-07-12 19:33:37 +0000] [156796] [ERROR] Connection in use: ('127.0.0.1', 8000)
+[2025-07-12 19:33:37 +0000] [156796] [ERROR] Retrying in 1 second.
+[2025-07-12 19:33:38 +0000] [156796] [ERROR] Connection in use: ('127.0.0.1', 8000)
+[2025-07-12 19:33:38 +0000] [156796] [ERROR] Retrying in 1 second.
+[2025-07-12 19:33:39 +0000] [156796] [ERROR] Connection in use: ('127.0.0.1', 8000)
+[2025-07-12 19:33:39 +0000] [156796] [ERROR] Retrying in 1 second.
+[2025-07-12 19:33:40 +0000] [156796] [ERROR] Connection in use: ('127.0.0.1', 8000)
+[2025-07-12 19:33:40 +0000] [156796] [ERROR] Retrying in 1 second.
+[2025-07-12 19:33:41 +0000] [156796] [ERROR] Can't connect to ('127.0.0.1', 8000)
+ERROR:main:Exception on / [GET]
+Traceback (most recent call last):
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/flask/app.py", line 2190, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/flask/app.py", line 1486, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/flask/app.py", line 1484, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/flask/app.py", line 1469, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/main.py", line 161, in get_all_posts
+    return render_template(
+           ^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/flask/templating.py", line 151, in render_template
+    return _render(app, template, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/flask/templating.py", line 132, in _render
+    rv = template.render(context)
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/jinja2/environment.py", line 1295, in render
+    self.environment.handle_exception()
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/jinja2/environment.py", line 942, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "/home/ubuntu/71-DeployingYourBlog-start/templates/index.html", line 1, in top-level template code
+    {% extends "base.html" %}
+  File "/home/ubuntu/71-DeployingYourBlog-start/templates/base.html", line 97, in top-level template code
+    {% block content %}{% endblock %}
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/templates/index.html", line 35, in block 'content'
+    <p><a href="{{ url_for('category_posts', category_id=category.id) }}">{{ category.name }} ({{ category.posts|length }})</a></p>
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/flask/app.py", line 1697, in url_for
+    return self.handle_url_build_error(error, endpoint, values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/flask/app.py", line 1686, in url_for
+    rv = url_adapter.build(  # type: ignore[union-attr]
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/71-DeployingYourBlog-start/venv/lib/python3.12/site-packages/werkzeug/routing/map.py", line 919, in build
+    raise BuildError(endpoint, values, method, self)
+werkzeug.routing.exceptions.BuildError: Could not build url for endpoint 'category_posts' with values ['category_id']. Did you forget to specify values ['category_name']?
+[2025-07-12 19:39:05 +0000] [156791] [INFO] Worker exiting (pid: 156791)
+[2025-07-12 19:39:05 +0000] [156790] [INFO] Handling signal: term
+[2025-07-12 19:39:05 +0000] [156790] [ERROR] Worker (pid:156791) was sent SIGTERM!
+[2025-07-12 19:39:05 +0000] [156790] [INFO] Shutting down: Master
