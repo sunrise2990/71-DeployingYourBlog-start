@@ -8,19 +8,19 @@
       <div class="col-md-10 col-lg-8 col-xl-7">
         <div class="site-heading">
           <h1>Kevin's Blog</h1>
-          <span class="subheading">A collection of random musings ✴️ ✴️</span>
+          <span class="subheading">A collection of random musings ✩✩</span>
         </div>
       </div>
     </div>
   </div>
 </header>
 
-<!-- Main Content + Sidebar -->
+<!-- Blog Posts + Sidebar in Flexbox -->
 <div class="container mt-4">
-  <div class="row"> <!-- 💡 THIS is the key fix -->
+  <div class="d-flex flex-column flex-lg-row gap-4">
 
     <!-- LEFT: Blog Posts -->
-    <div class="col-lg-8">
+    <div class="flex-fill">
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
@@ -47,7 +47,7 @@
           {% endif %}
 
           <div class="card-footer text-muted">
-            📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
+            🗓️ {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
             {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
           </div>
         </div>
@@ -69,7 +69,7 @@
     </div>
 
     <!-- RIGHT: Sidebar -->
-    <div class="col-lg-4">
+    <div style="width: 300px; flex-shrink: 0;">
       <!-- Categories -->
       <div class="card mb-4">
         <div class="card-body">
@@ -105,7 +105,7 @@
       </div>
     </div>
 
-  </div> <!-- End .row -->
-</div> <!-- End .container -->
+  </div> <!-- End Flex Row -->
+</div> <!-- End Container -->
 
 {% endblock %}
