@@ -183,18 +183,33 @@ def show_post(post_id):
 @admin_only
 def add_new_post():
     form = CreatePostForm()
+    img_input = (form.img_url.data or "").strip()
+    clean_input = img_input.lower().lstrip()
+
+    if clean_input.startswith("http"):
+        img_url = img_input.strip()
+    elif "http" in clean_input:
+        http_index = clean_input.find("http")
+        img_url = img_input[http_index:].strip()
+    else:
+        img_url = f"assets/img/{img_input.lstrip('/')}"
+
     if form.validate_on_submit():
-        new_post = BlogPost(title=form.title.data,
-                            subtitle=form.subtitle.data,
-                            category=form.category.data,
-                            body=form.body.data,
-                            img_url=f"assets/img/{form.img_url.data.strip()}",
-                            author=current_user,
-                            date=date.today().strftime("%B %d, %Y"))
+        new_post = BlogPost(
+            title=form.title.data,
+            subtitle=form.subtitle.data,
+            category=form.category.data,
+            body=form.body.data,
+            img_url=img_url,
+            author=current_user,
+            date=date.today().strftime("%B %d, %Y")
+        )
         db.session.add(new_post)
         db.session.commit()
         return redirect(url_for("get_all_posts"))
+
     return render_template("make-post.html", form=form, current_user=current_user, is_edit=False)
+
 
 @app.route("/edit-post/<int:post_id>", methods=["GET", "POST"])
 @admin_only

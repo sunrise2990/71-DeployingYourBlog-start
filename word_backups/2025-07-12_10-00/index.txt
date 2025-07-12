@@ -24,10 +24,19 @@
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
-          <<img src="{{ url_for('static', filename=post.img_url) }}">
-             class="card-img-top"
-             alt="{{ post.title }}"
-             loading="lazy">
+
+          {% if post.img_url.startswith('http') %}
+            <img src="{{ post.img_url }}"
+                 class="card-img-top"
+                 alt="{{ post.title }}"
+                 loading="lazy">
+          {% else %}
+            <img src="{{ url_for('static', filename=post.img_url) }}"
+                 class="card-img-top"
+                 alt="{{ post.title }}"
+                 loading="lazy">
+          {% endif %}
+
           <div class="card-body">
             <h3 class="card-title">{{ post.title }}</h3>
             <h5 class="text-muted">{{ post.subtitle }}</h5>
@@ -66,22 +75,23 @@
               <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
             </li>
 
-          {% for category, count in categories %}
+            {% for category, count in categories %}
             <li>
               <a href="{{ url_for('category_posts', category_name=category) }}"
                  class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
                 {{ category }} ({{ count }})
               </a>
             </li>
-          {% endfor %}
-
+            {% endfor %}
           </ul>
         </div>
       </div>
 
       <div class="card mb-4">
         <div class="card-body text-center">
-          <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}" class="img-fluid rounded-circle mb-2" width="80">
+          <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
+               class="img-fluid rounded-circle mb-2"
+               width="80">
           <h6 class="mb-0">Kevin Cho</h6>
           <small class="text-muted">Real Estate Data Scientist</small>
         </div>
@@ -91,6 +101,5 @@
 </div>
 
 {% endblock %}
-
 
 
