@@ -184,7 +184,6 @@ def show_post(post_id):
 def add_new_post():
     form = CreatePostForm()
     img_input = form.img_url.data.strip()
-
     clean_input = img_input.lower().lstrip()
 
     if clean_input.startswith("http"):
