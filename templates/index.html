@@ -16,25 +16,29 @@
   </div>
 </header>
 
-<!-- Main Content with Sidebar -->
-<div class="container px-4 px-lg-5 mt-5"><!-- Added container here -->
+<!-- Main Layout: Bootstrap Grid -->
+<div class="container mt-5">
   <div class="row">
-    <!-- Blog Post List -->
+
+    <!-- Main Blog Posts -->
     <div class="col-md-8">
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
+
           {% if post.img_url.startswith('http') %}
             <img src="{{ post.img_url }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
           {% else %}
             <img src="{{ url_for('static', filename=post.img_url) }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
           {% endif %}
+
           <div class="card-body">
             <h3 class="card-title">{{ post.title }}</h3>
             <h5 class="text-muted">{{ post.subtitle }}</h5>
             <p class="card-text">{{ post.body[:200]|safe }}...</p>
             <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
           </div>
+
           {% if current_user.is_authenticated and current_user.id == 1 %}
             <a href="{{ url_for('delete_post', post_id=post.id) }}"
                class="btn btn-danger btn-sm mt-2"
@@ -42,6 +46,7 @@
               Delete
             </a>
           {% endif %}
+
           <div class="card-footer text-muted">
             📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
             {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
@@ -70,7 +75,9 @@
         <div class="card-body">
           <h5 class="card-title">📚 Categories</h5>
           <ul class="list-unstyled">
-            <li><a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a></li>
+            <li>
+              <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
+            </li>
             {% if categories %}
               {% for category, count in categories %}
               <li>
@@ -98,6 +105,7 @@
         </div>
       </div>
     </div>
+
   </div>
 </div>
 
