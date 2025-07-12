@@ -64,6 +64,49 @@ body {
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
+.hero-with-sidebar {
+  display: flex;
+  gap: 2rem;
+  max-width: 1140px;
+  margin: 0 auto;
+}
+
+.hero-left {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.hero-right {
+  flex: 1;
+  align-self: flex-start;
+}
+
+.masthead {
+  position: relative;
+  width: 100%;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  color: white;
+  padding: 4rem 0;
+}
+
+.blog-sidebar .card {
+  margin-top: 2rem;
+}
+
+@media (max-width: 992px) {
+  .hero-with-sidebar {
+    flex-direction: column;
+  }
+
+  .hero-right {
+    align-self: stretch;
+  }
+}
+
 :root {
   --bs-blue: #0d6efd;
   --bs-indigo: #6610f2;
