@@ -15,12 +15,12 @@
   </div>
 </header>
 
-<!-- Main Content Layout -->
+<!-- Main Layout Below Banner -->
 <div class="container mt-5">
-  <div class="d-flex flex-row flex-wrap justify-content-between" style="gap: 2rem; align-items: flex-start;">
+  <div class="row">
 
-    <!-- LEFT COLUMN: Blog Posts -->
-    <div class="flex-grow-1" style="flex-basis: 68%; min-width: 300px;">
+    <!-- Column 1: Blog Posts -->
+    <div class="col-lg-8">
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
@@ -68,8 +68,8 @@
       </nav>
     </div>
 
-    <!-- RIGHT COLUMN: Sidebar -->
-    <aside style="flex-basis: 28%; min-width: 250px;">
+    <!-- Column 2: Sidebar -->
+    <div class="col-lg-4">
       <!-- Categories -->
       <div class="card mb-4">
         <div class="card-body">
@@ -105,11 +105,13 @@
           <small class="text-muted">Real Estate Data Scientist</small>
         </div>
       </div>
-    </aside>
+    </div>
+
   </div>
 </div>
 
 {% endblock %}
+
 
 
 
