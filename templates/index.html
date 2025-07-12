@@ -16,11 +16,11 @@
   </div>
 </header>
 
-<!-- Main Layout: Bootstrap Grid -->
+<!-- ✅ Container for Grid Layout -->
 <div class="container mt-5">
   <div class="row">
 
-    <!-- Main Blog Posts -->
+    <!-- Blog Post List -->
     <div class="col-md-8">
       {% if all_posts %}
         {% for post in all_posts %}
@@ -69,7 +69,7 @@
       </nav>
     </div>
 
-    <!-- Sidebar Widgets -->
+    <!-- ✅ Sidebar (Now correctly aligned to right) -->
     <div class="col-md-4">
       <div class="card mb-4">
         <div class="card-body">
@@ -106,11 +106,10 @@
       </div>
     </div>
 
-  </div>
-</div>
+  </div> <!-- end .row -->
+</div> <!-- end .container -->
 
 {% endblock %}
-
 
 
 
