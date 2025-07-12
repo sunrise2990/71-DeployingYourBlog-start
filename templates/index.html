@@ -1,24 +1,30 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Hero Banner: full-width -->
-<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}'); height: 300px;">
-  <div class="container-fluid d-flex align-items-center justify-content-center h-100">
-    <div class="text-center text-white">
-      <h1 class="fw-bold">Kevin's Blog</h1>
-      <span class="subheading">A collection of analytics, coding, and more 💡📊</span>
-    </div>
-  </div>
-</header>
-
-<!-- Blog Content Section -->
-<div class="container mt-5">
+<!-- Hero Banner -->
+<div class="container mt-4">
   <div class="row justify-content-center">
     <div class="col-lg-10">
-      <div class="row">
+      <header class="masthead mb-4" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}'); height: 300px; background-size: cover; background-position: center;">
+        <div class="d-flex align-items-center justify-content-center h-100 text-white text-center">
+          <div>
+            <h1 class="fw-bold">Kevin's Blog</h1>
+            <p class="lead">A collection of analytics, coding, and more 💡📊</p>
+          </div>
+        </div>
+      </header>
+    </div>
+  </div>
+</div>
 
-        <!-- Left: Posts (take up 8/12 width) -->
-        <div class="col-lg-8">
+<!-- Blog + Sidebar Layout -->
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+      <div class="d-flex flex-wrap">
+
+        <!-- Blog Posts (fixed width to match banner) -->
+        <div style="flex: 0 0 75%; max-width: 75%;">
           {% for post in all_posts %}
             <div class="card mb-4">
               <img src="{{ post.img_url or url_for('static', filename='assets/img/post-bg.jpg') }}" class="card-img-top" alt="Post Image">
@@ -44,8 +50,8 @@
           </nav>
         </div>
 
-        <!-- Right: Sidebar -->
-        <div class="col-lg-4">
+        <!-- Sidebar -->
+        <div style="flex: 0 0 25%; max-width: 25%;" class="ps-3">
           <div class="card mb-4">
             <div class="card-header fw-bold">Sidebar Content</div>
             <div class="card-body">
@@ -54,10 +60,11 @@
           </div>
         </div>
 
-      </div> <!-- end nested row -->
-    </div> <!-- col-lg-10 -->
-  </div> <!-- main row -->
+      </div>
+    </div>
+  </div>
 </div>
 
 {% endblock %}
+
 
