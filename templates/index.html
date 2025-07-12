@@ -1,30 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Hero Banner -->
-<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
-  <div class="container position-relative px-4 px-lg-5">
-    <div class="row gx-4 gx-lg-5 justify-content-center">
-      <div class="col-md-10 col-lg-8 col-xl-7">
-        <div class="site-heading">
-          <h1>Kevin's Blog</h1>
-          <span class="subheading">A collection of random musings ✩✩</span>
+<!-- Hero Banner with Sidebar on the Right -->
+<div class="container position-relative px-4 px-lg-5">
+  <div class="row gx-5 justify-content-center align-items-start">
+
+    <!-- Hero Section (Main) -->
+    <div class="col-lg-8">
+      <header class="masthead mb-4" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
+        <div class="container px-4 px-lg-5">
+          <div class="row gx-4 gx-lg-5 justify-content-center">
+            <div class="col-md-10 col-lg-9 col-xl-8">
+              <div class="site-heading text-center">
+                <h1>Kevin's Blog</h1>
+                <span class="subheading">A collection of random musings ✴️ ✴️</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  </div>
-</header>
+      </header>
 
-<!-- Blog Posts + Sidebar in Flexbox -->
-<div class="container mt-4">
-  <div class="d-flex flex-column flex-lg-row gap-4">
-
-    <!-- LEFT: Blog Posts -->
-    <div class="flex-fill">
+      <!-- Blog Posts -->
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
-
           {% if post.img_url.startswith('http') %}
             <img src="{{ post.img_url }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
           {% else %}
@@ -47,7 +46,7 @@
           {% endif %}
 
           <div class="card-footer text-muted">
-            🗓️ {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
+            📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
             {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
           </div>
         </div>
@@ -68,14 +67,15 @@
       </nav>
     </div>
 
-    <!-- RIGHT: Sidebar -->
-    <div style="width: 300px; flex-shrink: 0;">
-      <!-- Categories -->
+    <!-- Sidebar Column (Right Side of Hero & Posts) -->
+    <div class="col-lg-4">
       <div class="card mb-4">
         <div class="card-body">
           <h5 class="card-title">📚 Categories</h5>
           <ul class="list-unstyled">
-            <li><a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a></li>
+            <li>
+              <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
+            </li>
             {% if categories %}
               {% for category, count in categories %}
               <li>
@@ -92,7 +92,6 @@
         </div>
       </div>
 
-      <!-- Author Bio -->
       <div class="card mb-4 text-center">
         <div class="card-body">
           <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
@@ -105,7 +104,8 @@
       </div>
     </div>
 
-  </div> <!-- End Flex Row -->
-</div> <!-- End Container -->
+  </div> <!-- End row -->
+</div> <!-- End container -->
 
 {% endblock %}
+
