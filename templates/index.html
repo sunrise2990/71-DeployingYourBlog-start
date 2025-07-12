@@ -13,7 +13,7 @@
     </header>
 
     <!-- Blog Posts -->
-    {% for post in posts %}
+    {% for post in all_posts %}
     <article class="post mb-5">
       <h2><a href="{{ url_for('show_post', post_id=post.id) }}">{{ post.title }}</a></h2>
       <p class="text-muted">by {{ post.author.name }} | {{ post.date.strftime('%B %d, %Y') }}</p>
