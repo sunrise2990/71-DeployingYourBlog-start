@@ -14,24 +14,35 @@
     </div>
   </div>
 </header>
+{% extends "base.html" %}
+{% block content %}
 
-<!-- Main Content (Posts + Sidebar in same row) -->
+<!-- Hero Banner -->
+<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
+  <div class="container px-4 px-lg-5">
+    <div class="row justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
+        <div class="site-heading text-center text-white">
+          <h1>Kevin's Blog</h1>
+          <span class="subheading">A collection of analytics, coding, and more 💡📊</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Two-Column Grid: Blog + Sidebar -->
 <div class="container mt-5">
   <div class="row">
-
-    <!-- Blog Posts (Left Column) -->
-    <div class="col-md-8">
+    <!-- Blog Posts Column -->
+    <div class="col-lg-8">
       {% for post in all_posts %}
-        <div class="card mb-4 shadow-sm">
-          {% if post.img_url %}
-            <img src="{{ post.img_url }}" class="card-img-top" alt="Post Image">
-          {% else %}
-            <img src="{{ url_for('static', filename='assets/img/post-bg.jpg') }}" class="card-img-top" alt="Default Post Image">
-          {% endif %}
+        <div class="card mb-4">
+          <img src="{{ post.img_url or url_for('static', filename='assets/img/post-bg.jpg') }}" class="card-img-top" alt="Post Image">
           <div class="card-body">
             <h5 class="card-title">{{ post.title }}</h5>
             <p class="card-text">{{ post.subtitle }}</p>
-            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-sm btn-outline-primary">Read More →</a>
+            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-outline-primary btn-sm">Read More →</a>
           </div>
           <div class="card-footer text-muted">
             {{ post.date }} by {{ post.author.name }}
@@ -40,7 +51,7 @@
       {% endfor %}
 
       <!-- Pagination -->
-      <nav aria-label="Blog pagination">
+      <nav aria-label="Page navigation">
         <ul class="pagination justify-content-center">
           <li class="page-item disabled"><span class="page-link">Previous</span></li>
           <li class="page-item active"><span class="page-link">1</span></li>
@@ -50,8 +61,8 @@
       </nav>
     </div>
 
-    <!-- Sidebar (Right Column) -->
-    <div class="col-md-4">
+    <!-- Sidebar Column -->
+    <div class="col-lg-4">
       <div class="card mb-4">
         <div class="card-header fw-bold">Sidebar Content</div>
         <div class="card-body">
