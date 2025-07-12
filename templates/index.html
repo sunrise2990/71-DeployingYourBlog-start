@@ -16,12 +16,12 @@
   </div>
 </header>
 
-<!-- ✅ Container for Grid Layout -->
-<div class="container mt-5">
-  <div class="row">
+<!-- Main Content Container with Sidebar -->
+<div class="container mt-4">
+  <div class="blog-container">
 
-    <!-- Blog Post List -->
-    <div class="col-md-8">
+    <!-- LEFT: Blog Posts -->
+    <div class="blog-main">
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
@@ -69,8 +69,8 @@
       </nav>
     </div>
 
-    <!-- ✅ Sidebar (Now correctly aligned to right) -->
-    <div class="col-md-4">
+    <!-- RIGHT: Sidebar -->
+    <div class="blog-sidebar">
       <div class="card mb-4">
         <div class="card-body">
           <h5 class="card-title">📚 Categories</h5>
@@ -106,8 +106,8 @@
       </div>
     </div>
 
-  </div> <!-- end .row -->
-</div> <!-- end .container -->
+  </div> <!-- End blog-container -->
+</div>
 
 {% endblock %}
 
