@@ -19,21 +19,16 @@
 <!-- Main Content -->
 <div class="container px-4 px-lg-5 mt-5">
   <div class="row">
-    <!-- Blog Post Cards -->
-    <div class="col-md-8">
+
+    <!-- Post Cards (Left Side) -->
+    <div class="col-lg-8">
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
           {% if post.img_url.startswith('http') %}
-            <img src="{{ post.img_url }}"
-                 class="card-img-top"
-                 alt="{{ post.title }}"
-                 loading="lazy">
+            <img src="{{ post.img_url }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
           {% else %}
-            <img src="{{ url_for('static', filename=post.img_url) }}"
-                 class="card-img-top"
-                 alt="{{ post.title }}"
-                 loading="lazy">
+            <img src="{{ url_for('static', filename=post.img_url) }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
           {% endif %}
           <div class="card-body">
             <h3 class="card-title">{{ post.title }}</h3>
@@ -53,7 +48,7 @@
         </div>
       {% endif %}
 
-      <!-- Pagination Placeholder -->
+      <!-- Pagination -->
       <nav aria-label="Blog page navigation">
         <ul class="pagination justify-content-center">
           <li class="page-item"><a class="page-link" href="#">1</a></li>
@@ -63,9 +58,8 @@
       </nav>
     </div>
 
-    <!-- Sidebar -->
-    <div class="col-md-4">
-      <!-- Categories -->
+    <!-- Sidebar (Right Side) -->
+    <div class="col-lg-4">
       <div class="card mb-4">
         <div class="card-body">
           <h5 class="card-title">📚 Categories</h5>
@@ -85,7 +79,6 @@
         </div>
       </div>
 
-      <!-- Author Profile -->
       <div class="card mb-4 text-center">
         <div class="card-body">
           <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
@@ -96,6 +89,7 @@
         </div>
       </div>
     </div>
+
   </div>
 </div>
 
