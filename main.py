@@ -215,17 +215,35 @@ def add_new_post():
 @admin_only
 def edit_post(post_id):
     post = db.get_or_404(BlogPost, post_id)
-    edit_form = CreatePostForm(title=post.title, subtitle=post.subtitle, category=post.category,
-                               img_url=post.img_url.replace("assets/img/", "") if post.img_url else "",
-                               author=post.author, body=post.body)
+    edit_form = CreatePostForm(
+        title=post.title,
+        subtitle=post.subtitle,
+        category=post.category,
+        img_url=post.img_url.replace("assets/img/", "") if post.img_url and not post.img_url.startswith("http") else post.img_url,
+        author=post.author,
+        body=post.body
+    )
+
     if edit_form.validate_on_submit():
+        img_input = (edit_form.img_url.data or "").strip()
+        clean_input = img_input.lower().lstrip()
+
+        if clean_input.startswith("http"):
+            img_url = img_input.strip()
+        elif "http" in clean_input:
+            http_index = clean_input.find("http")
+            img_url = img_input[http_index:].strip()
+        else:
+            img_url = f"assets/img/{img_input.lstrip('/')}"
+
         post.title = edit_form.title.data
         post.subtitle = edit_form.subtitle.data
-        post.img_url = f"assets/img/{edit_form.img_url.data}"
+        post.img_url = img_url
         post.body = edit_form.body.data
         post.category = edit_form.category.data
         db.session.commit()
         return redirect(url_for("show_post", post_id=post.id))
+
     return render_template("make-post.html", form=edit_form, is_edit=True, current_user=current_user)
 
 @app.route("/delete/<int:post_id>")
