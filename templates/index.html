@@ -1,4 +1,3 @@
-<!-- templates/index.html -->
 {% extends "base.html" %}
 {% block content %}
 
@@ -16,104 +15,101 @@
   </div>
 </header>
 
-<!-- Main Content Container with Sidebar -->
+<!-- Main Content + Sidebar -->
 <div class="container mt-4">
-  <div class="blog-container d-flex flex-wrap">
+  <div class="row">
 
     <!-- LEFT: Blog Posts -->
-    <div class="blog-main flex-grow-1 me-4">
-      {% if all_posts %}
-        {% for post in all_posts %}
-        <div class="card mb-4">
+    <div class="col-lg-8">
+      <div class="blog-main">
+        {% if all_posts %}
+          {% for post in all_posts %}
+          <div class="card mb-4">
 
-          {% if post.img_url.startswith('http') %}
-            <img src="{{ post.img_url }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
-          {% else %}
-            <img src="{{ url_for('static', filename=post.img_url) }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
-          {% endif %}
+            {% if post.img_url.startswith('http') %}
+              <img src="{{ post.img_url }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
+            {% else %}
+              <img src="{{ url_for('static', filename=post.img_url) }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
+            {% endif %}
 
-          <div class="card-body">
-            <h3 class="card-title">{{ post.title }}</h3>
-            <h5 class="text-muted">{{ post.subtitle }}</h5>
-            <p class="card-text">{{ post.body[:200]|safe }}...</p>
-            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+            <div class="card-body">
+              <h3 class="card-title">{{ post.title }}</h3>
+              <h5 class="text-muted">{{ post.subtitle }}</h5>
+              <p class="card-text">{{ post.body[:200]|safe }}...</p>
+              <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+            </div>
+
+            {% if current_user.is_authenticated and current_user.id == 1 %}
+              <a href="{{ url_for('delete_post', post_id=post.id) }}"
+                 class="btn btn-danger btn-sm mt-2"
+                 onclick="return confirm('Are you sure you want to delete this post?');">
+                Delete
+              </a>
+            {% endif %}
+
+            <div class="card-footer text-muted">
+              📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
+              {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
+            </div>
           </div>
-
-          {% if current_user.is_authenticated and current_user.id == 1 %}
-            <a href="{{ url_for('delete_post', post_id=post.id) }}"
-               class="btn btn-danger btn-sm mt-2"
-               onclick="return confirm('Are you sure you want to delete this post?');">
-              Delete
-            </a>
-          {% endif %}
-
-          <div class="card-footer text-muted">
-            📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
-            {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
+          {% endfor %}
+        {% else %}
+          <div class="alert alert-warning">
+            No blog posts found for <strong>{{ selected_category }}</strong>.
           </div>
-        </div>
-        {% endfor %}
-      {% else %}
-        <div class="alert alert-warning">
-          No blog posts found for <strong>{{ selected_category }}</strong>.
-        </div>
-      {% endif %}
+        {% endif %}
 
-      <!-- Pagination (optional) -->
-      <nav aria-label="Blog page navigation">
-        <ul class="pagination justify-content-center">
-          <li class="page-item"><a class="page-link" href="#">1</a></li>
-          <li class="page-item"><a class="page-link" href="#">2</a></li>
-          <li class="page-item disabled"><span class="page-link">…</span></li>
-        </ul>
-      </nav>
+        <!-- Pagination -->
+        <nav aria-label="Blog page navigation">
+          <ul class="pagination justify-content-center">
+            <li class="page-item"><a class="page-link" href="#">1</a></li>
+            <li class="page-item"><a class="page-link" href="#">2</a></li>
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+          </ul>
+        </nav>
+      </div>
     </div>
 
     <!-- RIGHT: Sidebar -->
-    <div class="blog-sidebar" style="width: 280px;">
-      <div class="card mb-4">
-        <div class="card-body">
-          <h5 class="card-title">📚 Categories</h5>
-          <ul class="list-unstyled">
-            <li>
-              <a href="{{ url_for('get_all_posts') }}"
-                 class="{% if selected_category == 'All' %}fw-bold text-primary{% endif %}">
-                All Posts ({{ all_posts|length }})
-              </a>
-            </li>
-            {% if categories %}
-              {% for category, count in categories %}
-              <li>
-                <a href="{{ url_for('category_posts', category_name=category) }}"
-                   class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
-                  {{ category }} ({{ count }})
-                </a>
-              </li>
-              {% endfor %}
-            {% else %}
-              <li><em>No categories available.</em></li>
-            {% endif %}
-          </ul>
+    <div class="col-lg-4">
+      <div class="blog-sidebar">
+        <!-- Categories -->
+        <div class="card mb-4">
+          <div class="card-body">
+            <h5 class="card-title">📚 Categories</h5>
+            <ul class="list-unstyled">
+              <li><a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a></li>
+              {% if categories %}
+                {% for category, count in categories %}
+                <li>
+                  <a href="{{ url_for('category_posts', category_name=category) }}"
+                     class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
+                    {{ category }} ({{ count }})
+                  </a>
+                </li>
+                {% endfor %}
+              {% else %}
+                <li><em>No categories available.</em></li>
+              {% endif %}
+            </ul>
+          </div>
         </div>
-      </div>
 
-      <!-- Author Bio -->
-      <div class="card mb-4 text-center">
-        <div class="card-body">
-          <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
-               class="img-fluid rounded-circle mb-2"
-               width="80"
-               alt="Kevin Cho">
-          <h6 class="mb-0">Kevin Cho</h6>
-          <small class="text-muted">Real Estate Data Scientist</small>
+        <!-- Author Bio -->
+        <div class="card mb-4 text-center">
+          <div class="card-body">
+            <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
+                 class="img-fluid rounded-circle mb-2"
+                 width="80"
+                 alt="Kevin Cho">
+            <h6 class="mb-0">Kevin Cho</h6>
+            <small class="text-muted">Real Estate Data Scientist</small>
+          </div>
         </div>
       </div>
     </div>
 
-  </div> <!-- End blog-container -->
-</div>
+  </div> <!-- .row -->
+</div> <!-- .container -->
 
 {% endblock %}
-
-
-
