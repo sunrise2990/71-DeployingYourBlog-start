@@ -3,22 +3,6 @@
 
 <!-- Hero Banner -->
 <header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
-  <div class="container position-relative px-4 px-lg-5">
-    <div class="row gx-4 gx-lg-5 justify-content-center">
-      <div class="col-md-10 col-lg-8 col-xl-7">
-        <div class="site-heading text-center text-white">
-          <h1>Kevin's Blog</h1>
-          <span class="subheading">A collection of analytics, coding, and more 💡📊</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</header>
-{% extends "base.html" %}
-{% block content %}
-
-<!-- Hero Banner -->
-<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
   <div class="container px-4 px-lg-5">
     <div class="row justify-content-center">
       <div class="col-md-10 col-lg-8 col-xl-7">
@@ -31,9 +15,10 @@
   </div>
 </header>
 
-<!-- Two-Column Grid: Blog + Sidebar -->
+<!-- Content Area -->
 <div class="container mt-5">
   <div class="row">
+
     <!-- Blog Posts Column -->
     <div class="col-lg-8">
       {% for post in all_posts %}
@@ -51,7 +36,7 @@
       {% endfor %}
 
       <!-- Pagination -->
-      <nav aria-label="Page navigation">
+      <nav aria-label="Pagination">
         <ul class="pagination justify-content-center">
           <li class="page-item disabled"><span class="page-link">Previous</span></li>
           <li class="page-item active"><span class="page-link">1</span></li>
@@ -75,3 +60,4 @@
 </div>
 
 {% endblock %}
+
