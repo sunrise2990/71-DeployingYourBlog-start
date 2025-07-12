@@ -1,115 +1,97 @@
-<!-- templates/index.html -->
-{% extends "base.html" %}
-{% block content %}
-
-<!-- Hero Banner -->
-<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
-  <div class="container position-relative px-4 px-lg-5">
-    <div class="row gx-4 gx-lg-5 justify-content-center">
-      <div class="col-md-10 col-lg-8 col-xl-7">
-        <div class="site-heading">
-          <h1>Kevin's Blog</h1>
-          <span class="subheading">A collection of random musings ✴️ ✴️</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</header>
-
-<!-- Main Content Container with Sidebar -->
-<div class="container mt-4">
-  <div class="blog-container">
-
-    <!-- LEFT: Blog Posts -->
-    <div class="blog-main">
-      {% if all_posts %}
-        {% for post in all_posts %}
-        <div class="card mb-4">
-
-          {% if post.img_url.startswith('http') %}
-            <img src="{{ post.img_url }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
-          {% else %}
-            <img src="{{ url_for('static', filename=post.img_url) }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
-          {% endif %}
-
-          <div class="card-body">
-            <h3 class="card-title">{{ post.title }}</h3>
-            <h5 class="text-muted">{{ post.subtitle }}</h5>
-            <p class="card-text">{{ post.body[:200]|safe }}...</p>
-            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
-          </div>
-
-          {% if current_user.is_authenticated and current_user.id == 1 %}
-            <a href="{{ url_for('delete_post', post_id=post.id) }}"
-               class="btn btn-danger btn-sm mt-2"
-               onclick="return confirm('Are you sure you want to delete this post?');">
-              Delete
-            </a>
-          {% endif %}
-
-          <div class="card-footer text-muted">
-            📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
-            {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
-          </div>
-        </div>
-        {% endfor %}
-      {% else %}
-        <div class="alert alert-warning">
-          No blog posts found for <strong>{{ selected_category }}</strong>.
-        </div>
-      {% endif %}
-
-      <!-- Pagination -->
-      <nav aria-label="Blog page navigation">
-        <ul class="pagination justify-content-center">
-          <li class="page-item"><a class="page-link" href="#">1</a></li>
-          <li class="page-item"><a class="page-link" href="#">2</a></li>
-          <li class="page-item disabled"><span class="page-link">…</span></li>
-        </ul>
-      </nav>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kevin's Blog</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div style="background-color: gold; color: black; text-align: center; padding: 0.5rem; font-size: 1.1rem">
+      🎉 This site is under construction. Content and features are being added. Stay tuned! 🎉
     </div>
 
-    <!-- RIGHT: Sidebar -->
-    <div class="blog-sidebar">
-      <div class="card mb-4">
-        <div class="card-body">
-          <h5 class="card-title">📚 Categories</h5>
-          <ul class="list-unstyled">
-            <li>
-              <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+      <div class="container">
+        <a class="navbar-brand fw-bold" href="/">Data by Kevin</a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Projects</a>
+              <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#">CAM Recovery</a></li>
+                <li><a class="dropdown-item" href="#">Capex Forecast</a></li>
+              </ul>
             </li>
-            {% if categories %}
-              {% for category, count in categories %}
-              <li>
-                <a href="{{ url_for('category_posts', category_name=category) }}"
-                   class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
-                  {{ category }} ({{ count }})
-                </a>
-              </li>
-              {% endfor %}
-            {% else %}
-              <li><em>No categories available.</em></li>
-            {% endif %}
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Tools</a>
+              <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#">Portfolio Tracker</a></li>
+                <li><a class="dropdown-item" href="#">NER Visualizer</a></li>
+              </ul>
+            </li>
+            <li class="nav-item"><a class="nav-link" href="#">Blog</a></li>
+            <li class="nav-item"><a class="nav-link" href="#">About</a></li>
+            <li class="nav-item"><a class="nav-link" href="#">Contact</a></li>
+            <li class="nav-item"><a class="nav-link" href="#">Log Out</a></li>
           </ul>
         </div>
       </div>
+    </nav>
 
-      <div class="card mb-4 text-center">
-        <div class="card-body">
-          <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
-               class="img-fluid rounded-circle mb-2"
-               width="80"
-               alt="Kevin Cho">
-          <h6 class="mb-0">Kevin Cho</h6>
-          <small class="text-muted">Real Estate Data Scientist</small>
+    <!-- Content Section -->
+    <div class="blog-container">
+      <!-- Sidebar (Position B) -->
+      <aside class="blog-sidebar">
+        <div class="card mb-3">
+          <div class="card-body">
+            <h6 class="fw-bold mb-3">
+              <i class="bi bi-folder"></i> Categories
+            </h6>
+            <p class="mb-1"><a href="#">All Posts (2)</a></p>
+            <p class="mb-1"><a href="#">Python (1)</a></p>
+            <p class="mb-1"><a href="#">NER Models (1)</a></p>
+          </div>
         </div>
-      </div>
+        <div class="card">
+          <div class="card-body text-center">
+            <img src="/static/default-profile.jpg" alt="Kevin Cho" width="60" class="rounded-circle mb-2" />
+            <div class="fw-bold">Kevin Cho</div>
+            <div class="text-muted small">Real Estate Data Scientist</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Post Content -->
+      <main class="blog-main">
+        <div class="hero-image">
+          <h1 class="fw-bold">Kevin's Blog</h1>
+          <p class="lead">A collection of random musings 🔴 🔴</p>
+        </div>
+
+        <article class="mt-4">
+          <img src="/static/home-bg.jpg" class="img-fluid" alt="Post image" />
+        </article>
+      </main>
     </div>
 
-  </div> <!-- End blog-container -->
-</div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>
 
-{% endblock %}
 
 
 
