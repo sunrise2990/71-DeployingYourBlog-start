@@ -215,11 +215,19 @@ def add_new_post():
 @admin_only
 def edit_post(post_id):
     post = db.get_or_404(BlogPost, post_id)
+
+    # Pre-fill image path cleanly: strip assets/img only if it's a local image
+    prefill_img = (
+        post.img_url.replace("assets/img/", "")
+        if post.img_url and not post.img_url.startswith("http")
+        else post.img_url
+    )
+
     edit_form = CreatePostForm(
         title=post.title,
         subtitle=post.subtitle,
         category=post.category,
-        img_url=post.img_url.replace("assets/img/", "") if post.img_url and not post.img_url.startswith("http") else post.img_url,
+        img_url=prefill_img,
         author=post.author,
         body=post.body
     )
@@ -238,13 +246,19 @@ def edit_post(post_id):
 
         post.title = edit_form.title.data
         post.subtitle = edit_form.subtitle.data
-        post.img_url = img_url
         post.body = edit_form.body.data
         post.category = edit_form.category.data
+        post.img_url = img_url
+
         db.session.commit()
         return redirect(url_for("show_post", post_id=post.id))
 
-    return render_template("make-post.html", form=edit_form, is_edit=True, current_user=current_user)
+    return render_template(
+        "make-post.html",
+        form=edit_form,
+        is_edit=True,
+        current_user=current_user
+    )
 
 @app.route("/delete/<int:post_id>")
 @admin_only
