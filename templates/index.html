@@ -1,31 +1,72 @@
 {% extends "base.html" %}
 {% block content %}
+
+<!-- Hero Banner -->
+<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
+  <div class="container position-relative px-4 px-lg-5">
+    <div class="row gx-4 gx-lg-5 justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
+        <div class="site-heading text-center text-white">
+          <h1>Kevin's Blog</h1>
+          <span class="subheading">A collection of analytics, coding, and more 💡📊</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Main Content -->
 <div class="container mt-5">
   <div class="row">
 
-    <!-- Blog Posts -->
+    <!-- Blog Posts (Left Column) -->
     <div class="col-lg-8">
       {% for post in all_posts %}
-        {% include "post_card.html" %}
+        <div class="card mb-4">
+          <img src="{{ url_for('static', filename='assets/img/post-bg.jpg') }}" class="card-img-top" alt="Post Image">
+          <div class="card-body">
+            <h5 class="card-title">{{ post.title }}</h5>
+            <p class="card-text">
+              {{ post.subtitle }}
+            </p>
+            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+          </div>
+          <div class="card-footer text-muted">
+            {{ post.date }} by {{ post.author.name }}
+          </div>
+        </div>
       {% endfor %}
+
+      <!-- Pagination (Optional) -->
+      <nav aria-label="Blog pagination">
+        <ul class="pagination justify-content-center">
+          <li class="page-item disabled">
+            <span class="page-link">Previous</span>
+          </li>
+          <li class="page-item active">
+            <span class="page-link">1</span>
+          </li>
+          <li class="page-item">
+            <a class="page-link" href="#">2</a>
+          </li>
+          <li class="page-item">
+            <a class="page-link" href="#">Next</a>
+          </li>
+        </ul>
+      </nav>
     </div>
 
-    <!-- Sidebar -->
+    <!-- Sidebar (Right Column) -->
     <div class="col-lg-4">
-      <div class="card p-3 mb-4">
-        <h5 class="fw-bold">📂 Categories</h5>
-        <ul class="list-unstyled">
-          <li>AI Projects (12)</li>
-          <li>Finance Tools (7)</li>
-          <li>ML Models (9)</li>
-        </ul>
-      </div>
-      <div class="card p-3">
-        <h5 class="fw-bold">👤 Kevin Cho</h5>
-        <p>CPA & Data Scientist. Sharing tools for real estate finance and analytics.</p>
+      <div class="card mb-4">
+        <div class="card-header fw-bold">Sidebar Content</div>
+        <div class="card-body">
+          <p>Categories and bio go here.</p>
+        </div>
       </div>
     </div>
 
   </div>
 </div>
+
 {% endblock %}
