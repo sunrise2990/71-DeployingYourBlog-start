@@ -186,13 +186,13 @@ def add_new_post():
     img_input = form.img_url.data.strip()
 
     # ✅ Sanitize img_url to avoid 'assets/img/http...' issue
-    if img_input.startswith("http"):
+    if img_input.lower().startswith("http"):
         img_url = img_input
+    elif "http" in img_input:
+        # Fix malformed input like 'assets/img/https://...'
+        img_url = img_input[img_input.lower().find("http"):]
     else:
         img_url = f"assets/img/{img_input.lstrip('/')}"
-        # Catch malformed inputs that already include 'http' accidentally
-        if img_url.startswith("assets/img/http"):
-            img_url = img_input
 
     if form.validate_on_submit():
         new_post = BlogPost(
