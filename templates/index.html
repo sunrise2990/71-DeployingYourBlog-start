@@ -1,15 +1,14 @@
-<!-- templates/index.html -->
 {% extends "base.html" %}
 {% block content %}
 
 <!-- Hero Banner -->
 <header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
-  <div class="container position-relative px-4 px-lg-5">
-    <div class="row gx-4 gx-lg-5 justify-content-center">
+  <div class="container px-4 px-lg-5">
+    <div class="row justify-content-center">
       <div class="col-md-10 col-lg-8 col-xl-7">
         <div class="site-heading">
           <h1>Kevin's Blog</h1>
-          <span class="subheading">A collection of analytics, coding, and more 💡</span>
+          <span class="subheading">A collection of random musings ✴️ ✴️</span>
         </div>
       </div>
     </div>
@@ -19,9 +18,8 @@
 <!-- Main Content -->
 <div class="container px-4 px-lg-5 mt-5">
   <div class="row">
-
-    <!-- Post Cards (Left Side) -->
-    <div class="col-lg-8">
+    <!-- Post Column -->
+    <div class="col-md-8">
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
@@ -58,8 +56,8 @@
       </nav>
     </div>
 
-    <!-- Sidebar (Right Side) -->
-    <div class="col-lg-4">
+    <!-- Sidebar Column -->
+    <div class="col-md-4">
       <div class="card mb-4">
         <div class="card-body">
           <h5 class="card-title">📚 Categories</h5>
@@ -89,7 +87,6 @@
         </div>
       </div>
     </div>
-
   </div>
 </div>
 
