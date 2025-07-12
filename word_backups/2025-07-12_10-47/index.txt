@@ -1,3 +1,4 @@
+<!-- templates/index.html -->
 {% extends "base.html" %}
 {% block content %}
 
@@ -73,7 +74,7 @@
       </nav>
     </div>
 
-    <!-- Sidebar Widgets (Right Side) -->
+    <!-- Sidebar Widgets -->
     <div class="col-md-4">
       <div class="card mb-4">
         <div class="card-body">
@@ -82,6 +83,7 @@
             <li>
               <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
             </li>
+
             {% for category, count in categories %}
             <li>
               <a href="{{ url_for('category_posts', category_name=category) }}"
@@ -100,5 +102,13 @@
                class="img-fluid rounded-circle mb-2"
                width="80">
           <h6 class="mb-0">Kevin Cho</h6>
+          <small class="text-muted">Real Estate Data Scientist</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
 
 
