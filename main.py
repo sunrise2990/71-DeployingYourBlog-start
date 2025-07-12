@@ -183,7 +183,7 @@ def show_post(post_id):
 @admin_only
 def add_new_post():
     form = CreatePostForm()
-    img_input = form.img_url.data.strip()
+    img_input = (form.img_url.data or "").strip()
     clean_input = img_input.lower().lstrip()
 
     if clean_input.startswith("http"):
