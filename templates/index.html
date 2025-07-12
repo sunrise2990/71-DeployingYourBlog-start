@@ -1,11 +1,9 @@
 {% extends "base.html" %}
-
 {% block content %}
 <div class="blog-container">
 
   <!-- Main Blog Section -->
   <main class="blog-main">
-    <!-- Hero Section -->
     <header class="hero-section text-center">
       <img src="{{ url_for('static', filename='images/home-bg.jpg') }}" alt="Hero Background" class="hero-bg">
       <div class="hero-content">
@@ -14,45 +12,42 @@
       </div>
     </header>
 
-    <!-- Blog Posts Loop -->
+    <!-- Blog Posts -->
     {% for post in posts %}
-      <article class="post mb-5">
-        <h2><a href="{{ url_for('show_post', post_id=post.id) }}">{{ post.title }}</a></h2>
-        <p class="text-muted">by {{ post.author.name }} | {{ post.date.strftime('%B %d, %Y') }}</p>
-        {% if post.image_url %}
-          <img src="{{ post.image_url }}" alt="Post image" class="img-fluid mb-3">
-        {% endif %}
-        <p>{{ post.subtitle }}</p>
-        <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More</a>
-      </article>
+    <article class="post mb-5">
+      <h2><a href="{{ url_for('show_post', post_id=post.id) }}">{{ post.title }}</a></h2>
+      <p class="text-muted">by {{ post.author.name }} | {{ post.date.strftime('%B %d, %Y') }}</p>
+      {% if post.image_url %}
+      <img src="{{ post.image_url }}" alt="Post image" class="img-fluid mb-3">
+      {% endif %}
+      <p>{{ post.subtitle }}</p>
+      <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More</a>
+    </article>
     {% endfor %}
   </main>
 
-  <!-- Sidebar Section (Right Column) -->
+  <!-- Sidebar -->
   <aside class="blog-sidebar">
-    <!-- Categories Card -->
     <div class="card mb-4">
       <div class="card-body">
         <h5 class="card-title"><i class="fa fa-list"></i> Categories</h5>
         {% for category in categories %}
-          <p><a href="{{ url_for('category_posts', category_id=category.id) }}">{{ category.name }} ({{ category.posts|length }})</a></p>
+        <p><a href="{{ url_for('category_posts', category_id=category.id) }}">{{ category.name }} ({{ category.posts|length }})</a></p>
         {% endfor %}
       </div>
     </div>
 
-    <!-- Author Card -->
-    <div class="card mb-4 text-center">
+    <!-- Author Bio -->
+    <div class="card text-center">
       <div class="card-body">
-        <img src="{{ url_for('static', filename='images/default-profile.jpg') }}" alt="Kevin Cho" class="rounded-circle mb-2" width="60">
+        <img src="{{ url_for('static', filename='images/default-profile.jpg') }}" class="rounded-circle mb-2" width="60" alt="Kevin Cho">
         <h6 class="mb-0">Kevin Cho</h6>
         <small class="text-muted">Real Estate Data Scientist</small>
       </div>
     </div>
   </aside>
-
 </div>
 {% endblock %}
-
 
 
 
