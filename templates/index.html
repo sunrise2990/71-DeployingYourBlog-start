@@ -1,43 +1,79 @@
-<!-- Main Content with Sidebar -->
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Hero Banner -->
+<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
+  <div class="container position-relative px-4 px-lg-5">
+    <div class="row gx-4 gx-lg-5 justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
+        <div class="site-heading">
+          <h1>Kevin's Blog</h1>
+          <span class="subheading">A collection of random musings ✯✯</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Main Content + Sidebar (two columns) -->
 <div class="container mt-5 px-4 px-lg-5">
   <div class="row justify-content-center">
-    <div class="col-lg-10 d-flex flex-row flex-wrap">
+    <div class="col-lg-10">
+      <div class="row">
 
-      <!-- Main Blog Content -->
-      <div class="col-md-8 pe-md-4">
-        {% for post in all_posts %}
+        <!-- Main Blog Posts (Left) -->
+        <div class="col-md-8">
+          {% for post in all_posts %}
           <div class="post-preview">
             <a href="{{ url_for('show_post', post_id=post.id) }}">
               <h2 class="post-title">{{ post.title }}</h2>
               <h3 class="post-subtitle">{{ post.subtitle }}</h3>
             </a>
-            <p class="post-meta">Posted by {{ post.author.name }} on {{ post.date }}</p>
+            <p class="post-meta">
+              Posted by {{ post.author.name }} on {{ post.date }}
+            </p>
           </div>
           <hr class="my-4" />
-        {% endfor %}
-      </div>
+          {% endfor %}
+        </div>
 
-      <!-- Sidebar -->
-      <div class="col-md-4">
-        <div class="card mb-4">
-          <div class="card-body">
-            <h5 class="card-title">📂 Categories</h5>
-            <ul class="list-unstyled mb-0">
-              <li><a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts | length }})</a></li>
-              <li><a href="{{ url_for('get_category', category_name='Python') }}">Python ({{ python_posts_count }})</a></li>
-              <li><a href="{{ url_for('get_category', category_name='NER Models') }}">NER Models ({{ ner_posts_count }})</a></li>
-            </ul>
+        <!-- Sidebar (Right) -->
+        <div class="col-md-4">
+          <!-- Categories -->
+          <div class="card mb-4">
+            <div class="card-body">
+              <h5 class="card-title">📂 Categories</h5>
+              <ul class="list-unstyled mb-0">
+                <li>
+                  <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts | length }})</a>
+                </li>
+                <li>
+                  <a href="{{ url_for('get_category', category_name='Python') }}">Python
+                    ({% if python_posts_count is defined %}{{ python_posts_count }}{% else %}0{% endif %})
+                  </a>
+                </li>
+                <li>
+                  <a href="{{ url_for('get_category', category_name='NER Models') }}">NER Models
+                    ({% if ner_posts_count is defined %}{{ ner_posts_count }}{% else %}0{% endif %})
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Author Bio -->
+          <div class="card">
+            <div class="card-body text-center">
+              <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}" class="img-fluid rounded-circle mb-2" width="80" alt="Kevin Cho">
+              <p class="mb-1"><strong>👨‍💼 Kevin Cho</strong></p>
+              <p class="mb-0">Real Estate Data Scientist</p>
+            </div>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-body text-center">
-            <p class="mb-1"><strong>👨‍💼 Kevin Cho</strong></p>
-            <p class="mb-0">Real Estate Data Scientist</p>
-          </div>
-        </div>
       </div>
-
     </div>
   </div>
 </div>
+
+{% endblock %}
