@@ -10,12 +10,15 @@
  * Copyright 2011-2022 Twitter, Inc.
  * Licensed under MIT (https://github.com/twbs/bootstrap/blob/main/LICENSE)
  */
- /* Force blog area to be horizontal with a sidebar pinned at top-right */
+/* Layout for Blog Section */
 .blog-container {
   display: flex;
   flex-direction: row;
-  gap: 2rem;
   flex-wrap: wrap;
+  gap: 2rem;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 1rem;
 }
 
 .blog-main {
@@ -28,10 +31,37 @@
   min-width: 260px;
 }
 
+/* Page container max width for wider screens */
 @media (min-width: 1200px) {
   .container {
     max-width: 1140px;
+    margin: 0 auto;
   }
+}
+
+/* Typography and Background */
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background-color: #fff;
+  color: #333;
+}
+
+/* Hero Header Styling */
+.masthead {
+  position: relative;
+  width: 100%;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  color: white;
+  padding: 4rem 0;
+  max-width: 1140px;
+  margin: 0 auto;
+}
+
+/* Card Shadow */
+.card {
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
 :root {
