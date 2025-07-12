@@ -183,12 +183,13 @@ def show_post(post_id):
 @admin_only
 def add_new_post():
     form = CreatePostForm()
+    img_input = form.img_url.data.strip()
     if form.validate_on_submit():
         new_post = BlogPost(title=form.title.data,
                             subtitle=form.subtitle.data,
                             category=form.category.data,
                             body=form.body.data,
-                            img_url=f"assets/img/{form.img_url.data.strip()}",
+                            img_url = img_input if img_input.startswith("http") else f"assets/img/{img_input.lstrip('/')}",
                             author=current_user,
                             date=date.today().strftime("%B %d, %Y"))
         db.session.add(new_post)

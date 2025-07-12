@@ -24,7 +24,7 @@
       {% if all_posts %}
         {% for post in all_posts %}
         <div class="card mb-4">
-          <img src="{{ url_for('static', filename='assets/img/' ~ post.img_url) }}"
+          <<img src="{{ url_for('static', filename=post.img_url) }}">
              class="card-img-top"
              alt="{{ post.title }}"
              loading="lazy">

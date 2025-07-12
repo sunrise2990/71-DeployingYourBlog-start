@@ -2,6 +2,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
 import os
+import sys
+if hasattr(sys, 'ps1'):
+    print("💾 Running in interactive mode. Be sure all files are saved.")
+else:
+    print("🔍 Ensuring all files are saved before proceeding.")
 
 # === CONFIGURATION ===
 N_DAYS = 3
