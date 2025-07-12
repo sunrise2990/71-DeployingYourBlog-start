@@ -15,11 +15,11 @@
   </div>
 </header>
 
-<!-- Main Content Below Hero -->
+<!-- 2-Column Layout Below Hero -->
 <div class="container mt-5">
-  <div class="row gx-5">
+  <div class="row">
 
-    <!-- Blog Posts (Column 1) -->
+    <!-- LEFT: Blog Posts -->
     <div class="col-lg-8">
       {% if all_posts %}
         {% for post in all_posts %}
@@ -68,7 +68,7 @@
       </nav>
     </div>
 
-    <!-- Sidebar (Column 2) -->
+    <!-- RIGHT: Sidebar (Categories + Bio) -->
     <div class="col-lg-4">
       <!-- Categories -->
       <div class="card mb-4">
@@ -92,7 +92,7 @@
         </div>
       </div>
 
-      <!-- Author Bio -->
+      <!-- Bio -->
       <div class="card mb-4 text-center">
         <div class="card-body">
           <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
@@ -105,8 +105,7 @@
       </div>
     </div>
 
-  </div>
-</div>
+  </div> <!-- /.row -->
+</div> <!-- /.container -->
 
 {% endblock %}
-
