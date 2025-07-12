@@ -185,12 +185,13 @@ def add_new_post():
     form = CreatePostForm()
     img_input = form.img_url.data.strip()
 
-    # ✅ Sanitize img_url to avoid 'assets/img/http...' issue
-    if img_input.lower().startswith("http"):
-        img_url = img_input
-    elif "http" in img_input:
-        # Fix malformed input like 'assets/img/https://...'
-        img_url = img_input[img_input.lower().find("http"):]
+    clean_input = img_input.lower().lstrip()
+
+    if clean_input.startswith("http"):
+        img_url = img_input.strip()
+    elif "http" in clean_input:
+        http_index = clean_input.find("http")
+        img_url = img_input[http_index:].strip()
     else:
         img_url = f"assets/img/{img_input.lstrip('/')}"
 
