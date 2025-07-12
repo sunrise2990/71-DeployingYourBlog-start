@@ -1,111 +1,43 @@
-{% extends "base.html" %}
-{% block content %}
+<!-- Main Content with Sidebar -->
+<div class="container mt-5 px-4 px-lg-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-10 d-flex flex-row flex-wrap">
 
-<!-- Hero Banner with Sidebar on the Right -->
-<div class="container position-relative px-4 px-lg-5">
-  <div class="row gx-5 justify-content-center align-items-start">
-
-    <!-- Hero Section (Main) -->
-    <div class="col-lg-8">
-      <header class="masthead mb-4" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
-        <div class="container px-4 px-lg-5">
-          <div class="row gx-4 gx-lg-5 justify-content-center">
-            <div class="col-md-10 col-lg-9 col-xl-8">
-              <div class="site-heading text-center">
-                <h1>Kevin's Blog</h1>
-                <span class="subheading">A collection of random musings ✴️ ✴️</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <!-- Blog Posts -->
-      {% if all_posts %}
+      <!-- Main Blog Content -->
+      <div class="col-md-8 pe-md-4">
         {% for post in all_posts %}
-        <div class="card mb-4">
-          {% if post.img_url.startswith('http') %}
-            <img src="{{ post.img_url }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
-          {% else %}
-            <img src="{{ url_for('static', filename=post.img_url) }}" class="card-img-top" alt="{{ post.title }}" loading="lazy">
-          {% endif %}
-
-          <div class="card-body">
-            <h3 class="card-title">{{ post.title }}</h3>
-            <h5 class="text-muted">{{ post.subtitle }}</h5>
-            <p class="card-text">{{ post.body[:200]|safe }}...</p>
-            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
-          </div>
-
-          {% if current_user.is_authenticated and current_user.id == 1 %}
-            <a href="{{ url_for('delete_post', post_id=post.id) }}"
-               class="btn btn-danger btn-sm mt-2"
-               onclick="return confirm('Are you sure you want to delete this post?');">
-              Delete
+          <div class="post-preview">
+            <a href="{{ url_for('show_post', post_id=post.id) }}">
+              <h2 class="post-title">{{ post.title }}</h2>
+              <h3 class="post-subtitle">{{ post.subtitle }}</h3>
             </a>
-          {% endif %}
+            <p class="post-meta">Posted by {{ post.author.name }} on {{ post.date }}</p>
+          </div>
+          <hr class="my-4" />
+        {% endfor %}
+      </div>
 
-          <div class="card-footer text-muted">
-            📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
-            {% if post.read_time %} • ⏱ {{ post.read_time }} min read {% endif %}
+      <!-- Sidebar -->
+      <div class="col-md-4">
+        <div class="card mb-4">
+          <div class="card-body">
+            <h5 class="card-title">📂 Categories</h5>
+            <ul class="list-unstyled mb-0">
+              <li><a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts | length }})</a></li>
+              <li><a href="{{ url_for('get_category', category_name='Python') }}">Python ({{ python_posts_count }})</a></li>
+              <li><a href="{{ url_for('get_category', category_name='NER Models') }}">NER Models ({{ ner_posts_count }})</a></li>
+            </ul>
           </div>
         </div>
-        {% endfor %}
-      {% else %}
-        <div class="alert alert-warning">
-          No blog posts found for <strong>{{ selected_category }}</strong>.
-        </div>
-      {% endif %}
 
-      <!-- Pagination -->
-      <nav aria-label="Blog page navigation">
-        <ul class="pagination justify-content-center">
-          <li class="page-item"><a class="page-link" href="#">1</a></li>
-          <li class="page-item"><a class="page-link" href="#">2</a></li>
-          <li class="page-item disabled"><span class="page-link">…</span></li>
-        </ul>
-      </nav>
-    </div>
-
-    <!-- Sidebar Column (Right Side of Hero & Posts) -->
-    <div class="col-lg-4">
-      <div class="card mb-4">
-        <div class="card-body">
-          <h5 class="card-title">📚 Categories</h5>
-          <ul class="list-unstyled">
-            <li>
-              <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
-            </li>
-            {% if categories %}
-              {% for category, count in categories %}
-              <li>
-                <a href="{{ url_for('category_posts', category_name=category) }}"
-                   class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
-                  {{ category }} ({{ count }})
-                </a>
-              </li>
-              {% endfor %}
-            {% else %}
-              <li><em>No categories available.</em></li>
-            {% endif %}
-          </ul>
+        <div class="card">
+          <div class="card-body text-center">
+            <p class="mb-1"><strong>👨‍💼 Kevin Cho</strong></p>
+            <p class="mb-0">Real Estate Data Scientist</p>
+          </div>
         </div>
       </div>
 
-      <div class="card mb-4 text-center">
-        <div class="card-body">
-          <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
-               class="img-fluid rounded-circle mb-2"
-               width="80"
-               alt="Kevin Cho">
-          <h6 class="mb-0">Kevin Cho</h6>
-          <small class="text-muted">Real Estate Data Scientist</small>
-        </div>
-      </div>
     </div>
-
-  </div> <!-- End row -->
-</div> <!-- End container -->
-
-{% endblock %}
-
+  </div>
+</div>
