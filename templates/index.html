@@ -15,13 +15,13 @@
   </div>
 </header>
 
-<!-- Main Content + Sidebar (two columns) -->
+<!-- Main Content + Sidebar -->
 <div class="container mt-5 px-4 px-lg-5">
   <div class="row justify-content-center">
     <div class="col-lg-10">
       <div class="row">
 
-        <!-- Main Blog Posts (Left) -->
+        <!-- Blog Posts Section -->
         <div class="col-md-8">
           {% for post in all_posts %}
           <div class="post-preview">
@@ -30,33 +30,28 @@
               <h3 class="post-subtitle">{{ post.subtitle }}</h3>
             </a>
             <p class="post-meta">
-              Posted by {{ post.author.name }} on {{ post.date }}
+              Posted by {% if post.author and post.author.name %}{{ post.author.name }}{% else %}Anonymous{% endif %}
+              on {{ post.date }}
             </p>
           </div>
           <hr class="my-4" />
           {% endfor %}
         </div>
 
-        <!-- Sidebar (Right) -->
+        <!-- Sidebar Section -->
         <div class="col-md-4">
           <!-- Categories -->
           <div class="card mb-4">
             <div class="card-body">
               <h5 class="card-title">📂 Categories</h5>
               <ul class="list-unstyled mb-0">
-                <li>
-                  <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts | length }})</a>
-                </li>
-                <li>
-                  <a href="{{ url_for('get_category', category_name='Python') }}">Python
-                    ({% if python_posts_count is defined %}{{ python_posts_count }}{% else %}0{% endif %})
-                  </a>
-                </li>
-                <li>
-                  <a href="{{ url_for('get_category', category_name='NER Models') }}">NER Models
-                    ({% if ner_posts_count is defined %}{{ ner_posts_count }}{% else %}0{% endif %})
-                  </a>
-                </li>
+                <li><a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts | length }})</a></li>
+                <li><a href="{{ url_for('get_category', category_name='Python') }}">
+                  Python ({% if python_posts_count is defined %}{{ python_posts_count }}{% else %}0{% endif %})
+                </a></li>
+                <li><a href="{{ url_for('get_category', category_name='NER Models') }}">
+                  NER Models ({% if ner_posts_count is defined %}{{ ner_posts_count }}{% else %}0{% endif %})
+                </a></li>
               </ul>
             </div>
           </div>
@@ -64,7 +59,6 @@
           <!-- Author Bio -->
           <div class="card">
             <div class="card-body text-center">
-              <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}" class="img-fluid rounded-circle mb-2" width="80" alt="Kevin Cho">
               <p class="mb-1"><strong>👨‍💼 Kevin Cho</strong></p>
               <p class="mb-0">Real Estate Data Scientist</p>
             </div>
@@ -77,3 +71,4 @@
 </div>
 
 {% endblock %}
+
