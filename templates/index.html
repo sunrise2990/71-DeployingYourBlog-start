@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Hero Banner -->
+<!-- Hero Banner: full-width -->
 <header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}'); height: 300px;">
-  <div class="container position-relative h-100 d-flex align-items-center justify-content-center">
+  <div class="container-fluid d-flex align-items-center justify-content-center h-100">
     <div class="text-center text-white">
       <h1 class="fw-bold">Kevin's Blog</h1>
       <span class="subheading">A collection of analytics, coding, and more 💡📊</span>
@@ -11,48 +11,53 @@
   </div>
 </header>
 
-<!-- Main 2-Column Layout -->
+<!-- Blog Content Section -->
 <div class="container mt-5">
-  <div class="row">
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+      <div class="row">
 
-    <!-- LEFT: Blog Posts -->
-    <div class="col-lg-8">
-      {% for post in all_posts %}
-        <div class="card mb-4">
-          <img src="{{ post.img_url or url_for('static', filename='assets/img/post-bg.jpg') }}" class="card-img-top" alt="Post Image">
-          <div class="card-body">
-            <h5 class="card-title">{{ post.title }}</h5>
-            <p class="card-text">{{ post.subtitle }}</p>
-            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
-          </div>
-          <div class="card-footer text-muted">
-            {{ post.date }} by {{ post.author.name }}
+        <!-- Left: Posts (take up 8/12 width) -->
+        <div class="col-lg-8">
+          {% for post in all_posts %}
+            <div class="card mb-4">
+              <img src="{{ post.img_url or url_for('static', filename='assets/img/post-bg.jpg') }}" class="card-img-top" alt="Post Image">
+              <div class="card-body">
+                <h5 class="card-title">{{ post.title }}</h5>
+                <p class="card-text">{{ post.subtitle }}</p>
+                <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+              </div>
+              <div class="card-footer text-muted">
+                {{ post.date }} by {{ post.author.name }}
+              </div>
+            </div>
+          {% endfor %}
+
+          <!-- Pagination -->
+          <nav aria-label="Pagination">
+            <ul class="pagination justify-content-center">
+              <li class="page-item disabled"><span class="page-link">Previous</span></li>
+              <li class="page-item active"><span class="page-link">1</span></li>
+              <li class="page-item"><a class="page-link" href="#">2</a></li>
+              <li class="page-item"><a class="page-link" href="#">Next</a></li>
+            </ul>
+          </nav>
+        </div>
+
+        <!-- Right: Sidebar -->
+        <div class="col-lg-4">
+          <div class="card mb-4">
+            <div class="card-header fw-bold">Sidebar Content</div>
+            <div class="card-body">
+              <p>Categories and bio go here.</p>
+            </div>
           </div>
         </div>
-      {% endfor %}
 
-      <!-- Pagination (Optional) -->
-      <nav aria-label="Pagination">
-        <ul class="pagination justify-content-center">
-          <li class="page-item disabled"><span class="page-link">Previous</span></li>
-          <li class="page-item active"><span class="page-link">1</span></li>
-          <li class="page-item"><a class="page-link" href="#">2</a></li>
-          <li class="page-item"><a class="page-link" href="#">Next</a></li>
-        </ul>
-      </nav>
-    </div>
-
-    <!-- RIGHT: Sidebar -->
-    <div class="col-lg-4">
-      <div class="card mb-4">
-        <div class="card-header fw-bold">Sidebar Content</div>
-        <div class="card-body">
-          <p>Categories and bio go here.</p>
-        </div>
-      </div>
-    </div>
-
-  </div>
+      </div> <!-- end nested row -->
+    </div> <!-- col-lg-10 -->
+  </div> <!-- main row -->
 </div>
 
 {% endblock %}
+
