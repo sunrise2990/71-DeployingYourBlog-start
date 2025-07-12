@@ -14,23 +14,24 @@
 .blog-container {
   display: flex;
   flex-direction: row;
-  gap: 20px;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-top: 40px;
+  gap: 2rem;
+  flex-wrap: wrap;
 }
 
-/* Main post list takes ~70% of width */
 .blog-main {
-  flex: 0 0 70%;
+  flex: 1 1 66%;
+  min-width: 300px;
 }
 
-/* Sidebar takes ~30% and stays top-aligned */
 .blog-sidebar {
-  flex: 0 0 28%;
-  position: sticky;
-  top: 120px; /* height of banner + navbar */
-  align-self: flex-start;
+  flex: 1 1 30%;
+  min-width: 260px;
+}
+
+@media (min-width: 1200px) {
+  .container {
+    max-width: 1140px;
+  }
 }
 
 :root {
