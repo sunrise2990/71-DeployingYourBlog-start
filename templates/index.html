@@ -2,20 +2,30 @@
 {% block content %}
 <div class="container mt-5">
   <div class="row">
+
+    <!-- Blog Posts -->
     <div class="col-lg-8">
-      <div class="card p-4">
-        <h3>Blog Post Placeholder</h3>
-        <p>This is where blog posts will appear.</p>
-      </div>
+      {% for post in all_posts %}
+        {% include "post_card.html" %}
+      {% endfor %}
     </div>
+
+    <!-- Sidebar -->
     <div class="col-lg-4">
-      <div class="card p-4">
-        <h4>Sidebar Content</h4>
-        <p>Categories and bio go here.</p>
+      <div class="card p-3 mb-4">
+        <h5 class="fw-bold">📂 Categories</h5>
+        <ul class="list-unstyled">
+          <li>AI Projects (12)</li>
+          <li>Finance Tools (7)</li>
+          <li>ML Models (9)</li>
+        </ul>
+      </div>
+      <div class="card p-3">
+        <h5 class="fw-bold">👤 Kevin Cho</h5>
+        <p>CPA & Data Scientist. Sharing tools for real estate finance and analytics.</p>
       </div>
     </div>
+
   </div>
 </div>
 {% endblock %}
-
-
