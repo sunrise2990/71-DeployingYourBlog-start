@@ -22,14 +22,16 @@
     <!-- Blog Posts (Left Column) -->
     <div class="col-lg-8">
       {% for post in all_posts %}
-        <div class="card mb-4">
-          <img src="{{ url_for('static', filename='assets/img/post-bg.jpg') }}" class="card-img-top" alt="Post Image">
+        <div class="card mb-4 shadow-sm">
+          {% if post.img_url %}
+            <img src="{{ post.img_url }}" class="card-img-top" alt="Post Image">
+          {% else %}
+            <img src="{{ url_for('static', filename='assets/img/post-bg.jpg') }}" class="card-img-top" alt="Default Post Image">
+          {% endif %}
           <div class="card-body">
-            <h5 class="card-title">{{ post.title }}</h5>
-            <p class="card-text">
-              {{ post.subtitle }}
-            </p>
-            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+            <h4 class="card-title fw-bold">{{ post.title }}</h4>
+            <p class="card-text">{{ post.subtitle }}</p>
+            <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-sm btn-outline-primary">Read More →</a>
           </div>
           <div class="card-footer text-muted">
             {{ post.date }} by {{ post.author.name }}
@@ -37,21 +39,13 @@
         </div>
       {% endfor %}
 
-      <!-- Pagination (Optional) -->
-      <nav aria-label="Blog pagination">
-        <ul class="pagination justify-content-center">
-          <li class="page-item disabled">
-            <span class="page-link">Previous</span>
-          </li>
-          <li class="page-item active">
-            <span class="page-link">1</span>
-          </li>
-          <li class="page-item">
-            <a class="page-link" href="#">2</a>
-          </li>
-          <li class="page-item">
-            <a class="page-link" href="#">Next</a>
-          </li>
+      <!-- Pagination (optional) -->
+      <nav aria-label="Post navigation">
+        <ul class="pagination justify-content-center mt-4">
+          <li class="page-item disabled"><a class="page-link" href="#">Previous</a></li>
+          <li class="page-item active"><a class="page-link" href="#">1</a></li>
+          <li class="page-item"><a class="page-link" href="#">2</a></li>
+          <li class="page-item"><a class="page-link" href="#">Next</a></li>
         </ul>
       </nav>
     </div>
@@ -62,6 +56,11 @@
         <div class="card-header fw-bold">Sidebar Content</div>
         <div class="card-body">
           <p>Categories and bio go here.</p>
+          <!-- Optional: Add author image or category links here -->
+          {# Example:
+          <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}" class="img-fluid rounded-circle mb-2" alt="Author">
+          <p class="text-muted">Kevin Cho - Data Analyst & Finance Director</p>
+          #}
         </div>
       </div>
     </div>
