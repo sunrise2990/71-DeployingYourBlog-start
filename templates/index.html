@@ -16,10 +16,11 @@
   </div>
 </header>
 
-<!-- Main Content with Sidebar (no nested .container) -->
-<div class="row mt-5">
-  <!-- Blog Post List -->
-  <div class="col-md-8">
+<!-- Main Content with Sidebar (fixed structure) -->
+<div class="container px-4 px-lg-5 mt-5">
+  <div class="row gx-5">
+    <!-- Blog Post List -->
+    <div class="col-md-8">
 
       {% if all_posts %}
         {% for post in all_posts %}
