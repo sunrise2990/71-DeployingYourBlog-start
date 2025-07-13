@@ -75,10 +75,8 @@
              class="img-fluid rounded-circle mb-2"
              width="80"
              onerror="this.style.display='none'">
-        <a href="{{ url_for('about') }}" style="text-decoration: none; color: inherit;">
-          <h6 class="mb-0">Kevin Cho</h6>
-          <small class="text-muted">Full-Stack Data Scientist | Real Estate Finance & Analytics | Python · SQL · Flask · AWS</small>
-        </a>
+        <h6 class="mb-0">Kevin Cho</h6>
+        <small class="text-muted">Data Scientist | Consultant</small>
       </div>
     </div>
   </div>
