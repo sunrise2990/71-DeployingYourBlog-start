@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Hero and Sidebar Section -->
+<div class="hero-with-sidebar container">
+  <!-- Hero + Blog Posts -->
+  <div class="hero-left">
+    <!-- Hero Banner -->
+    <header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg3.jpg') }}')">
+      <div class="px-4 px-lg-5">
+        <div class="site-heading">
+          <h1>Data by Kevin</h1>
+          <span class="subheading">A collection of analytics, coding, and more 💡</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Blog Posts -->
+    {% if all_posts %}
+      {% for post in all_posts %}
+      <div class="card mb-4">
+        {% if post.img_url %}
+          <img class="card-img-top" src="{{ post.img_url }}" alt="...">
+        {% endif %}
+        <div class="card-body">
+          <h5 class="card-title">{{ post.title }}</h5>
+          <p class="card-text">{{ post.subtitle }}</p>
+          <a href="{{ url_for('show_post', post_id=post.id) }}" class="btn btn-primary">Read More →</a>
+        </div>
+        <div class="card-footer text-muted">
+          📅 {{ post.date }} • by {{ post.author.name if post.author else "Unknown" }}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="alert alert-warning">
+        No blog posts found for <strong>{{ selected_category }}</strong>.
+      </div>
+    {% endif %}
+
+    <!-- Pagination -->
+    <div class="d-flex justify-content-between mb-4">
+      <a class="btn btn-secondary" href="#">Previous</a>
+      <a class="btn btn-secondary" href="#">More</a>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="hero-right blog-sidebar">
+    <!-- Category Section -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h6 class="card-title">📚 Categories</h6>
+        <ul class="list-unstyled mb-0">
+          <li>
+            <a href="{{ url_for('get_all_posts') }}">All Posts ({{ all_posts|length }})</a>
+          </li>
+          {% for category, count in categories %}
+          <li>
+            <a href="{{ url_for('category_posts', category_name=category) }}"
+               class="{% if selected_category == category %}fw-bold text-primary{% endif %}">
+              {{ category }} ({{ count }})
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <!-- Author Profile -->
+    <div class="card mb-4 text-center">
+      <div class="card-body">
+        <img src="{{ url_for('static', filename='assets/img/profile.jpg') }}"
+             alt="Profile"
+             class="img-fluid rounded-circle mb-2"
+             width="80"
+             onerror="this.style.display='none'">
+        <h6 class="mb-0">Kevin Cho</h6>
+        <small class="text-muted">Data Scientist | Consultant</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
