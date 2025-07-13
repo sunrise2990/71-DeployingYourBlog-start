@@ -1,50 +1,46 @@
-{% extends "base.html" %}
-{% block title %}About | Data by Kevin{% endblock %}
-
-{% block content %}
-<!-- Page Header-->
-<header
-  class="masthead"
-  style="background-image: url('{{ url_for('static', filename='assets/img/about-bg.jpg') }}')"
->
-  <div class="container position-relative px-4 px-lg-5">
-    <div class="row gx-4 gx-lg-5 justify-content-center">
-      <div class="col-md-10 col-lg-8 col-xl-7">
-        <div class="page-heading">
-          <h1>About Me</h1>
-          <span class="subheading">This is what I do.</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</header>
-
-<!-- Main Content-->
 <main class="mb-4">
   <div class="container px-4 px-lg-5">
     <div class="row gx-4 gx-lg-5 justify-content-center">
       <div class="col-md-10 col-lg-8 col-xl-7">
+
+        <h2 class="mb-4">My Background</h2>
         <p>
-          Lorem ipsum dolor sit amet, consectetur adipisicing elit. Saepe
-          nostrum ullam eveniet pariatur voluptates odit, fuga atque ea nobis
-          sit soluta odio, adipisci quas excepturi maxime quae totam ducimus
-          consectetur?
+          I’m Kevin Cho — a full-stack data scientist and real estate finance executive with over 20 years of experience. As the Director of Finance overseeing a diverse portfolio of commercial assets, I've combined deep financial acumen with technical execution to drive decision-making, optimize workflows, and unlock value across the organization.
         </p>
+
+        <h2 class="mb-4">Career Objectives</h2>
         <p>
-          Lorem ipsum dolor sit amet, consectetur adipisicing elit. Eius
-          praesentium recusandae illo eaque architecto error, repellendus iusto
-          reprehenderit, doloribus, minus sunt. Numquam at quae voluptatum in
-          officia voluptas voluptatibus, minus!
+          My mission is to build scalable, data-driven platforms that elevate decision quality and operational efficiency. I believe data is more than reporting — it's the engine behind every strategic move, every savings opportunity, and every successful transformation.
         </p>
+
+        <h2 class="mb-4">Projects I’ve Completed</h2>
+        <ul>
+          <li><strong>Automated CAM Reconciliation Platform:</strong> Leveraged SQL and Python to mirror Yardi’s recovery logic, reducing hours of manual work and eliminating inconsistencies.</li>
+          <li><strong>Leasing Scenario Modeling Tool:</strong> Built a 5-year leasing projection pipeline integrating SQL, Python, and xlwings, allowing dynamic forecast updates and vacancy tracking across 400 tenants.</li>
+          <li><strong>CapEx Forecast Engine:</strong> Designed a unified input/output Excel template, powered by Python scripts, to consolidate actuals, budgets, and user-input reforecasts into a single dynamic summary report.</li>
+        </ul>
+
+        <h2 class="mb-4">Projects I Will Complete</h2>
         <p>
-          Lorem ipsum dolor sit amet, consectetur adipisicing elit. Aut
-          consequuntur magnam, excepturi aliquid ex itaque esse est vero natus
-          quae optio aperiam soluta voluptatibus corporis atque iste neque sit
-          tempora!
+          I'm currently developing cloud-hosted ETL pipelines and Flask apps to deploy investment tools and scenario models on the web. The vision is to transform internal data projects into public-facing platforms that support investors and operators alike — from anywhere.
         </p>
+
+        <h2 class="mb-4">Technical Skills & Tools</h2>
+        <p>
+          My stack includes SQL (Athena, PostgreSQL, DBeaver), Python (Pandas, NumPy, xlwings), Flask, Power Query, VBA, Power BI, and Excel automation. I use Git, PyCharm, and AWS (EC2, Lambda, S3) to deploy scalable and integrated solutions.
+        </p>
+
+        <h2 class="mb-4">How I Create Value</h2>
+        <p>
+          Over the last 20 years in real estate finance, I've learned that sustainable process improvement is impossible without a purpose-built data platform. Whether it's CAM reconciliations, leasing forecasts, or CapEx tracking, true efficiency comes from transforming scattered spreadsheets and manual workflows into automated, intelligent systems. My data platform integrates SQL pipelines, Python logic, and Excel/Xlwings interfaces — not only reducing cost and error, but unlocking insights that were previously hidden. Every project I lead is grounded in this principle: <strong>process improvement is powered by data, or it doesn't scale</strong>.
+        </p>
+
+        <h2 class="mb-4">Final Thoughts</h2>
+        <p>
+          I’m here to turn operational complexity into clarity, and static data into dynamic strategy. Whether you're optimizing portfolio performance or preparing for the next market cycle, I bring both the tools and the mindset to move fast, with precision.
+        </p>
+
       </div>
     </div>
   </div>
 </main>
-{% endblock %}
-
