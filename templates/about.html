@@ -1,3 +1,25 @@
+{% extends "base.html" %}
+{% block title %}About | Data by Kevin{% endblock %}
+
+{% block content %}
+<!-- Page Header-->
+<header
+  class="masthead"
+  style="background-image: url('{{ url_for('static', filename='assets/img/about-bg.jpg') }}')"
+>
+  <div class="container position-relative px-4 px-lg-5">
+    <div class="row gx-4 gx-lg-5 justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
+        <div class="page-heading">
+          <h1>About Me</h1>
+          <span class="subheading">This is what I do.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Main Content-->
 <main class="mb-4">
   <div class="container px-4 px-lg-5">
     <div class="row gx-4 gx-lg-5 justify-content-center">
@@ -27,7 +49,7 @@
 
         <h2 class="mb-4">Technical Skills & Tools</h2>
         <p>
-          My stack includes SQL (Athena, PostgreSQL, DBeaver), Python (Pandas, NumPy, xlwings), Flask, Power Query, VBA, Power BI, and Excel automation. I use Git, PyCharm, and AWS (EC2, Lambda, S3) to deploy scalable and integrated solutions.
+          My stack includes SQL (Athena, PostgreSQL), Python (Pandas, NumPy, xlwings), Flask, VBA, Power BI, and Excel automation. I use Git, PyCharm, and AWS (EC2, Lambda, S3) to deploy scalable and integrated solutions.
         </p>
 
         <h2 class="mb-4">How I Create Value</h2>
@@ -44,3 +66,4 @@
     </div>
   </div>
 </main>
+{% endblock %}
