@@ -114,6 +114,15 @@ body {
   }
 }
 
+.post-heading {
+  padding: 60px 20px;
+  min-height: 250px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
 
 :root {
   --bs-blue: #0d6efd;
