@@ -125,24 +125,24 @@ body {
 }
 
 /* ✅ Fix for post.html layout only */
-header.masthead .post-heading {
-  text-align: center;
-  padding: 0;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  height: 100%;
-}
-
 header.masthead {
   height: 250px !important;
   background-size: cover;
   background-position: center;
   display: flex;
   align-items: center;
+  justify-content: center;
   padding: 0 !important;
   margin-bottom: 1rem;
+}
+
+header.masthead .post-heading {
+  text-align: center;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
 }
 
 header.masthead .post-heading h1 {
