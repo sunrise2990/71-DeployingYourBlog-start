@@ -124,6 +124,48 @@ body {
   text-align: center;
 }
 
+/* ✅ Fix for post.html layout only */
+header.masthead .post-heading {
+  text-align: center;
+  padding: 0;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+}
+
+header.masthead {
+  height: 250px !important;
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  padding: 0 !important;
+  margin-bottom: 1rem;
+}
+
+header.masthead .post-heading h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+header.masthead .post-heading .subheading {
+  font-size: 1.2rem;
+  color: #ccc;
+  margin-bottom: 0.3rem;
+}
+
+header.masthead .post-heading .meta {
+  font-size: 0.9rem;
+  color: #eee;
+}
+
+header.masthead .btn {
+  margin-top: 0.5rem;
+}
+
+
 :root {
   --bs-blue: #0d6efd;
   --bs-indigo: #6610f2;
