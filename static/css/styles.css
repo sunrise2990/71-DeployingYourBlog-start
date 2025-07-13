@@ -54,7 +54,7 @@ body {
   background-size: cover;
   background-position: center;
   color: white;
-  padding: 4rem 0;
+  padding: 2rem 0;
   max-width: 1140px;
   margin: 0 auto;
 }
@@ -4272,7 +4272,10 @@ textarea.form-control-lg {
 }
 
 .card-img,
-.card-img-top,
+.card-img-top {
+    height: 180px;       /* Shrink image height */
+    object-fit: cover;   /* Maintain aspect ratio and fill */
+}
 .card-img-bottom {
   width: 100%;
 }
