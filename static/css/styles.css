@@ -25,6 +25,7 @@
 .blog-main {
   flex: 1 1 66%;
   min-width: 300px;
+  margin-top: -0.5rem;
 }
 
 .blog-sidebar {
@@ -10777,7 +10778,7 @@ footer {
 
 header.masthead {
   position: relative;
-  margin-bottom: 3rem;
+  margin-bottom: 0.5rem;
   padding-top: calc(8rem + 57px);
   padding-bottom: 8rem;
   background: no-repeat center center;
