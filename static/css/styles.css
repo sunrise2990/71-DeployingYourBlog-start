@@ -51,7 +51,7 @@ body {
 .masthead {
   position: relative;
   width: 100%;
-  height: 200px;                 /* Shrink header height */
+  height: 150px;                 /* Shrink header height */
   overflow: hidden;             /* Crop overflow */
   background-repeat: no-repeat;
   background-size: cover;
@@ -60,11 +60,12 @@ body {
   padding: 0;                   /* Remove default padding */
   margin: 0 auto;
   max-width: 1140px;
+  margin-bottom: 1rem;
 }
 
 .site-heading {
-  padding-top: 1rem;
-  padding-bottom: 1rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
   margin-bottom: 0;             /* Remove extra bottom space */
 }
 
@@ -90,11 +91,11 @@ body {
   flex: 2;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1rem;
 }
 
 .hero-right {
-  flex: 1;
+  flex: 0.8;
   align-self: flex-start;
 }
 
@@ -4279,7 +4280,7 @@ textarea.form-control-lg {
 
 .card-img,
 .card-img-top {
-    height: 180px;       /* Shrink image height */
+    height: 130px;       /* Shrink image height */
     object-fit: cover;   /* Maintain aspect ratio and fill */
 }
 .card-img-bottom {
