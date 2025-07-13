@@ -70,9 +70,11 @@
     <!-- Author Profile -->
     <div class="card mb-4 text-center">
       <div class="card-body">
-        <img src="{{ url_for('static', filename='profile.jpg') }}" alt="Profile" onerror="this.style.display='none'">
+        <img src="{{ url_for('static', filename='profile.jpg') }}"
+             alt="Profile"
              class="img-fluid rounded-circle mb-2"
-             width="80" alt="Profile">
+             width="80"
+             onerror="this.style.display='none'">
         <h6 class="mb-0">Kevin Cho</h6>
         <small class="text-muted">Data Scientist | Consultant</small>
       </div>
