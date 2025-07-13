@@ -27,7 +27,7 @@
 
         <h4 class="mb-4">My Background</h4>
         <p class="mb-5">
-          I’m Kevin Cho — a full-stack data scientist and real estate finance leader with over 20 years of experience. As the Director of Finance/Accounting overseeing a diverse portfolio of commercial income producing rental assets, I've combined deep financial acumen with technical execution to drive decision-making, optimize workflows, and unlock value across the organization.
+          I’m Kevin Cho — a full-stack data scientist and real estate finance executive with over 20 years of experience. As the Director of Finance/Accounting overseeing a diverse portfolio of commercial income producing rental assets, I've combined deep financial acumen with technical execution to drive decision-making, optimize workflows, and unlock value across the organization.
         </p>
 
         <h4 class="mb-4">Career Objectives</h4>
