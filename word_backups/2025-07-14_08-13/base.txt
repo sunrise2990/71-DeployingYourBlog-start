@@ -35,9 +35,9 @@
                             Projects
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('projects.budget_reforecast') }}">Budget & Reforecast</a></li>
-                            <li><a class="dropdown-item" href="#">CAM Recovery (WIP)</a></li>
-                            <li><a class="dropdown-item" href="#">Retirement Plan Simulator (WIP)</a></li>
+                            <li><a class="dropdown-item" href="#">CAM Recovery</a></li>
+                            <li><a class="dropdown-item" href="#">CapEx Forecast</a></li>
+                            <li><a class="dropdown-item" href="#">NER Simulator</a></li>
                         </ul>
                     </li>
 
