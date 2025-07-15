@@ -16,7 +16,7 @@ import os
 import logging
 from dotenv import load_dotenv
 from routes import projects_bp
-app.register_blueprint(projects_bp)
+
 
 # 🔧 Initialize logging + environment
 logging.basicConfig(level=logging.DEBUG)
@@ -34,6 +34,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI")
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 db.init_app(app)
 migrate = Migrate(app, db)
+app.register_blueprint(projects_bp)
 
 # ✅ Extensions
 ckeditor = CKEditor(app)
