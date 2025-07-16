@@ -1,34 +1,88 @@
 {% extends "base.html" %}
-{% block title %}Leasing Forecast Pipeline | Data by Kevin{% endblock %}
+{% block title %}Leasing Forecast Automation | Data by Kevin{% endblock %}
 {% block content %}
 
 <h1 class="mb-4">🏢 Leasing Forecast Automation</h1>
 
-<p>This pipeline processes leasing assumptions, in-place leases, and reforecasts rent revenue across a 5-year horizon.</p>
-
-<h2>🔧 How It Works</h2>
-<ol>
-  <li><strong>Extract</strong>: Pull data from Yardi via Athena</li>
-  <li><strong>Transform</strong>: Use Python + Pandas to:
-    <ul>
-      <li>Unnest charge periods and rent steps</li>
-      <li>Merge actuals, inputs, overrides</li>
-      <li>Handle renewals and downtime logic</li>
-    </ul>
-  </li>
-  <li><strong>Load</strong>: Write to Excel via xlwings with input preservation</li>
-</ol>
-
-<h2>📌 Key Features</h2>
-<ul>
-  <li>Live Excel outputs for Leasing & Accounting teams</li>
-  <li>Preserves manual assumptions while updating actuals</li>
-  <li>Supports scenario modeling (e.g., renewal probability)</li>
-</ul>
-
-<img src="{{ url_for('static', filename='img/leasing_pipeline_diagram.png') }}" alt="Leasing Flow" class="img-fluid mt-4">
+<p>
+  This pipeline processes leasing assumptions, in-place leases, and reforecasts rent revenue across a 5-year horizon — streamlining the entire forecasting process for 800+ tenants across 100+ commercial properties.
+</p>
 
 <hr>
-<a href="{{ url_for('projects.budget_reforecast') }}" class="btn btn-secondary mt-3">← Back to Budget & Reforecast Overview</a>
+
+<h2>🛠️ How It Works</h2>
+<p>The leasing pipeline automates the ETL process for tenant-level rent forecasts using a hybrid of Python, SQL (Athena), and Excel (via xlwings):</p>
+
+<ol>
+  <li><strong>Extract</strong>: Pull active lease and unit-level data directly from Yardi using Athena SQL queries.</li>
+  <li><strong>Transform</strong>: Use Python (Pandas + NumPy) to:
+    <ul>
+      <li>Unnest charge periods, including stepped rent increases</li>
+      <li>Merge in-place actuals, user-input assumptions, and forecast overrides</li>
+      <li>Apply lease renewal logic, including downtime handling</li>
+      <li>Remove duplicated values across overlapping data sources</li>
+    </ul>
+  </li>
+  <li><strong>Load</strong>: Push forecast output into structured Excel templates via <code>xlwings</code>, preserving manual inputs and allowing leasing team collaboration.</li>
+</ol>
+
+<hr>
+
+<h2>📐 System Architecture</h2>
+<p>The pipeline integrates directly with existing tools and workflows:</p>
+
+<img src="{{ url_for('static', filename='assets/img/leasingdiagram.png') }}" alt="Leasing Flow" class="img-fluid my-4 border rounded shadow-sm">
+
+<ul>
+  <li><strong>Data Source</strong>: Yardi (Athena/Glue)</li>
+  <li><strong>ETL Core</strong>: Python (custom scripts with merge, flagging, and override logic)</li>
+  <li><strong>Frontend</strong>: Excel input/output via xlwings</li>
+  <li><strong>Hosting</strong>: Scheduled locally, EC2-capable for future deployment</li>
+</ul>
+
+<hr>
+
+<h2>🧩 Challenges & Solutions</h2>
+<ul>
+  <li><strong>Challenge:</strong> Duplicate projections when reforecast assumptions overlapped with actual lease activations.<br>
+      <strong>Solution:</strong> Introduced override logic and timestamp tracking to remove or flag conflicting rows dynamically.</li>
+
+  <li><strong>Challenge:</strong> Manual team inputs were lost after each refresh.<br>
+      <strong>Solution:</strong> Used xlwings and structured Excel ranges to safely write back new data while preserving prior assumptions.</li>
+
+  <li><strong>Challenge:</strong> Forecasting renewals required downtime, tenant aging, and multiple scenarios.<br>
+      <strong>Solution:</strong> Modularized logic to support renewal flags, probability tiers, and downtime % per property group.</li>
+</ul>
+
+<hr>
+
+<h2>📊 Business Impact</h2>
+<ul>
+  <li>✅ Reduced reforecast turnaround from 3 days to under 30 minutes</li>
+  <li>✅ Enabled Leasing, Accounting, and FP&A to collaborate on shared forecasts</li>
+  <li>✅ Increased forecast accuracy across renewal vs new lease spreads</li>
+  <li>✅ Standardized inputs across 800+ tenant rows over 5 years</li>
+</ul>
+
+<hr>
+
+<h2>🧠 Reflections & Lessons</h2>
+<p>This project began as a tactical solution — but quickly grew into a scalable, strategic tool that aligned multiple departments. The core success came from blending:</p>
+
+<ul>
+  <li>My real estate finance background (CPA, lease structures, operational flow)</li>
+  <li>Technical automation (SQL, Python, xlwings)</li>
+  <li>Execution discipline (documented override rules, safe inputs, version control)</li>
+</ul>
+
+<p>
+  It’s also a cornerstone of my broader career pivot — showcasing that data tools aren’t just for coders. They’re for operators who deeply understand the domain and want to build lasting solutions.
+</p>
+
+<hr>
+
+<a href="{{ url_for('projects.budget_reforecast') }}" class="btn btn-secondary mt-3">
+  ← Back to Budget & Reforecast Overview
+</a>
 
 {% endblock %}
