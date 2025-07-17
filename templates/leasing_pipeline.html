@@ -39,27 +39,27 @@
         <p class="lead">Explore how data flows from our Yardi systems through Excel and Python automation pipelines.</p>
       </section>
 
-      <!-- Simplified Flow -->
-      <section class="mb-4">
+      <!-- Simplified Leasing Flow -->
+      <section class="mb-5">
         <h3 class="mb-3"><i class="fas fa-route text-info"></i> Simplified Leasing Flow</h3>
         <p>This diagram provides a high-level overview of the leasing process used to generate projections from multiple data sources.</p>
-        <div style="display: flex; justify-content: center;">
+        <div class="text-center mt-3 mb-3">
           <img src="{{ url_for('static', filename='assets/img/leasing_diagram.png') }}"
                alt="Simplified Leasing Flow"
-               style="max-width: 70%; height: auto;"
-               class="img-thumbnail border shadow-sm">
+               class="img-fluid shadow-sm"
+               style="max-width: 850px;">
         </div>
       </section>
 
-      <!-- Full Architecture -->
+      <!-- Dataflow Architecture -->
       <section class="mb-5">
         <h3 class="mb-3"><i class="fas fa-network-wired text-primary"></i> Dataflow Architecture</h3>
         <p>This visual summarizes the full-stack integration across systems:</p>
-        <div style="overflow-x: auto; white-space: nowrap; border: 1px solid #ccc; padding: 10px;">
+        <div class="text-center mt-3">
           <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
-               alt="Full Leasing Dataflow Architecture"
-               style="height: auto; width: 1600px;"
-               class="shadow-sm">
+               alt="Leasing Data Architecture"
+               class="img-fluid shadow-sm"
+               style="max-width: 100%;">
         </div>
       </section>
 
