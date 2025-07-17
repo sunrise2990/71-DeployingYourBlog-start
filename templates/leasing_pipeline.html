@@ -40,23 +40,27 @@
       </section>
 
       <!-- Simplified Flow -->
-      <section class="mb-5">
+      <section class="mb-4">
         <h3 class="mb-3"><i class="fas fa-route text-info"></i> Simplified Leasing Flow</h3>
         <p>This diagram provides a high-level overview of the leasing process used to generate projections from multiple data sources.</p>
-        <img src="{{ url_for('static', filename='assets/img/leasing_diagram.png') }}"
-             alt="Simplified Leasing Flow"
-             style="max-width: 90%; height: auto; display: block; margin: 20px auto;"
-             class="img-thumbnail border shadow-sm">
+        <div style="display: flex; justify-content: center;">
+          <img src="{{ url_for('static', filename='assets/img/leasing_diagram.png') }}"
+               alt="Simplified Leasing Flow"
+               style="max-width: 70%; height: auto;"
+               class="img-thumbnail border shadow-sm">
+        </div>
       </section>
 
       <!-- Full Architecture -->
       <section class="mb-5">
         <h3 class="mb-3"><i class="fas fa-network-wired text-primary"></i> Dataflow Architecture</h3>
         <p>This visual summarizes the full-stack integration across systems:</p>
-        <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
-             alt="Full Leasing Dataflow Architecture"
-             style="max-width: 100%; height: auto; display: block; margin: 30px auto;"
-             class="img-thumbnail border shadow-sm">
+        <div style="overflow-x: auto; white-space: nowrap; border: 1px solid #ccc; padding: 10px;">
+          <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
+               alt="Full Leasing Dataflow Architecture"
+               style="height: auto; width: 1600px;"
+               class="shadow-sm">
+        </div>
       </section>
 
       <!-- Technical Flow -->
