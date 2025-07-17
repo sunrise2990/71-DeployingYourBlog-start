@@ -3,7 +3,7 @@
 {% block content %}
 
 <!-- Hero Banner -->
-<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg5.jpg') }}')">
+<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg3.jpg') }}')">
   <div class="container position-relative px-4 px-lg-5">
     <div class="row gx-4 gx-lg-5 justify-content-center">
       <div class="col-md-10 col-lg-8 col-xl-7">
@@ -51,12 +51,14 @@
         </div>
       </section>
 
-      <!-- Dataflow Architecture (Full-Bleed Image) -->
+      <!-- Dataflow Architecture (Improved Centering + Padding) -->
       <section class="mb-5">
-        <h3 class="mb-3 ps-3"><i class="fas fa-network-wired text-primary"></i> Dataflow Architecture</h3>
+        <h3 class="mb-3 ps-3">
+          <i class="fas fa-network-wired text-primary"></i> Dataflow Architecture
+        </h3>
         <p class="ps-3">This visual summarizes the full-stack integration across systems:</p>
 
-        <div style="width: 100vw; margin-left: calc(-50vw + 50%); margin-right: calc(-50vw + 50%); text-align: center;">
+        <div class="text-center" style="padding-left: 5%;">
           <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
                alt="Leasing Data Architecture"
                style="width: 75%; max-width: 1600px; display: inline-block;"
