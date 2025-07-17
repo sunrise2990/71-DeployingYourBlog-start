@@ -43,10 +43,11 @@
       <section class="mb-5">
         <h3 class="mb-3"><i class="fas fa-route text-info"></i> Simplified Leasing Flow</h3>
         <p>This diagram provides a high-level overview of the leasing process used to generate projections from multiple data sources.</p>
-        <img src="{{ url_for('static', filename='assets/img/leasing_diagram.png') }}"
-             alt="Simplified Leasing Flow"
-             style="max-width: 100%; height: auto; display: block; margin: 0 auto;"
-             class="img-thumbnail border shadow-sm">
+        <div style="overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+          <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
+               alt="Full Leasing Dataflow Architecture"
+               style="min-width: 1800px; height: auto; display: block; margin: 0 auto;">
+        </div>
       </section>
 
       <!-- Full Dataflow Architecture -->
