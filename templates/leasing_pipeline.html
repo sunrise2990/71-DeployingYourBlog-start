@@ -9,7 +9,7 @@
       <div class="col-md-10 col-lg-8 col-xl-7">
         <div class="site-heading">
           <h1>Leasing Forecast Automation</h1>
-          <span class="subheading">Python + SQL + Excel = Fully Integrated Commercial Rent Forecasts</span>
+          <span class="subheading">Python + SQL + Excel = Fully Integrated Rent Forecasts</span>
         </div>
       </div>
     </div>
@@ -33,49 +33,39 @@
         </ul>
       </section>
 
-    </div>
-  </div>
-</main>
+      <!-- Leasing Pipeline Overview -->
+      <section class="mb-5">
+        <h2>📊 Leasing Pipeline Overview</h2>
+        <p>Explore how data flows from our Yardi systems through Excel and Python automation pipelines.</p>
+      </section>
 
-<!-- 📌 Pipeline Visuals (outside of main to avoid nested container issues) -->
+      <!-- Simplified Flow Diagram -->
+      <section class="mb-5">
+        <h3 class="mb-3"><i class="fas fa-route text-info"></i> Simplified Leasing Flow</h3>
+        <p>This diagram provides a high-level overview of the leasing process used to generate projections from multiple data sources.</p>
+        <img src="{{ url_for('static', filename='assets/img/leasing_diagram.png') }}"
+             alt="Simplified Leasing Flow"
+             style="max-width: 100%; height: auto; display: block; margin: 0 auto;"
+             class="img-thumbnail border shadow-sm">
+      </section>
 
-<section class="container mt-4">
-  <h2 class="mb-4">
-    <i class="fas fa-brain text-danger"></i> Leasing Pipeline Overview
-  </h2>
-  <p class="lead">Explore how data flows from our Yardi systems through Excel and Python automation pipelines.</p>
-</section>
-
-<section class="container mt-5">
-  <h3 class="mb-3"><i class="fas fa-route text-info"></i> Simplified Leasing Flow</h3>
-  <p>This diagram provides a high-level overview of the leasing process used to generate projections from multiple data sources.</p>
-  <img src="{{ url_for('static', filename='assets/img/leasing_diagram.png') }}"
-       alt="Simplified Leasing Flow"
-       style="max-width: 100%; height: auto; display: block; margin: 0 auto;"
-       class="img-thumbnail border shadow-sm">
-</section>
-
-<section class="container mt-5">
-  <h3 class="mb-3"><i class="fas fa-network-wired text-primary"></i> Dataflow Architecture</h3>
-  <p>This visual summarizes the full-stack integration across systems:</p>
-  <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
-       alt="Full Leasing Dataflow Architecture"
-       style="max-width: 100%; height: auto; display: block; margin: 0 auto;"
-       class="img-thumbnail border shadow-sm">
-</section>
-
-<!-- Back to main technical content -->
-<main class="container px-4 px-lg-5 mt-5">
-  <div class="row gx-4 gx-lg-5 justify-content-center">
-    <div class="col-md-12 col-lg-12 col-xl-10">
+      <!-- Full Dataflow Architecture -->
+      <section class="mb-5">
+        <h3 class="mb-3"><i class="fas fa-network-wired text-primary"></i> Dataflow Architecture</h3>
+        <p>This visual summarizes the full-stack integration across systems:</p>
+        <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
+             alt="Full Leasing Dataflow Architecture"
+             style="width: 100%; height: auto; display: block; margin: 0 auto;"
+             class="img-thumbnail border shadow-sm">
+      </section>
 
       <!-- Technical Flow -->
       <section class="mb-5">
         <h2>⚙️ Technical Flow</h2>
         <ol>
           <li><strong>SQL Data Pull:</strong> Extracts 4 core tables from 1,000+ via Athena, including historical and future rent rolls</li>
-          <li><strong>Load to Excel:</strong> Results populate <code>7yrBaseRent</code>, <code>RentRoll</code>, and <code>Sqft</code> tabs</li>
-          <li><strong>Read via xlwings:</strong> Python loads both Yardi data and leasing inputs from <code>Inputs</code> tab</li>
+          <li><strong>Load to Excel:</strong> Results populate `7yrBaseRent`, `RentRoll`, and `Sqft` tabs</li>
+          <li><strong>Read via xlwings:</strong> Python loads both Yardi data and leasing inputs from `Inputs` tab</li>
           <li><strong>DataFrame Logic:</strong>
             <ul>
               <li>Combine Yardi leases + leasing team assumptions</li>
@@ -86,9 +76,9 @@
             </ul>
           </li>
           <li><strong>Vacancy Integration:</strong> Identify unoccupied months by comparing against a unit-level GLA baseline</li>
-          <li><strong>Output to Excel:</strong> Write to <code>all_unnest</code>, <code>GLA_Month</code>, and <code>Summary Report</code></li>
+          <li><strong>Output to Excel:</strong> Write to `all_unnest`, `GLA_Month`, and `Summary Report`</li>
           <li><strong>Validation:</strong> Merge with rent roll to detect mismatch</li>
-          <li><strong>Backup:</strong> Archive <code>Inputs</code> and validation data daily via SharePoint</li>
+          <li><strong>Backup:</strong> Archive `Inputs` and validation data daily via SharePoint</li>
         </ol>
       </section>
 
@@ -117,7 +107,7 @@
         </ul>
       </section>
 
-      <!-- Challenges & Fixes -->
+      <!-- Challenges -->
       <section class="mb-5">
         <h2>🛠 Challenges Solved</h2>
         <ul>
