@@ -38,7 +38,6 @@
         <h2>🧠 Dataflow Architecture</h2>
         <p>This visual summarizes the full-stack integration across systems:</p>
         <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
-             style="width: 100%; max-width: 1200px; height: auto; display: block; margin: 0 auto;"
              class="img-fluid border rounded shadow-sm mb-3"
              alt="Leasing Automation Architecture Diagram">
         <p><strong>Highlights:</strong></p>
