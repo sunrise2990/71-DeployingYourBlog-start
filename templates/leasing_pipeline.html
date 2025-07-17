@@ -1,88 +1,125 @@
+<!-- templates/leasing_pipeline.html -->
 {% extends "base.html" %}
-{% block title %}Leasing Forecast Automation | Data by Kevin{% endblock %}
 {% block content %}
 
-<h1 class="mb-4">🏢 Leasing Forecast Automation</h1>
+<!-- Hero Banner -->
+<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg.jpg') }}')">
+  <div class="container position-relative px-4 px-lg-5">
+    <div class="row gx-4 gx-lg-5 justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
+        <div class="site-heading">
+          <h1>Leasing Forecast Automation</h1>
+          <span class="subheading">Python + SQL + Excel = Fully Integrated Rent Forecasts</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
 
-<p>
-  This pipeline processes leasing assumptions, in-place leases, and reforecasts rent revenue across a 5-year horizon — streamlining the entire forecasting process for 800+ tenants across 100+ commercial properties.
-</p>
+<!-- Main Content -->
+<main class="container px-4 px-lg-5">
+  <div class="row gx-4 gx-lg-5 justify-content-center">
+    <div class="col-md-12 col-lg-12 col-xl-10">
 
-<hr>
+      <!-- Executive Summary -->
+      <section class="mb-5">
+        <h2>💼 Executive Summary</h2>
+        <p>This solution automates leasing budget forecasting across 800 tenants and 100+ commercial properties. It bridges Yardi data, Excel models, and Python logic to generate a 5–7 year outlook for base rent, vacancy, and GLA.</p>
+        <ul>
+          <li><strong>Portfolio:</strong> Office, Retail, Industrial properties</li>
+          <li><strong>Forecasting Horizon:</strong> 2025 to 2029</li>
+          <li><strong>Tools:</strong> Excel, Python (pandas, xlwings), SQL (Athena), SharePoint, Task Scheduler</li>
+          <li><strong>Output:</strong> Excel workbook with dynamic projections, rent roll validations, and summary reports</li>
+        </ul>
+      </section>
 
-<h2>🛠️ How It Works</h2>
-<p>The leasing pipeline automates the ETL process for tenant-level rent forecasts using a hybrid of Python, SQL (Athena), and Excel (via xlwings):</p>
+      <!-- Architecture Diagram -->
+      <section class="mb-5">
+        <h2>🧠 Dataflow Architecture</h2>
+        <p>This visual summarizes the full-stack integration across systems:</p>
+        <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
+             class="img-fluid border rounded shadow-sm mb-3"
+             alt="Leasing Automation Architecture Diagram">
+        <p><strong>Highlights:</strong></p>
+        <ul>
+          <li>📡 Data pulled from AWS-hosted backup of Yardi (via Athena SQL)</li>
+          <li>🧾 Leasing team inputs collected in Excel (structured entry)</li>
+          <li>⚙ Python reads, merges, calculates and refreshes output tables</li>
+          <li>📈 Forecast results are exported to Excel for review and approval</li>
+        </ul>
+      </section>
 
-<ol>
-  <li><strong>Extract</strong>: Pull active lease and unit-level data directly from Yardi using Athena SQL queries.</li>
-  <li><strong>Transform</strong>: Use Python (Pandas + NumPy) to:
-    <ul>
-      <li>Unnest charge periods, including stepped rent increases</li>
-      <li>Merge in-place actuals, user-input assumptions, and forecast overrides</li>
-      <li>Apply lease renewal logic, including downtime handling</li>
-      <li>Remove duplicated values across overlapping data sources</li>
-    </ul>
-  </li>
-  <li><strong>Load</strong>: Push forecast output into structured Excel templates via <code>xlwings</code>, preserving manual inputs and allowing leasing team collaboration.</li>
-</ol>
+      <!-- How It Works -->
+      <section class="mb-5">
+        <h2>⚙️ Technical Flow</h2>
+        <ol>
+          <li><strong>1. SQL Data Pull:</strong> Extracts 4 core tables from 1,000+ via Athena, including historical and future rent rolls</li>
+          <li><strong>2. Load to Excel:</strong> Results populate `7yrBaseRent`, `RentRoll`, and `Sqft` tabs</li>
+          <li><strong>3. Read via xlwings:</strong> Python loads both Yardi data and leasing inputs from `Inputs` tab</li>
+          <li><strong>4. DataFrame Logic:</strong>
+            <ul>
+              <li>Combine Yardi leases + leasing team assumptions</li>
+              <li>Unnest each row into monthly charges (2023–2029)</li>
+              <li>Inject free rent as negative entries</li>
+              <li>Amortize TI, LC, admin fees across term</li>
+              <li>Calculate NER at tenant and property level</li>
+            </ul>
+          </li>
+          <li><strong>5. Vacancy Integration:</strong> Identify unoccupied months by comparing against a unit-level GLA baseline</li>
+          <li><strong>6. Output to Excel:</strong> Write to `all_unnest`, `GLA_Month`, and `Summary Report`</li>
+          <li><strong>7. Validation:</strong> Merge with rent roll to detect mismatch</li>
+          <li><strong>8. Backup:</strong> Archive `Inputs` and validation data daily via SharePoint</li>
+        </ol>
+      </section>
 
-<hr>
+      <!-- Key Python Modules -->
+      <section class="mb-5">
+        <h2>🧪 Python Modules</h2>
+        <p>The main script uses modular functions:</p>
+        <ul>
+          <li><code>load_and_combine_tables(wb)</code>: Merges 7yrBaseRent + Inputs + Free Rent logic</li>
+          <li><code>unnest_charges(df1, wb)</code>: Generates monthly rows across 2023–2029</li>
+          <li><code>integrate_vacancy(df_final, wb, all_months)</code>: Adds vacant months per GLA</li>
+          <li><code>process_sqft_month(wb)</code>: Tracks unit-level sqft changes over time</li>
+          <li><code>update_status_with_rent_roll_and_inputs(wb)</code>: Compares budget vs actual</li>
+        </ul>
+        <p>All Excel interaction handled via <code>xlwings</code> — ensuring seamless link to open or saved workbooks.</p>
+      </section>
 
-<h2>📐 System Architecture</h2>
-<p>The pipeline integrates directly with existing tools and workflows:</p>
+      <!-- Business Impact -->
+      <section class="mb-5">
+        <h2>📈 Business Impact</h2>
+        <ul>
+          <li>✅ Replaced manual workbooks with automated Python logic</li>
+          <li>⚡ Reduced processing time from 3 days to under 10 minutes</li>
+          <li>🔍 Created a single source of truth for all leasing assumptions</li>
+          <li>🧾 Enabled quick summary generation for budget sign-off</li>
+        </ul>
+      </section>
 
-<img src="{{ url_for('static', filename='assets/img/leasing_diagram.png') }}" alt="Leasing Flow" class="img-fluid my-4 border rounded shadow-sm">
+      <!-- Challenges & Fixes -->
+      <section class="mb-5">
+        <h2>🛠 Challenges Solved</h2>
+        <ul>
+          <li><strong>Duplicate assumptions:</strong> Detected overlap with activated leases → override logic added</li>
+          <li><strong>NER skew from one-time TI:</strong> TI amortized over full term → included in per-month rent</li>
+          <li><strong>Excel memory limits:</strong> Large formula-based workbook → replaced with Python calculations</li>
+          <li><strong>Manual errors in rent roll match:</strong> Created full validation logic across merged keys</li>
+        </ul>
+      </section>
 
-<ul>
-  <li><strong>Data Source</strong>: Yardi (Athena/Glue)</li>
-  <li><strong>ETL Core</strong>: Python (custom scripts with merge, flagging, and override logic)</li>
-  <li><strong>Frontend</strong>: Excel input/output via xlwings</li>
-  <li><strong>Hosting</strong>: Scheduled locally, EC2-capable for future deployment</li>
-</ul>
+      <!-- Takeaways -->
+      <section class="mb-5">
+        <h2>🔍 Reflections</h2>
+        <ul>
+          <li>This was not just a coding task — it redefined how leasing forecasts are created and validated</li>
+          <li>Team buy-in increased as confidence in data grew</li>
+          <li>Demonstrated value of domain-specific automation in Finance</li>
+        </ul>
+      </section>
 
-<hr>
-
-<h2>🧩 Challenges & Solutions</h2>
-<ul>
-  <li><strong>Challenge:</strong> Duplicate projections when reforecast assumptions overlapped with actual lease activations.<br>
-      <strong>Solution:</strong> Introduced override logic and timestamp tracking to remove or flag conflicting rows dynamically.</li>
-
-  <li><strong>Challenge:</strong> Manual team inputs were lost after each refresh.<br>
-      <strong>Solution:</strong> Used xlwings and structured Excel ranges to safely write back new data while preserving prior assumptions.</li>
-
-  <li><strong>Challenge:</strong> Forecasting renewals required downtime, tenant aging, and multiple scenarios.<br>
-      <strong>Solution:</strong> Modularized logic to support renewal flags, probability tiers, and downtime % per property group.</li>
-</ul>
-
-<hr>
-
-<h2>📊 Business Impact</h2>
-<ul>
-  <li>✅ Reduced reforecast turnaround from 3 days to under 30 minutes</li>
-  <li>✅ Enabled Leasing, Accounting, and FP&A to collaborate on shared forecasts</li>
-  <li>✅ Increased forecast accuracy across renewal vs new lease spreads</li>
-  <li>✅ Standardized inputs across 800+ tenant rows over 5 years</li>
-</ul>
-
-<hr>
-
-<h2>🧠 Reflections & Lessons</h2>
-<p>This project began as a tactical solution — but quickly grew into a scalable, strategic tool that aligned multiple departments. The core success came from blending:</p>
-
-<ul>
-  <li>My real estate finance background (CPA, lease structures, operational flow)</li>
-  <li>Technical automation (SQL, Python, xlwings)</li>
-  <li>Execution discipline (documented override rules, safe inputs, version control)</li>
-</ul>
-
-<p>
-  It’s also a cornerstone of my broader career pivot — showcasing that data tools aren’t just for coders. They’re for operators who deeply understand the domain and want to build lasting solutions.
-</p>
-
-<hr>
-
-<a href="{{ url_for('projects.budget_reforecast') }}" class="btn btn-secondary mt-3">
-  ← Back to Budget & Reforecast Overview
-</a>
+    </div>
+  </div>
+</main>
 
 {% endblock %}
