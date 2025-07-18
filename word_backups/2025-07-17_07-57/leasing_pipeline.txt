@@ -199,43 +199,6 @@
         </ul>
       </section>
 
-    <!-- Visual Summary: From Input to Output -->
-    <section class="mb-5">
-      <h2><i class="fas fa-chart-line text-success"></i> From Input to Output</h2>
-      <p>Below are examples of how leasing team assumptions entered in Excel (pink fields) directly impact summary reports. Once updated, running the Python script and clicking <strong>Refresh All</strong> in Excel generates the visuals dynamically:</p>
-
-      <!-- Inputs Tab Screenshot -->
-      <h4 class="mt-4">🔧 Leasing Inputs (Editable Fields)</h4>
-      <div class="text-center mb-4">
-        <img src="{{ url_for('static', filename='assets/img/leasing_inputs_example.png') }}"
-             alt="Leasing Input Tab"
-             class="img-fluid shadow-sm"
-             style="max-width: 1000px;">
-      </div>
-
-      <!-- Bar Graph Comparison -->
-      <h4 class="mt-4">📊 Net Rent Comparison (2024F vs 2025B)</h4>
-      <div class="text-center mb-4">
-        <img src="{{ url_for('static', filename='assets/img/net_rent_summary.png') }}"
-             alt="Net Rent Summary"
-             class="img-fluid shadow-sm"
-             style="max-width: 900px;">
-      </div>
-
-      <!-- 7-Year Trend -->
-      <h4 class="mt-4">📈 Yearly Net Rent Trend (2023–2029)</h4>
-      <div class="text-center mb-4">
-        <img src="{{ url_for('static', filename='assets/img/net_rent_7yr_trend.png') }}"
-             alt="7 Year Net Rent Trend"
-             class="img-fluid shadow-sm"
-             style="max-width: 1100px;">
-      </div>
-
-      <p>📌 These visuals help validate budget assumptions and explain key variances across time, asset class, and tenant level — making sign-off faster and more accurate.</p>
-    </section>
-
-
-
       <!-- Challenges -->
       <section class="mb-5">
         <h2>🛠 Challenges Solved</h2>
