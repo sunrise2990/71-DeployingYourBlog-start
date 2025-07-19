@@ -124,11 +124,11 @@ body {
 }
 
 .post-heading {
-    padding: 120px 20px 60px;
+    padding: 60px 20px 60px;     /* Top and bottom equal padding */
     min-height: 350px;
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
+    justify-content: center;     /* Centers heading + subheading */
     align-items: center;
     text-align: center;
     color: white;
