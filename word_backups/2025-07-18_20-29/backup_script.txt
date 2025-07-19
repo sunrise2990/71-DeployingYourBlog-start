@@ -28,7 +28,7 @@ for html_file in template_dir.glob("*.html"):
 # === STEP 3: Copy top-level files ===
 top_level_files = [
     ".env", ".env.local", ".gitignore", "backup_script.py", "forms.py",
-    "main.py", "migrate.py", "Procfile", "requirements.txt", "wsgi.py",
+    "main.py", "migrate.py", "Procfile", "requirements.txt", "wsgi.py", "routes.py",
 ]
 
 for filename in top_level_files:

@@ -1,0 +1,264 @@
+<!-- templates/leasing_pipeline.html -->
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Hero Banner -->
+<header class="masthead" style="background-image: url('{{ url_for('static', filename='assets/img/home-bg3.jpg') }}')">
+  <div class="container position-relative px-4 px-lg-5">
+    <div class="row gx-4 gx-lg-5 justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
+        <div class="site-heading">
+          <h1>Leasing Forecast Automation</h1>
+          <span class="subheading">Python + SQL + Excel = Fully Integrated Rent Forecasts</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Main Content -->
+<main class="container px-4 px-lg-5 mt-5">
+  <div class="row gx-4 gx-lg-5 justify-content-center">
+    <div class="col-md-12 col-lg-12 col-xl-10">
+
+      <!-- Executive Summary -->
+      <section class="mb-5">
+        <h2>💼 Executive Summary</h2>
+        <p>This solution automates leasing budget forecasting across 800 tenants and 100+ commercial properties. It bridges Yardi data, Excel models, and Python logic to generate a 5–7 year outlook for base rent, vacancy, and GLA.</p>
+        <ul>
+          <li><strong>Portfolio:</strong> Office, Retail, Industrial properties</li>
+          <li><strong>Forecasting Horizon:</strong> 2025 to 2029</li>
+          <li><strong>Tools:</strong> Excel, Python (pandas, xlwings), SQL (Athena), SharePoint, Task Scheduler</li>
+          <li><strong>Output:</strong> Excel workbook with dynamic projections, rent roll validations, and summary reports</li>
+        </ul>
+      </section>
+
+      <!-- Leasing Pipeline Overview -->
+      <section class="mb-5">
+        <h2><i class="fas fa-brain text-danger"></i> Leasing Pipeline Overview</h2>
+        <p class="lead">Explore how data flows from our Yardi systems through Excel and Python automation pipelines.</p>
+      </section>
+
+      <!-- Simplified Leasing Flow -->
+      <section class="mb-5">
+        <h3 class="mb-3"><i class="fas fa-route text-info"></i> Simplified Leasing Flow</h3>
+        <p>This diagram provides a high-level overview of the leasing process used to generate projections from multiple data sources.</p>
+        <div class="text-center mt-3 mb-3">
+          <img src="{{ url_for('static', filename='assets/img/leasing_diagram.png') }}"
+               alt="Simplified Leasing Flow"
+               class="img-fluid shadow-sm"
+               style="max-width: 850px;">
+        </div>
+      </section>
+
+<!-- Dataflow Architecture (Improved Centering + Padding) -->
+<section class="mb-5">
+  <h3 class="mb-3 ps-3">
+    <i class="fas fa-network-wired text-primary"></i> Dataflow Architecture
+  </h3>
+  <p class="ps-3">This visual summarizes the full-stack integration across systems:</p>
+
+  <div class="text-center" style="padding-left: 5%;">
+    <img src="{{ url_for('static', filename='assets/img/leasing_architecture.png') }}"
+         alt="Leasing Data Architecture"
+         style="width: 150%; max-width: 1600px; display: inline-block;"
+         class="shadow-sm">
+  </div>
+</section>
+
+      <!-- Technical Flow -->
+      <section class="mb-5">
+        <h2><i class="fas fa-cogs"></i> Technical Flow</h2>
+        <ol>
+          <li><strong>SQL Data Pull:</strong> Extracts 4 core tables from 1,000+ via Athena, including historical and future rent rolls</li>
+          <li><strong>Load to Excel:</strong> Results populate <code>7yrBaseRent</code>, <code>RentRoll</code>, and <code>Sqft</code> tabs</li>
+          <li><strong>Read via xlwings:</strong> Python loads both Yardi data and leasing inputs from <code>Inputs</code> tab</li>
+          <li><strong>DataFrame Logic:</strong>
+            <ul>
+              <li>Combine Yardi leases + leasing team assumptions</li>
+              <li>Unnest each row into monthly charges (2023–2029)</li>
+              <li>Inject free rent as negative entries</li>
+              <li>Amortize TI, LC, admin fees across term</li>
+              <li>Calculate NER at tenant and property level</li>
+            </ul>
+          </li>
+          <li><strong>Vacancy Integration:</strong> Identify unoccupied months by comparing against a unit-level GLA baseline</li>
+          <li><strong>Output to Excel:</strong> Write to <code>all_unnest</code>, <code>GLA_Month</code>, and <code>Summary Report</code></li>
+          <li><strong>Validation:</strong> Merge with rent roll to detect mismatch</li>
+          <li><strong>Backup:</strong> Archive <code>Inputs</code> and validation data daily via SharePoint</li>
+        </ol>
+      </section>
+
+
+      <!-- Full Walkthrough: SQL to Forecast -->
+    <section class="mb-5">
+      <h2>🔍 Full Walkthrough: From Raw Data to Instant Rent Forecasts</h2>
+      <p>This section walks through how the leasing budget automation works behind the scenes — from SQL to Excel to Python — and shows real code examples for each part of the pipeline.</p>
+
+      <h4 class="mt-4 text-primary">1. 🔄 SQL Data Extraction</h4>
+      <p><strong>Source:</strong> AWS Athena backup of Yardi<br>
+         <strong>Tool:</strong> DBeaver / DBMS<br>
+         <strong>Tables:</strong> <code>rentroll_point_in_time</code>, <code>7yr_basernet</code>, <code>sqft_at_point_in_time</code>, <code>future_leases_activated</code></p>
+      <pre><code class="language-sql">
+    -- Extract future lease charges
+    SELECT *
+    FROM leasing.future_leases_activated
+    WHERE property_code IS NOT NULL
+      AND start_date >= DATE '2024-01-01';
+      </code></pre>
+
+      <h4 class="mt-4 text-primary">2. 📥 Load Data into Excel</h4>
+      <p>Once extracted via DBeaver, the tables are exported into:</p>
+      <ul>
+        <li><code>7yrBaseRent</code></li>
+        <li><code>RentRoll</code></li>
+        <li><code>Sqft</code></li>
+        <li><code>Inputs</code> (for leasing assumptions)</li>
+      </ul>
+
+      <h4 class="mt-4 text-primary">3. 📊 Read Excel Data via xlwings</h4>
+      <pre><code class="language-python">
+    def load_and_combine_tables(wb):
+        df_base = pd.read_excel(wb.fullname, sheet_name='7yrBaseRent')
+        df_input = pd.read_excel(wb.fullname, sheet_name='Inputs')
+        return pd.concat([df_base, df_input], ignore_index=True)
+      </code></pre>
+
+      <h4 class="mt-4 text-primary">4. 🧮 Unnest Charges Over Time</h4>
+      <pre><code class="language-python">
+    def unnest_charges(df, wb):
+        df_expanded = []
+        for _, row in df.iterrows():
+            for month in pd.date_range(row['start_date'], row['end_date'], freq='MS'):
+                rent = row['yearly_rate'] / 12
+                if month in row['free_rent_months']:
+                    rent = 0
+                df_expanded.append({**row, 'month': month, 'monthly_rent': rent})
+        return pd.DataFrame(df_expanded)
+      </code></pre>
+
+      <h4 class="mt-4 text-primary">5. 🏚 Vacancy Detection</h4>
+      <pre><code class="language-python">
+    def integrate_vacancy(df, wb, all_months):
+        df_sqft = pd.read_excel(wb.fullname, sheet_name='Sqft')
+        df['is_vacant'] = ~df.apply(
+            lambda row: (row['unit_no'], row['month']) in
+            df_sqft[['unit_no', 'month']].itertuples(index=False),
+            axis=1
+        )
+        return df
+      </code></pre>
+
+      <h4 class="mt-4 text-primary">6. 💾 Output to Excel for Review</h4>
+      <pre><code class="language-python">
+    sheet = wb.sheets['all_unnest']
+    sheet.range("A2").value = df_final
+      </code></pre>
+
+      <h4 class="mt-4 text-primary">7. 🧾 Validation</h4>
+      <pre><code class="language-python">
+    def update_status_with_rent_roll_and_inputs(wb):
+        rentroll = pd.read_excel(wb.fullname, sheet_name='RentRoll')
+        status = df_final.merge(rentroll, on='unit_no', how='left', suffixes=('', '_actual'))
+        status['discrepancy'] = status['monthly_rent'] != status['monthly_rent_actual']
+        return status
+      </code></pre>
+
+      <h4 class="mt-4 text-primary">8. 🔁 Automated Backup and Refresh</h4>
+      <p>Backups of inputs and summary reports are archived daily to SharePoint using Windows Task Scheduler.</p>
+
+      <div class="alert alert-info mt-4">
+        Let me know if you'd like to see the <strong>NER chart output</strong> by year or a link to <code>load_stock_data.py</code> as an example for other ETL pipelines.
+      </div>
+
+    </section>
+
+
+      <!-- Python Modules -->
+      <section class="mb-5">
+        <h2>🧪 Python Modules</h2>
+        <p>The main script uses modular functions:</p>
+        <ul>
+          <li><code>load_and_combine_tables(wb)</code>: Merges 7yrBaseRent + Inputs + Free Rent logic</li>
+          <li><code>unnest_charges(df1, wb)</code>: Generates monthly rows across 2023–2029</li>
+          <li><code>integrate_vacancy(df_final, wb, all_months)</code>: Adds vacant months per GLA</li>
+          <li><code>process_sqft_month(wb)</code>: Tracks unit-level sqft changes over time</li>
+          <li><code>update_status_with_rent_roll_and_inputs(wb)</code>: Compares budget vs actual</li>
+        </ul>
+        <p>All Excel interaction handled via <code>xlwings</code> — ensuring seamless link to open or saved workbooks.</p>
+      </section>
+
+      <!-- Business Impact -->
+      <section class="mb-5">
+        <h2>📈 Business Impact</h2>
+        <ul>
+          <li>✅ Replaced manual workbooks with automated Python logic</li>
+          <li>⚡ Reduced processing time from 3 days to under 10 minutes</li>
+          <li>🔍 Created a single source of truth for all leasing assumptions</li>
+          <li>🧾 Enabled quick summary generation for budget sign-off</li>
+        </ul>
+      </section>
+
+    <!-- Visual Summary: From Input to Output -->
+    <section class="mb-5">
+      <h2><i class="fas fa-chart-line text-success"></i> From Input to Output</h2>
+      <p>Below are examples of how leasing team assumptions entered in Excel (pink fields) directly impact summary reports. Once updated, running the Python script and clicking <strong>Refresh All</strong> in Excel generates the visuals dynamically:</p>
+
+      <!-- Inputs Tab Screenshot -->
+      <h4 class="mt-4">🔧 Leasing Inputs (Editable Fields)</h4>
+      <div class="text-center mb-4">
+        <img src="{{ url_for('static', filename='assets/img/leasing_inputs_example.png') }}"
+             alt="Leasing Input Tab"
+             class="img-fluid shadow-sm"
+             style="max-width: 1000px;">
+      </div>
+
+      <!-- Bar Graph Comparison -->
+      <h4 class="mt-4">📊 Net Rent Comparison (2024F vs 2025B)</h4>
+      <div class="text-center mb-4">
+        <img src="{{ url_for('static', filename='assets/img/net_rent_summary.png') }}"
+             alt="Net Rent Summary"
+             class="img-fluid shadow-sm"
+             style="max-width: 900px;">
+      </div>
+
+      <!-- 7-Year Trend -->
+      <h4 class="mt-4">📈 Yearly Net Rent Trend (2023–2029)</h4>
+      <div class="text-center mb-4">
+        <img src="{{ url_for('static', filename='assets/img/net_rent_7yr_trend.png') }}"
+             alt="7 Year Net Rent Trend"
+             class="img-fluid shadow-sm"
+             style="max-width: 1100px;">
+      </div>
+
+      <p>📌 These visuals help validate budget assumptions and explain key variances across time, asset class, and tenant level — making sign-off faster and more accurate.</p>
+    </section>
+
+
+
+      <!-- Challenges -->
+      <section class="mb-5">
+        <h2>🛠 Challenges Solved</h2>
+        <ul>
+          <li><strong>Duplicate assumptions:</strong> Detected overlap with activated leases → override logic added</li>
+          <li><strong>NER skew from one-time TI:</strong> TI amortized over full term → included in per-month rent</li>
+          <li><strong>Excel memory limits:</strong> Large formula-based workbook → replaced with Python calculations</li>
+          <li><strong>Manual errors in rent roll match:</strong> Created full validation logic across merged keys</li>
+        </ul>
+      </section>
+
+      <!-- Reflection -->
+      <section class="mb-5">
+        <h2>🔍 Reflections</h2>
+        <ul>
+          <li>This was not just a coding task — it redefined how leasing forecasts are created and validated</li>
+          <li>Team buy-in increased as confidence in data grew</li>
+          <li>Demonstrated value of domain-specific automation in Finance</li>
+        </ul>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+{% endblock %}
