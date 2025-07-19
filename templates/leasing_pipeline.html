@@ -287,116 +287,103 @@ def update_status_with_rent_roll_and_inputs(wb):
         <p>Backups of inputs and summary reports are archived daily to SharePoint using Windows Task Scheduler.</p>
       </section>
 
-      <!-- Python Modules -->
-      <section id="python modules" class="mb-5">
-        <h2>🧪 Python Modules</h2>
-        <ul>
-          <li><code>load_and_combine_tables(wb)</code>: Merges 7yrBaseRent + Inputs + Free Rent logic
-          def load_and_combine_tables(wb):
-    all_charges_sheet = wb.sheets["7yrBaseRent"]
-    all_charges_range = all_charges_sheet.range("A1").expand()
-    all_charges_df = all_charges_range.options(pd.DataFrame, header=1, index=False).value
-    all_charges_df['Source'] = 'yardi'  # Add a source column for Yardi data
+<!-- Python Modules -->
+    <section id="python-modules" class="mb-5">
+      <h2>🧪 Python Modules</h2>
 
-    # Convert 'unit_no' to string format only if it's not null
-    all_charges_df['unit_no'] = all_charges_df['unit_no'].apply(lambda x: "'" + str(x) if pd.notna(x) else x)
-    # Remove rows where 'unit_no' is None or just a single quote
-    all_charges_df = all_charges_df[all_charges_df['unit_no'].str.strip("'").notna() & (all_charges_df['unit_no'].str.strip("'") != "")]
+      <h4 class="mt-4 text-primary">🔁 1. load_and_combine_tables(wb)</h4>
+      <div class="code-block">
+    def load_and_combine_tables(wb):<br>
+    &nbsp;&nbsp;all_charges_sheet = wb.sheets["7yrBaseRent"]<br>
+    &nbsp;&nbsp;all_charges_range = all_charges_sheet.range("A1").expand()<br>
+    &nbsp;&nbsp;all_charges_df = all_charges_range.options(pd.DataFrame, header=1, index=False).value<br>
+    &nbsp;&nbsp;all_charges_df['Source'] = 'yardi'<br><br>
 
-    inputs_sheet = wb.sheets["Inputs"]
-    inputs_range = inputs_sheet.range("S27:AL3000")
-    inputs_df = inputs_range.options(pd.DataFrame, header=1, index=False).value
-    inputs_df['Source'] = 'inputs'  # Add a source column for Inputs data
+    &nbsp;&nbsp;all_charges_df['unit_no'] = all_charges_df['unit_no'].apply(lambda x: "'" + str(x) if pd.notna(x) else x)<br>
+    &nbsp;&nbsp;all_charges_df = all_charges_df[all_charges_df['unit_no'].str.strip("'").notna() & (all_charges_df['unit_no'].str.strip("'") != "")]<br><br>
 
-    # Similarly convert 'unit_no' and filter
-    inputs_df['unit_no'] = inputs_df['unit_no'].apply(lambda x: "'" + str(x) if pd.notna(x) else x)
-    inputs_df = inputs_df[inputs_df['unit_no'].str.strip("'").notna() & (inputs_df['unit_no'].str.strip("'") != "")]</li>
+    &nbsp;&nbsp;inputs_sheet = wb.sheets["Inputs"]<br>
+    &nbsp;&nbsp;inputs_range = inputs_sheet.range("S27:AL3000")<br>
+    &nbsp;&nbsp;inputs_df = inputs_range.options(pd.DataFrame, header=1, index=False).value<br>
+    &nbsp;&nbsp;inputs_df['Source'] = 'inputs'<br>
+    &nbsp;&nbsp;inputs_df['unit_no'] = inputs_df['unit_no'].apply(lambda x: "'" + str(x) if pd.notna(x) else x)<br>
+    &nbsp;&nbsp;inputs_df = inputs_df[inputs_df['unit_no'].str.strip("'").notna() & (inputs_df['unit_no'].str.strip("'") != "")]<br>
+      </div>
 
-          <li><code>unnest_charges(df1, wb)</code>: Generates monthly rows across 2023–2029
-          def unnest_charges(df1, wb):
-    global start_date, end_date, all_months  # Access global variables directly
-    df_final = df1.copy()
+      <h4 class="mt-4 text-primary">📆 2. unnest_charges(df1, wb)</h4>
+      <div class="code-block">
+    def unnest_charges(df1, wb):<br>
+    &nbsp;&nbsp;global start_date, end_date, all_months<br>
+    &nbsp;&nbsp;df_final = df1.copy()<br>
+    &nbsp;&nbsp;df_final['unit_no'] = df_final['unit_no'].astype(str)<br>
+    &nbsp;&nbsp;df_final = df_final[df_final['unit_no'].notna() & (df_final['unit_no'] != '')]<br><br>
 
- # Ensure all unit_no entries are strings and filter out rows with None or empty unit_no
-    df_final['unit_no'] = df_final['unit_no'].astype(str)
-    df_final = df_final[df_final['unit_no'].notna() & (df_final['unit_no'] != '')]
+    &nbsp;&nbsp;for month_end in all_months:<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;df_final[month_end.strftime('%Y-%m-%d')] = np.nan<br><br>
 
-    for month_end in all_months:
-        df_final[month_end.strftime('%Y-%m-%d')] = np.nan
+    &nbsp;&nbsp;for index, row in df_final.iterrows():<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;if pd.notna(row['yearlyrate']) and pd.notna(row['unit_sqft']):<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;charge_from = max(pd.Timestamp(row['charge_from']), start_date)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;charge_to = min(pd.Timestamp(row['charge_to']), end_date)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for month in all_months:<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;month_start = month.to_timestamp(how='start')<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;month_end = month.to_timestamp(how='end')<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if charge_from &lt;= month_end and charge_to &gt;= month_start:<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;days_in_month = month_end.day<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;covered_days = (min(charge_to, month_end) - max(charge_from, month_start) + pd.Timedelta(days=1)).days<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;monthly_rate = row['yearlyrate'] * row['unit_sqft'] / 12<br>
+      </div>
 
-    for index, row in df_final.iterrows():
-        if pd.notna(row['yearlyrate']) and pd.notna(row['unit_sqft']):
-            charge_from = max(pd.Timestamp(row['charge_from']), start_date) if pd.notna(row['charge_from']) else start_date
-            charge_to = min(pd.Timestamp(row['charge_to']), end_date) if pd.notna(row['charge_to']) else end_date
+      <h4 class="mt-4 text-primary">🏢 3. integrate_vacancy(df_final, wb, all_months)</h4>
+      <div class="code-block">
+    def integrate_vacancy(df_final, wb, all_months):<br>
+    &nbsp;&nbsp;sqft_sheet = wb.sheets['sqft']<br>
+    &nbsp;&nbsp;sqft_range = sqft_sheet.range('A1').expand()<br>
+    &nbsp;&nbsp;sqft_df = sqft_range.options(pd.DataFrame, header=1, index=False).value<br>
+    &nbsp;&nbsp;sqft_df['unit_no'] = "'" + sqft_df['unit_no'].astype(str)<br><br>
 
-            for month in all_months:
-                month_start = month.to_timestamp(how='start')
-                month_end = month.to_timestamp(how='end')
+    &nbsp;&nbsp;unit_entries = []<br>
+    &nbsp;&nbsp;for _, unit in sqft_df.iterrows():<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;property_code = unit['property_code']<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;unit_no = unit['unit_no']<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;unit_record = {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'Source': 'vacancy',<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'property_code': property_code,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'prop_name': None,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'unit_no': unit_no<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+      </div>
 
-                if charge_from <= month_end and charge_to >= month_start:
-                    days_in_month = month_end.day
-                    covered_days = (min(charge_to, month_end) - max(charge_from, month_start) + pd.Timedelta(days=1)).days
-                    monthly_rate = row['yearlyrate'] * row['unit_sqft'] / 12</li>
+      <h4 class="mt-4 text-primary">📏 4. process_sqft_month(wb)</h4>
+      <div class="code-block">
+    def process_sqft_month(wb):<br>
+    &nbsp;&nbsp;global start_date, end_date, all_months<br>
+    &nbsp;&nbsp;all_months = pd.date_range(start_date, end_date, freq='ME').strftime('%Y-%m-%d')<br><br>
 
-          <li><code>integrate_vacancy(df_final, wb, all_months)</code>: Adds vacant months per GLA
-          def integrate_vacancy(df_final, wb, all_months):
-    # Load the 'sqft' table which contains the full inventory of units
-    sqft_sheet = wb.sheets['sqft']
-    sqft_range = sqft_sheet.range('A1').expand()
-    sqft_df = sqft_range.options(pd.DataFrame, header=1, index=False).value
+    &nbsp;&nbsp;sqft_sheet = wb.sheets['sqft']<br>
+    &nbsp;&nbsp;sqft_data_range = sqft_sheet.range('M1').expand('table')<br>
+    &nbsp;&nbsp;sqft_data_df = sqft_data_range.options(pd.DataFrame, header=1, index=False).value<br>
+    &nbsp;&nbsp;sqft_data_df = sqft_data_df.dropna(subset=['start_date'])<br>
+    &nbsp;&nbsp;sqft_data_df = sqft_data_df.sort_values(by='start_date')<br><br>
 
-    # Convert 'unit_no' to string to avoid Excel date conversion
-    sqft_df['unit_no'] = "'" + sqft_df['unit_no'].astype(str)
+    &nbsp;&nbsp;data_rows = []<br>
+    &nbsp;&nbsp;columns = ['property_code', 'unit_no', 'start_date'] + list(all_months)<br>
+    &nbsp;&nbsp;for _, group in sqft_data_df.groupby(['property_code', 'unit_no']):<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;group = group.reset_index(drop=True)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;for idx, row in group.iterrows():<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;new_row = {col: None for col in columns}<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;new_row.update({'property_code': row['property_code'], 'unit_no': row['unit_no'], 'start_date': row['start_date']})<br>
+      </div>
 
-    # Prepare a list to hold all unit entries
-    unit_entries = []
+      <h4 class="mt-4 text-primary">📊 5. update_status_with_rent_roll_and_inputs(wb)</h4>
+      <div class="code-block">
+    def update_status_with_rent_roll_and_inputs(wb):<br>
+    &nbsp;&nbsp;# Compares forecast vs actual data for reporting and control validation<br>
+    &nbsp;&nbsp;pass  # (Function logic omitted here — add if available)<br>
+      </div>
 
-    # Iterate through each unit in the full inventory
-    for _, unit in sqft_df.iterrows():
-        property_code = unit['property_code']
-        unit_no = unit['unit_no']
-
-        # Initialize a dictionary for the unit record
-        unit_record = {
-            'Source': 'vacancy',  # Mark source as 'vacancy'
-            'property_code': property_code,
-            'prop_name': None,
-            'unit_no': unit_no,</li>
-
-          <li><code>process_sqft_month(wb)</code>: Tracks unit-level sqft changes
-          def process_sqft_month(wb):
-    # Use global variables for start_date and end_date
-    global start_date, end_date, all_months
-
-    # Correct the frequency code and ensure all_months uses Timestamps at month end
-    all_months = pd.date_range(start_date, end_date, freq='ME').strftime('%Y-%m-%d')
-
-    # Read data from 'sqft' starting at column M
-    sqft_sheet = wb.sheets['sqft']
-    sqft_data_range = sqft_sheet.range('M1').expand('table')
-    sqft_data_df = sqft_data_range.options(pd.DataFrame, header=1, index=False).value
-
-    # Filter out rows with null start dates
-    sqft_data_df = sqft_data_df.dropna(subset=['start_date'])
-
-    # Sort data to ensure correct chronological order
-    sqft_data_df = sqft_data_df.sort_values(by='start_date')
-
-    # Initialize an empty list to collect data rows
-    data_rows = []
-    columns = ['property_code', 'unit_no', 'start_date'] + list(all_months)
-
-    # Process each unit entry
-    for _, group in sqft_data_df.groupby(['property_code', 'unit_no']):
-        group = group.reset_index(drop=True)
-        for idx, row in group.iterrows():
-            new_row = {col: None for col in columns}
-            new_row.update({'property_code': row['property_code'], 'unit_no': row['unit_no'], 'start_date': row['start_date']</li>
-
-          <li><code>update_status_with_rent_roll_and_inputs(wb)</code>: Compares forecast vs actual</li>
-        </ul>
-        <p>All Excel interaction handled via <code>xlwings</code> — ensuring seamless link to open or saved workbooks.</p>
-      </section>
+      <p class="mt-3">All Excel interaction handled via <code>xlwings</code> — ensuring seamless link to open or saved workbooks.</p>
+    </section>
 
 
       <!-- Challenges -->
