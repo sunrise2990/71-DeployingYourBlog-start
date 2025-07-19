@@ -135,9 +135,9 @@ body {
 }
 
 .post-heading .subheading {
-    font-size: 1.2rem;
-    color: #ccc;
-    margin-top: 1rem;
+    font-size: 1.25rem;
+    color: #eee;
+    margin-top: 1.2rem;
 }
 
 /* ✅ Fix for post.html layout only */
