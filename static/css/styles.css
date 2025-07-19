@@ -10954,10 +10954,10 @@ header.masthead .post-heading .meta a {
   header.masthead .post-heading h1, header.masthead .post-heading .h1 {
     font-size: 3.5rem;
   }
-  header.masthead .post-heading .subheading {
+header.masthead .post-heading .subheading {
     font-size: 1.875rem;
-    margin-bottom: 1rem;  /* or increase if needed */
-  }
+    margin-top: 0.5rem;   /* Add this */
+    margin-bottom: 0;     /* Remove unnecessary bottom space */
 }
 
 .section-heading {
