@@ -263,7 +263,7 @@ def edit_post(post_id):
         current_user=current_user
     )
 
-@app.route("/delete/<int:post_id>")
+@app.route("/delete/<int:post_id>", methods=["POST"])
 @admin_only
 def delete_post(post_id):
     post_to_delete = db.get_or_404(BlogPost, post_id)
