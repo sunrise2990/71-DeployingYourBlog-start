@@ -35,7 +35,6 @@
           <li><strong>Tools:</strong> Excel, Python (pandas, xlwings), SQL (Athena), SharePoint, Task Scheduler</li>
           <li><strong>Output:</strong> Excel workbook with dynamic projections, rent roll validations, and summary reports</li>
         </ul>
-          <p><strong>Fully integrated into a dynamic Excel workbook.</strong></p>
       </section>
 
   <section id="table-of-contents">
