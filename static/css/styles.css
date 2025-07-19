@@ -124,13 +124,14 @@ body {
 }
 
 .post-heading {
-  padding: 60px 20px;
-  min-height: 250px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
+    padding: 120px 20px 60px;
+    min-height: 350px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    text-align: center;
+    color: white;
 }
 
 /* ✅ Fix for post.html layout only */
