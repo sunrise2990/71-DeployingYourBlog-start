@@ -22,13 +22,9 @@
     <div class="col-md-12 col-lg-12 col-xl-10">
 
       <!-- Executive Summary -->
-      <section id="exec-summary" class="mb-5">
+      <section class="mb-5">
         <h2>💼 Executive Summary</h2>
-          <p>
-            This solution automates leasing budget forecasting across 800+ tenants and 100+ commercial properties.
-            It bridges <strong>Yardi data</strong>, <strong>Excel inputs</strong>, and <strong>Python processing</strong> to generate
-            a 5–7 year outlook for base rent, vacancy, and GLA — fully integrated into a dynamic Excel workbook.
-          </p>
+        <p>This solution automates leasing budget forecasting across 800 tenants and 100+ commercial properties. It bridges Yardi data, Excel models, and Python logic to generate a 5–7 year outlook for base rent, vacancy, and GLA.</p>
         <ul>
           <li><strong>Portfolio:</strong> Office, Retail, Industrial properties</li>
           <li><strong>Forecasting Horizon:</strong> 2025 to 2029</li>
@@ -37,30 +33,12 @@
         </ul>
       </section>
 
-  <section id="table-of-contents">
-  <h3>📌 Table of Contents</h3>
-  <ul>
-    <li><a href="#exec-summary">Executive Summary</a></li>
-    <li><a href="#business-impact">Business Impact</a></li>
-    <li><a href="#leasing-flow">Simplified Leasing Flow</a></li>
-    <li><a href="#automation">Leasing Automation in Action</a></li>
-    <li><a href="#input-output">From Input to Output</a></li>
-    <li><a href="#rent-trends">Net Rent Trends</a></li>
-    <li><a href="#pipeline">Leasing Pipeline Overview</a></li>
-    <li><a href="#architecture">Dataflow Architecture</a></li>
-    <li><a href="#tech-flow">Technical Flow</a></li>
-    <li><a href="#walkthrough">Full Walkthrough</a></li>
-    <li><a href="#challenges">Full Walkthrough</a></li>
-    <li><a href="#reflections">Reflections</a></li>
-  </ul>
-</section>
-
 <!-- Business Impact -->
-      <section id="business-impact" class="mb-5">
+      <section class="mb-5">
         <h2>📈 Business Impact</h2>
         <ul>
           <li>✅ Replaced manual workbooks with automated Python logic</li>
-          <li>⚡ <strong><span style="background-color: #fff3cd; color: #856404; padding: 3px 8px; border-radius: 5px;">⏱️ Reduced from 3 days to 10 minutes</span></strong></li>
+          <li>⚡ Reduced processing time from 3 days to under 10 minutes</li>
           <li>🔍 Created a single source of truth for all leasing assumptions</li>
           <li>🧾 Enabled quick summary generation for budget sign-off</li>
         </ul>
@@ -68,7 +46,7 @@
 
 
 <!-- Simplified Leasing Flow -->
-      <section id="leasing-flow" class="mb-5">
+      <section class="mb-5">
         <h3 class="mb-3"><i class="fas fa-route text-info"></i> Simplified Leasing Flow</h3>
         <p>This diagram provides a high-level overview of the leasing process used to generate projections from multiple data sources.</p>
         <div class="text-center mt-3 mb-3">
@@ -81,7 +59,7 @@
       </section>
 
 <!-- Animated Process GIF -->
-<section id="automation" class="mb-5">
+<section class="mb-5">
   <h3 class="mb-3"><i class="fas fa-play-circle text-success"></i> Leasing Automation in Action</h3>
   <p>This animation walks through the 6-step leasing forecast pipeline — from pulling in-place leases from Yardi to auto-generating Excel dashboards.</p>
   <div class="text-center">
@@ -97,9 +75,10 @@
 
 
 <!-- From Input to Output -->
-      <section id="input-output" class="mb-5">
+      <section class="mb-5">
         <h2><i class="fas fa-chart-line text-success"></i>📝 From Input to Output</h2>
-        <p>Below are examples of how leasing team assumptions entered in Excel (purple fields) directly impact summary reports. After updating assumptions, simply run the Python script and click <strong>Refresh All</strong> in Excel to instantly generate updated visuals:</p>
+        <p>Below are examples of how leasing team assumptions entered in Excel (purple fields) directly impact summary reports. Once updated, running the Python script and clicking <strong>Refresh All</strong> in Excel generates the visuals dynamically:</p>
+
         <h4 class="mt-4">🔧 Leasing Inputs (Editable Fields)</h4>
         <div class="text-center mb-4">
           <img src="{{ url_for('static', filename='assets/img/leasing_inputs_example.png') }}"
@@ -109,7 +88,7 @@
         </div>
         <p>✏️ Leasing assumptions are entered here — including lease start/end dates, rates, and incentives — which directly drive downstream rent projections and KPIs.</p>
 
-        <h4 id="rent-trends" class="mt-4">📊 Net Rent Comparison (2024F vs 2025B)</h4>
+        <h4 class="mt-4">📊 Net Rent Comparison (2024F vs 2025B)</h4>
         <div class="text-center mb-4">
           <img src="{{ url_for('static', filename='assets/img/net_rent_summary.png') }}"
                alt="Net Rent Summary"
@@ -129,14 +108,14 @@
       </section>
 
       <!-- Leasing Pipeline Overview -->
-      <section id="pipeline" class="mb-5">
+      <section class="mb-5">
         <h2><i class="fas fa-brain text-danger"></i>📊 Leasing Pipeline Overview</h2>
         <p class="lead">Explore how data flows from our Yardi systems through Excel and Python automation pipelines.</p>
       </section>
 
 
 <!-- Dataflow Architecture -->
-      <section id="architecture" class="mb-5">
+      <section class="mb-5">
         <h3 class="mb-3 ps-3">
           <i class="fas fa-network-wired text-primary"></i>📈 Dataflow Architecture (Detail)
         </h3>
@@ -151,7 +130,7 @@
       </section>
 
       <!-- Technical Flow -->
-      <section id="tech-flow" class="mb-5">
+      <section class="mb-5">
         <h2><i class="fas fa-cogs"></i> Technical Flow</h2>
         <ol>
           <li><strong>SQL Data Pull:</strong> Extracts 4 core tables from 1,000+ via Athena, including historical and future rent rolls</li>
@@ -174,7 +153,7 @@
       </section>
 
       <!-- Full Walkthrough -->
-      <section id="walkthrough" class="mb-5">
+      <section class="mb-5">
         <h2>🔍 Full Walkthrough: From Raw Data to Instant Rent Forecasts</h2>
         <p>This section walks through how the leasing budget automation works behind the scenes — from SQL to Excel to Python — and shows real code examples for each part of the pipeline.</p>
 
@@ -262,7 +241,7 @@ def update_status_with_rent_roll_and_inputs(wb):
 
 
       <!-- Challenges -->
-      <section id="challenges" class="mb-5">
+      <section class="mb-5">
         <h2>🛠 Challenges Solved</h2>
         <ul>
           <li><strong>Duplicate assumptions:</strong> Detected overlap with activated leases → override logic added</li>
@@ -273,7 +252,7 @@ def update_status_with_rent_roll_and_inputs(wb):
       </section>
 
       <!-- Reflections -->
-      <section id="reflections" class="mb-5">
+      <section class="mb-5">
         <h2>🔍 Reflections</h2>
         <ul>
           <li>This was not just a coding task — it redefined how leasing forecasts are created and validated</li>
