@@ -50,7 +50,8 @@
     <li><a href="#architecture">Dataflow Architecture</a></li>
     <li><a href="#tech-flow">Technical Flow</a></li>
     <li><a href="#walkthrough">Full Walkthrough</a></li>
-    <li><a href="#challenges">Full Walkthrough</a></li>
+    <li><a href="#python modules">Python Modules</a></li>
+    <li><a href="#challenges">Challenges Resolved</a></li>
     <li><a href="#reflections">Reflections</a></li>
   </ul>
 </section>
@@ -180,14 +181,52 @@
 
         <h4 class="mt-4 text-primary">1. 🔄 SQL Data Extraction</h4>
         <pre><code class="language-sql">
--- Extract future lease charges
-SELECT *
-FROM leasing.future_leases_activated
-WHERE property_code IS NOT NULL
-  AND start_date >= DATE '2024-01-01';
+    -- extract 7 year in-place lease data
+    WITH dates AS (
+    SELECT CAST('2023-1-1' AS DATE) AS effect_date
+    ),
+
+    aa AS (
+        SELECT *,
+            un.scode as unit_no,
+            round((unit_sqft * yearlyrate / 12),2) AS monthamount
+        FROM (
+            SELECT
+                p.scode as property_code,
+                cr.hunit as unit_code,
+                cr.dcontractarea as unit_sqft,
+                t.slastname as tenant_name,
+                t.scode as tenant_code,
+                COALESCE(t.dtleasefrom, t.dtmovein) as lease_from,
+                COALESCE(t.dtmoveout , t.dtleaseto) as lease_to,
+                cr.dtfrom as charge_from,
+                cr.dtto as charge_to,
+                ct.sname as charge_code,
+                round(cr.dmonthlyamount*12/NULLIF(cr.dcontractarea,0),2) as yearlyrate,
+                cr.hamendment,
+                cr.hunit as dummy,
+                cr.dadminpercent/100 as admin_fee,
+                CASE WHEN cr.hchargecode = 70 THEN 'gross' ELSE 'net' END AS net_gross,
+                d.effect_date
+            FROM yardi.camrule cr
+            JOIN yardi.tenant t ON t.hmyperson = cr.htenant
+            JOIN yardi.property p ON p.hmy = t.hproperty
+            left JOIN yardi.attributes a ON p.scode = a.scode AND a.subgroup1 = 'IPP Core'
+            JOIN yardi.listprop l ON l.hproperty = t.hproperty
+            LEFT JOIN yardi.unit un ON un.hmy = cr.hunit
+            LEFT JOIN yardi.chargtyp ct ON cr.hchargecode = ct.hmy
+            CROSS JOIN dates d
+            WHERE
+                l.hproplist in (592, 597)
+                AND p.itypecommercial =1
+                AND cr.hchargecode in (59,60,61,70,62,63,64)
+                AND (CAST(cr.dtto AS DATE) >= d.effect_date OR cr.dtto is null)
+                AND (cr.dtto IS NULL OR CAST(cr.dtto AS DATE) > CAST(cr.dtfrom AS DATE)) -- any rows with dtto being null should be included
+                --AND t.hproperty in (4518)
+        ) xx ;
         </code></pre>
 
-        <h4 class="mt-4 text-primary">2. 📥 Load Data into Excel</h4>
+        <h4 class="mt-4 text-primary">2. 📥 Load Queried Data into Excel</h4>
         <ul>
           <li><code>7yrBaseRent</code></li>
           <li><code>RentRoll</code></li>
@@ -248,13 +287,111 @@ def update_status_with_rent_roll_and_inputs(wb):
       </section>
 
       <!-- Python Modules -->
-      <section class="mb-5">
+      <section id="python modules" class="mb-5">
         <h2>🧪 Python Modules</h2>
         <ul>
-          <li><code>load_and_combine_tables(wb)</code>: Merges 7yrBaseRent + Inputs + Free Rent logic</li>
-          <li><code>unnest_charges(df1, wb)</code>: Generates monthly rows across 2023–2029</li>
-          <li><code>integrate_vacancy(df_final, wb, all_months)</code>: Adds vacant months per GLA</li>
-          <li><code>process_sqft_month(wb)</code>: Tracks unit-level sqft changes</li>
+          <li><code>load_and_combine_tables(wb)</code>: Merges 7yrBaseRent + Inputs + Free Rent logic
+          def load_and_combine_tables(wb):
+    all_charges_sheet = wb.sheets["7yrBaseRent"]
+    all_charges_range = all_charges_sheet.range("A1").expand()
+    all_charges_df = all_charges_range.options(pd.DataFrame, header=1, index=False).value
+    all_charges_df['Source'] = 'yardi'  # Add a source column for Yardi data
+
+    # Convert 'unit_no' to string format only if it's not null
+    all_charges_df['unit_no'] = all_charges_df['unit_no'].apply(lambda x: "'" + str(x) if pd.notna(x) else x)
+    # Remove rows where 'unit_no' is None or just a single quote
+    all_charges_df = all_charges_df[all_charges_df['unit_no'].str.strip("'").notna() & (all_charges_df['unit_no'].str.strip("'") != "")]
+
+    inputs_sheet = wb.sheets["Inputs"]
+    inputs_range = inputs_sheet.range("S27:AL3000")
+    inputs_df = inputs_range.options(pd.DataFrame, header=1, index=False).value
+    inputs_df['Source'] = 'inputs'  # Add a source column for Inputs data
+
+    # Similarly convert 'unit_no' and filter
+    inputs_df['unit_no'] = inputs_df['unit_no'].apply(lambda x: "'" + str(x) if pd.notna(x) else x)
+    inputs_df = inputs_df[inputs_df['unit_no'].str.strip("'").notna() & (inputs_df['unit_no'].str.strip("'") != "")]</li>
+
+          <li><code>unnest_charges(df1, wb)</code>: Generates monthly rows across 2023–2029
+          def unnest_charges(df1, wb):
+    global start_date, end_date, all_months  # Access global variables directly
+    df_final = df1.copy()
+
+ # Ensure all unit_no entries are strings and filter out rows with None or empty unit_no
+    df_final['unit_no'] = df_final['unit_no'].astype(str)
+    df_final = df_final[df_final['unit_no'].notna() & (df_final['unit_no'] != '')]
+
+    for month_end in all_months:
+        df_final[month_end.strftime('%Y-%m-%d')] = np.nan
+
+    for index, row in df_final.iterrows():
+        if pd.notna(row['yearlyrate']) and pd.notna(row['unit_sqft']):
+            charge_from = max(pd.Timestamp(row['charge_from']), start_date) if pd.notna(row['charge_from']) else start_date
+            charge_to = min(pd.Timestamp(row['charge_to']), end_date) if pd.notna(row['charge_to']) else end_date
+
+            for month in all_months:
+                month_start = month.to_timestamp(how='start')
+                month_end = month.to_timestamp(how='end')
+
+                if charge_from <= month_end and charge_to >= month_start:
+                    days_in_month = month_end.day
+                    covered_days = (min(charge_to, month_end) - max(charge_from, month_start) + pd.Timedelta(days=1)).days
+                    monthly_rate = row['yearlyrate'] * row['unit_sqft'] / 12</li>
+
+          <li><code>integrate_vacancy(df_final, wb, all_months)</code>: Adds vacant months per GLA
+          def integrate_vacancy(df_final, wb, all_months):
+    # Load the 'sqft' table which contains the full inventory of units
+    sqft_sheet = wb.sheets['sqft']
+    sqft_range = sqft_sheet.range('A1').expand()
+    sqft_df = sqft_range.options(pd.DataFrame, header=1, index=False).value
+
+    # Convert 'unit_no' to string to avoid Excel date conversion
+    sqft_df['unit_no'] = "'" + sqft_df['unit_no'].astype(str)
+
+    # Prepare a list to hold all unit entries
+    unit_entries = []
+
+    # Iterate through each unit in the full inventory
+    for _, unit in sqft_df.iterrows():
+        property_code = unit['property_code']
+        unit_no = unit['unit_no']
+
+        # Initialize a dictionary for the unit record
+        unit_record = {
+            'Source': 'vacancy',  # Mark source as 'vacancy'
+            'property_code': property_code,
+            'prop_name': None,
+            'unit_no': unit_no,</li>
+
+          <li><code>process_sqft_month(wb)</code>: Tracks unit-level sqft changes
+          def process_sqft_month(wb):
+    # Use global variables for start_date and end_date
+    global start_date, end_date, all_months
+
+    # Correct the frequency code and ensure all_months uses Timestamps at month end
+    all_months = pd.date_range(start_date, end_date, freq='ME').strftime('%Y-%m-%d')
+
+    # Read data from 'sqft' starting at column M
+    sqft_sheet = wb.sheets['sqft']
+    sqft_data_range = sqft_sheet.range('M1').expand('table')
+    sqft_data_df = sqft_data_range.options(pd.DataFrame, header=1, index=False).value
+
+    # Filter out rows with null start dates
+    sqft_data_df = sqft_data_df.dropna(subset=['start_date'])
+
+    # Sort data to ensure correct chronological order
+    sqft_data_df = sqft_data_df.sort_values(by='start_date')
+
+    # Initialize an empty list to collect data rows
+    data_rows = []
+    columns = ['property_code', 'unit_no', 'start_date'] + list(all_months)
+
+    # Process each unit entry
+    for _, group in sqft_data_df.groupby(['property_code', 'unit_no']):
+        group = group.reset_index(drop=True)
+        for idx, row in group.iterrows():
+            new_row = {col: None for col in columns}
+            new_row.update({'property_code': row['property_code'], 'unit_no': row['unit_no'], 'start_date': row['start_date']</li>
+
           <li><code>update_status_with_rent_roll_and_inputs(wb)</code>: Compares forecast vs actual</li>
         </ul>
         <p>All Excel interaction handled via <code>xlwings</code> — ensuring seamless link to open or saved workbooks.</p>
