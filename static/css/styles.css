@@ -135,17 +135,18 @@ body {
 }
 
 .post-heading .subheading {
-    font-size: 1.25rem;
-    color: #eee;
-    margin-top: 1.2rem;
+    font-size: 1.1rem !important;
+    margin-top: 1rem;
+    color: #ccc;
 }
 
 .post-heading h1 {
-    font-size: 2.5rem;
-    line-height: 1.2;
-    max-width: 20ch;     /* wrap long titles after ~20 characters */
-    margin: 0 auto 0.75rem;
-    word-wrap: break-word;
+    font-size: 2.4rem !important;
+    line-height: 1.2 !important;
+    max-width: 28ch;
+    margin: 0 auto 0.75rem auto;
+    white-space: normal;
+    word-break: break-word;
 }
 
 /* ✅ Fix for post.html layout only */
@@ -11074,4 +11075,21 @@ header.masthead.post-banner .post-heading .subheading {
 .flash {
     color: #ee6f57;
     text-align: center;
+}
+
+/* Ensure post title uses only 2 lines and looks balanced */
+.post-heading h1 {
+    font-size: 2.4rem !important;
+    line-height: 1.2 !important;
+    max-width: 30ch;
+    margin: 0 auto 1rem auto;
+    white-space: normal !important;
+    word-break: break-word;
+}
+
+/* Subtitle tweaks */
+.post-heading .subheading {
+    font-size: 1.1rem !important;
+    margin-top: 0.5rem;
+    color: #ccc;
 }
