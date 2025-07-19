@@ -143,7 +143,9 @@ body {
 .post-heading h1 {
     font-size: 2.5rem;
     line-height: 1.2;
-    margin-bottom: 0.5rem;
+    max-width: 20ch;     /* wrap long titles after ~20 characters */
+    margin: 0 auto 0.75rem;
+    word-wrap: break-word;
 }
 
 /* ✅ Fix for post.html layout only */
