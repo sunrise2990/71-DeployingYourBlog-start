@@ -180,51 +180,52 @@
         <p>This section walks through how the leasing budget automation works behind the scenes — from SQL to Excel to Python — and shows real code examples for each part of the pipeline.</p>
 
         <h4 class="mt-4 text-primary">1. 🔄 SQL Data Extraction</h4>
-        <pre><code class="language-sql">
-    -- extract 7 year in-place lease data
-    WITH dates AS (
-    SELECT CAST('2023-1-1' AS DATE) AS effect_date
-    ),
+        <div class="code-block">
+        -- extract 7 year in-place lease data<br>
+        WITH dates AS (<br>
+        &nbsp;&nbsp;SELECT CAST('2023-1-1' AS DATE) AS effect_date<br>
+        ),<br><br>
 
-    aa AS (
-        SELECT *,
-            un.scode as unit_no,
-            round((unit_sqft * yearlyrate / 12),2) AS monthamount
-        FROM (
-            SELECT
-                p.scode as property_code,
-                cr.hunit as unit_code,
-                cr.dcontractarea as unit_sqft,
-                t.slastname as tenant_name,
-                t.scode as tenant_code,
-                COALESCE(t.dtleasefrom, t.dtmovein) as lease_from,
-                COALESCE(t.dtmoveout , t.dtleaseto) as lease_to,
-                cr.dtfrom as charge_from,
-                cr.dtto as charge_to,
-                ct.sname as charge_code,
-                round(cr.dmonthlyamount*12/NULLIF(cr.dcontractarea,0),2) as yearlyrate,
-                cr.hamendment,
-                cr.hunit as dummy,
-                cr.dadminpercent/100 as admin_fee,
-                CASE WHEN cr.hchargecode = 70 THEN 'gross' ELSE 'net' END AS net_gross,
-                d.effect_date
-            FROM yardi.camrule cr
-            JOIN yardi.tenant t ON t.hmyperson = cr.htenant
-            JOIN yardi.property p ON p.hmy = t.hproperty
-            left JOIN yardi.attributes a ON p.scode = a.scode AND a.subgroup1 = 'IPP Core'
-            JOIN yardi.listprop l ON l.hproperty = t.hproperty
-            LEFT JOIN yardi.unit un ON un.hmy = cr.hunit
-            LEFT JOIN yardi.chargtyp ct ON cr.hchargecode = ct.hmy
-            CROSS JOIN dates d
-            WHERE
-                l.hproplist in (592, 597)
-                AND p.itypecommercial =1
-                AND cr.hchargecode in (59,60,61,70,62,63,64)
-                AND (CAST(cr.dtto AS DATE) >= d.effect_date OR cr.dtto is null)
-                AND (cr.dtto IS NULL OR CAST(cr.dtto AS DATE) > CAST(cr.dtfrom AS DATE)) -- any rows with dtto being null should be included
-                --AND t.hproperty in (4518)
-        ) xx ;
-        </code></pre>
+        aa AS (<br>
+        &nbsp;&nbsp;SELECT *,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;un.scode as unit_no,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;round((unit_sqft * yearlyrate / 12),2) AS monthamount<br>
+        &nbsp;&nbsp;FROM (<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;SELECT<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p.scode as property_code,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr.hunit as unit_code,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr.dcontractarea as unit_sqft,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;t.slastname as tenant_name,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;t.scode as tenant_code,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;COALESCE(t.dtleasefrom, t.dtmovein) as lease_from,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;COALESCE(t.dtmoveout , t.dtleaseto) as lease_to,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr.dtfrom as charge_from,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr.dtto as charge_to,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ct.sname as charge_code,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;round(cr.dmonthlyamount*12/NULLIF(cr.dcontractarea,0),2) as yearlyrate,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr.hamendment,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr.hunit as dummy,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr.dadminpercent/100 as admin_fee,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CASE WHEN cr.hchargecode = 70 THEN 'gross' ELSE 'net' END AS net_gross,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;d.effect_date<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;FROM yardi.camrule cr<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;JOIN yardi.tenant t ON t.hmyperson = cr.htenant<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;JOIN yardi.property p ON p.hmy = t.hproperty<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN yardi.attributes a ON p.scode = a.scode AND a.subgroup1 = 'IPP Core'<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;JOIN yardi.listprop l ON l.hproperty = t.hproperty<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN yardi.unit un ON un.hmy = cr.hunit<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN yardi.chargtyp ct ON cr.hchargecode = ct.hmy<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CROSS JOIN dates d<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;WHERE<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l.hproplist in (592, 597)<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AND p.itypecommercial = 1<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AND cr.hchargecode in (59,60,61,70,62,63,64)<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AND (CAST(cr.dtto AS DATE) >= d.effect_date OR cr.dtto IS NULL)<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AND (cr.dtto IS NULL OR CAST(cr.dtto AS DATE) > CAST(cr.dtfrom AS DATE))<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-- AND t.hproperty in (4518)<br>
+        &nbsp;&nbsp;) xx<br>
+        );<br>
+        </div>
 
         <h4 class="mt-4 text-primary">2. 📥 Load Queried Data into Excel</h4>
         <ul>
