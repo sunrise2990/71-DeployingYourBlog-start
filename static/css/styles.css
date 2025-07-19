@@ -196,6 +196,23 @@ h4 + ul {
   white-space: pre;
 }
 
+<style>
+.code-block {
+  background-color: #f8f9fa;
+  border-left: 4px solid #007acc;
+  padding: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 2rem;
+  overflow-x: auto;
+  font-family: Consolas, monospace;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+</style>
+
+
+
 :root {
   --bs-blue: #0d6efd;
   --bs-indigo: #6610f2;
