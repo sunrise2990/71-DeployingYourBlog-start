@@ -46,7 +46,7 @@
 
 <!-- From Input to Output -->
       <section class="mb-5">
-        <h2><i class="fas fa-chart-line text-success"></i> From Input to Output</h2>
+        <h2><i class="fas fa-chart-line text-success"></i>📝 From Input to Output</h2>
         <p>Below are examples of how leasing team assumptions entered in Excel (purple fields) directly impact summary reports. Once updated, running the Python script and clicking <strong>Refresh All</strong> in Excel generates the visuals dynamically:</p>
 
         <h4 class="mt-4">🔧 Leasing Inputs (Editable Fields)</h4>
@@ -79,7 +79,7 @@
 
       <!-- Leasing Pipeline Overview -->
       <section class="mb-5">
-        <h2><i class="fas fa-brain text-danger"></i> Leasing Pipeline Overview</h2>
+        <h2><i class="fas fa-brain text-danger"></i>📊 Leasing Pipeline Overview</h2>
         <p class="lead">Explore how data flows from our Yardi systems through Excel and Python automation pipelines.</p>
       </section>
 
@@ -94,13 +94,27 @@
                style="max-width: 850px;">
         </div>
       <p>🔄 This diagram outlines how leasing data flows from raw Yardi exports and team assumptions through Python logic into monthly rent projections, vacancy tracking, and Excel reports — all fully automated.</p>
-
       </section>
+
+<!-- Animated Process GIF -->
+<section class="mb-5">
+  <h3 class="mb-3"><i class="fas fa-play-circle text-success"></i> Leasing Automation in Action</h3>
+  <p>This animation walks through the 6-step leasing forecast pipeline — from pulling in-place leases from Yardi to auto-generating Excel dashboards.</p>
+  <div class="text-center">
+    <img src="{{ url_for('static', filename='assets/img/leasing_sequence.gif') }}"
+         alt="Animated Leasing Pipeline"
+         class="img-fluid shadow-sm"
+         style="max-width: 1000px;">
+  </div>
+        <p class="fst-italic mt-2 text-muted">
+  ① SQL pull → ② Leasing inputs → ③ Python logic → ④ Writeback → ⑤ Power Query → ⑥ Dashboard output
+</p>
+</section>
 
       <!-- Dataflow Architecture -->
       <section class="mb-5">
         <h3 class="mb-3 ps-3">
-          <i class="fas fa-network-wired text-primary"></i> Dataflow Architecture (Detail)
+          <i class="fas fa-network-wired text-primary"></i>📈 Dataflow Architecture (Detail)
         </h3>
         <p class="ps-3">This visual summarizes the full-stack integration across systems:</p>
 
