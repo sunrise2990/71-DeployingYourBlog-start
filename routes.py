@@ -9,3 +9,7 @@ def budget_reforecast():
 @projects_bp.route("/projects/budget-reforecast/leasing")
 def leasing_pipeline():
     return render_template("leasing_pipeline.html")
+
+@projects_bp.route("/projects/budget-reforecast/reforecast")
+def reforecast_pipeline():
+    return render_template("reforecast_pipeline.html")
