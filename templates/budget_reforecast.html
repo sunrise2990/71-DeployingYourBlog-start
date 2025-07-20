@@ -92,6 +92,50 @@ Accountants use Power Query to pull actuals and material changes from ABF, while
   <li><strong>No rebuild required</strong> — just sync and extend forward</li>
 </ul>
 
+<div class="table-responsive">
+  <table class="table table-bordered text-center align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>Process</th>
+        <th>Data</th>
+        <th>Tools</th>
+        <th>What Tools Do</th>
+        <th>Consolidation</th>
+        <th>Outputs</th>
+        <th>Objectives</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="background-color:#ffff66">
+        <td><strong>Budget (2026–2030)</strong></td>
+        <td>Database of in-place leases</td>
+        <td>SQL + Athena</td>
+        <td>Clean, project, and load rent data</td>
+        <td rowspan="3" style="background-color:#f4c2f4"><strong>Excel Workbook<br>(Syncing Budget & Reforecast)</strong></td>
+        <td>Scenario Analysis, Flashback Results</td>
+        <td>Minimize Rework</td>
+      </tr>
+      <tr style="background-color:#f4a7b9">
+        <td><strong>Shared Process</strong></td>
+        <td>Leasing Assumptions<br>(Renewals, TI, Downtime)</td>
+        <td>Python + xlwings</td>
+        <td>Inject leasing assumptions, Read/Write Excel</td>
+        <td>Unified Dashboard</td>
+        <td>Seamless Integration</td>
+      </tr>
+      <tr style="background-color:#c3f4c2">
+        <td><strong>Reforecast (2025–2029)</strong></td>
+        <td>ABF (Final + IPP Budget Books)</td>
+        <td>Python + Power Query</td>
+        <td>Combine Queries & Connection</td>
+        <td>Variance vs Original Budget</td>
+        <td>Frequent/Quarterly Reforecast</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+
 <hr>
 
 <h2>⚙️ What Powers This Automation</h2>
