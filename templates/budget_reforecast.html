@@ -39,6 +39,17 @@ This leasing engine is fully detailed in
 
 <hr>
 
+<h2>🔗 Explore More</h2>
+<ul>
+  <li><a href="{{ url_for('projects.leasing_pipeline') }}" class="btn btn-outline-primary">📂 Leasing Pipeline (Year 1 Engine)</a></li>
+  <li><a href="#" class="btn btn-outline-secondary disabled">🚧 CapEx Pipeline (Coming Soon)</a>
+  </li>
+</ul>
+
+<p class="mt-5"><em>Follow along as I share how to automate the full budgeting lifecycle — from leasing assumptions to actuals alignment to executive-ready scenarios.</em></p>
+
+<hr>
+
 <h2>🔄 Syncing Budget & Reforecast Without Rebuilding</h2>
 <p>Each year, two tasks need to happen in sync:</p>
 <ul>
@@ -63,6 +74,22 @@ The overlay logic uses the exact same core process from Year 1:
   <li>Leasing assumptions + in-place leases are processed via Python and SQL</li>
   <li>Rent steps are unnested into month-level granularity</li>
   <li>Results feed into the Excel workbook, populating the future years dynamically</li>
+</ul>
+
+<h2>🧩 Hybrid Workbook — One Model, Two Purposes</h2>
+<p>
+Rather than build two separate files, I created a single Excel-based engine that serves both:
+</p>
+<ul>
+  <li><strong>2025–2029 Reforecast</strong>: Syncs to archived “Final Budget Book” and updated “IPP Budget Book” from Yardi ABF</li>
+  <li><strong>2026–2030 Budget</strong>: Reuses same base logic and overlays new leasing projections using Python pipeline</li>
+</ul>
+<p>
+Accountants use Power Query to pull actuals and material changes from ABF, while Leasing inputs feed Python-powered projections. The result:
+</p>
+<ul>
+  <li><strong>Fast, flashback-ready scenarios</strong> for budget planning</li>
+  <li><strong>No rebuild required</strong> — just sync and extend forward</li>
 </ul>
 
 <hr>
@@ -95,7 +122,6 @@ The overlay logic uses the exact same core process from Year 1:
   </tbody>
 </table>
 
-<hr>
 
 <h2>🚀 Why It Works</h2>
 <ul>
@@ -109,12 +135,4 @@ The overlay logic uses the exact same core process from Year 1:
   All these steps make budget planning and reforecasting fully aligned — accountants, finance, and leasing all work off the same system with full transparency and speed.
 </p>
 
-<hr>
-
-<h2>🔗 Explore More</h2>
-<ul>
-  <li><a href="{{ url_for('projects.leasing_pipeline') }}" class="btn btn-outline-primary">📂 Leasing Pipeline (Year 1 Engine)</a></li>
-</ul>
-
-<p class="mt-5"><em>Follow along as I share how to automate the full budgeting lifecycle — from leasing assumptions to actuals alignment to executive-ready scenarios.</em></p>
 {% endblock %}
