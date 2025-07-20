@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Budget & Reforecast | Data by Kevin{% endblock %}
 {% block content %}
+
 <h1 class="mb-4">📊 Budget & Reforecast Automation</h1>
 
-<p>This project automates the full lifecycle of budgeting and quarterly reforecasting across 800+ tenants and 100+ commercial properties. It includes two integrated pipelines:</p>
+<p>This solution automates the end-to-end workflow for annual budgeting and quarterly reforecasting across 800+ tenants and 100+ commercial buildings, syncing inputs from leasing and accounting teams.</p>
 
 <ul>
-  <li><strong>Leasing Pipeline</strong>: Forecasting rent flows, renewals, downtime, and overrides.</li>
-  <li><strong>CapEx Pipeline</strong>: Automating project-level actuals, reforecasts, and approvals.</li>
+  <li><strong>Leasing Budget Pipeline</strong>: Automates forward-looking projections using SQL + Python based on leasing assumptions.</li>
+  <li><strong>Leasing Reforecast Pipeline</strong>: Syncs near-final 2025 actuals from ABF and overlays rent projections from Yardi.</li>
+  <li><strong>CapEx Pipeline</strong>: Automates project-level actuals, reforecasting, and approvals. (Coming Soon)</li>
 </ul>
 
 <hr>
@@ -15,7 +17,10 @@
 
 <ul>
   <li>
-    <a href="{{ url_for('projects.leasing_pipeline') }}" class="btn btn-outline-primary">Explore Leasing Pipeline →</a>
+    <a href="{{ url_for('projects.leasing_pipeline') }}" class="btn btn-outline-primary mb-2">Explore Leasing Budget Pipeline →</a>
+  </li>
+  <li>
+    <a href="{{ url_for('projects.reforecast_pipeline') }}" class="btn btn-outline-primary mb-2">Explore Leasing Reforecast Pipeline →</a>
   </li>
   <li>
     <a href="#" class="btn btn-outline-secondary disabled">CapEx Pipeline (Coming Soon)</a>
@@ -23,11 +28,25 @@
 </ul>
 
 <hr>
+<h2>📌 Reforecast vs Budget: Why the Sync Matters</h2>
+<p>
+  The <strong>2025 Reforecast</strong> data pulled from ABF represents near-final actuals entered by accountants — it becomes your “real” benchmark.
+  The <strong>2026 Budget</strong> is driven by leasing team assumptions and rent projections.
+  This pipeline ensures both datasets are aligned for strategic review and accurate year-over-year growth analysis.
+</p>
+
+<ul>
+  <li>Bridges systems: ABF (accounting) → Yardi (leases) → Excel (reporting)</li>
+  <li>Supports Q4 planning, executive reviews, and board-ready summaries</li>
+  <li>Eliminates manual Excel work and formula mismatches</li>
+</ul>
+
+<hr>
 <h2>✅ Business Impact</h2>
 <ul>
-  <li>100+ hours saved annually</li>
-  <li>Eliminated version control issues</li>
-  <li>Empowered team with accurate live forecasts</li>
+  <li>300+ hours saved annually</li>
+  <li>Aligned Leasing + Accounting + Finance across shared forecasts</li>
+  <li>Single source of truth for both Budget and Reforecast comparison</li>
 </ul>
 
 <p class="mt-5"><em>Want to automate your own forecasting process? Follow along as I share the full build, code, and logic in detail.</em></p>

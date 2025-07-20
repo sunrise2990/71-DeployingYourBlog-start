@@ -25,7 +25,7 @@
 <hr>
 <h2>✅ Business Impact</h2>
 <ul>
-  <li>100+ hours saved annually</li>
+  <li>300+ hours saved annually</li>
   <li>Eliminated version control issues</li>
   <li>Empowered team with accurate live forecasts</li>
 </ul>
