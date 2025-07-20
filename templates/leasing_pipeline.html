@@ -299,7 +299,7 @@ def update_status_with_rent_roll_and_inputs(wb):
     &nbsp;&nbsp;sqft_df = sqft_range.options(pd.DataFrame, header=1, index=False).value; sqft_df['unit_no'] = "'" + sqft_df['unit_no'].astype(str)<br>
     &nbsp;&nbsp;unit_entries = []<br>
     &nbsp;&nbsp;for _, unit in sqft_df.iterrows(): property_code = unit['property_code']; unit_no = unit['unit_no']; unit_record = {'Source': 'vacancy', 'property_code': property_code, 'prop_name': None, 'unit_no': unit_no}; ----- omitted codes -------
-
+    &nbsp;&nbsp;&nbsp;&nbsp;----- omitted codes -------
       </div>
 
       <h4 class="mt-4 text-primary">📏 4. process_sqft_month(wb)</h4>
@@ -333,7 +333,6 @@ def update_status_with_rent_roll_and_inputs(wb):
         <h2>🛠 Challenges Solved</h2>
         <ul>
           <li><strong>Duplicate assumptions:</strong> Detected overlap with activated leases → override logic added</li>
-          <li><strong>NER skew from one-time TI:</strong> TI amortized over full term → included in per-month rent</li>
           <li><strong>Excel memory limits:</strong> Large formula-based workbook → replaced with Python calculations</li>
           <li><strong>Manual errors in rent roll match:</strong> Created full validation logic across merged keys</li>
         </ul>
