@@ -139,14 +139,41 @@ Accountants use Power Query to pull actuals and material changes from ABF, while
 
 <h2>📊 Forecast Manager vs. My Current Automation: Executive Summary</h2>
 
-    <p>This one-slide comparison highlights how my in-house forecast pipeline still outperforms Forecast Manager in speed, analytics, and ownership, even if Forecast Manager is adopted later for standardized workflows.</p>
+    <p>This table comparison highlights how my in-house forecast pipeline still outperforms Forecast Manager in speed, analytics, and ownership, even if Forecast Manager is adopted later for standardized workflows.</p>
+    <div class="table-responsive">
+      <table class="table table-bordered text-center align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>Feature</th>
+            <th>Forecast Manager</th>
+            <th>My Custom Pipeline</th>
+            <th>Rigidities of Forecast Manager</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Reforecast vs Budget Comparison</td>
+            <td>X</td>
+            <td>✓</td>
+            <td>Cumbersome Reforecast process,<br>not perfectly syncing with Reforecast process</td>
+          </tr>
+          <tr>
+            <td>Real-time Scenario Flashing</td>
+            <td>X</td>
+            <td>✓</td>
+            <td>No Portfolio-Level Scenario Flashing,<br>Forward-Looking Analysis</td>
+          </tr>
+          <tr>
+            <td>Integration: SQL, Python, Excel</td>
+            <td>X</td>
+            <td>✓</td>
+            <td>No Integration of Analytic Tools</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-    <img src="{{ url_for('static', filename='assets/img/exec_summary_my_pipeline.png') }}"
-         alt="Exec Summary Slide"
-         style="max-width:100%; border:1px solid #ddd; border-radius:4px; margin-top:10px;">
-<br><br>
-
-<h2>⚙️ What Powers This Automation</h2>
+<h2 style="margin-top: 30px;">⚙️ What Powers This Automation</h2>
 <table class="table table-bordered table-sm">
   <thead class="thead-light">
     <tr>
