@@ -181,24 +181,23 @@
         <p>This section walks through how the leasing budget automation works behind the scenes — from SQL to Excel to Python — and shows real code examples for each part of the pipeline.</p>
 
         <h4 class="mt-4 text-primary">1. 🔄 SQL Data Extraction</h4>
-            <div class="code-block">
-            -- extract 7 year in-place lease data<br>
-            WITH dates AS (SELECT CAST('2023-1-1' AS DATE) AS effect_date),<br>
-            aa AS (<br>
-            &nbsp;&nbsp;SELECT *, un.scode as unit_no, round((unit_sqft * yearlyrate / 12),2) AS monthamount<br>
-            &nbsp;&nbsp;FROM (SELECT<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p.scode as property_code,cr.hunit as unit_code,cr.dcontractarea as unit_sqft,t.slastname as tenant_name,<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;t.scode as tenant_code, COALESCE(t.dtleasefrom, t.dtmovein) as lease_from, COALESCE(t.dtmoveout, t.dtleaseto) as lease_to,<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;cr.dtfrom as charge_from, cr.dtto as charge_to, ct.sname as charge_code, round(cr.dmonthlyamount*12/NULLIF(cr.dcontractarea,0),2) as yearlyrate, cr.hamendment, cr.hunit as dummy,<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;cr.dadminpercent/100 as admin_fee, CASE WHEN cr.hchargecode = 70 THEN 'gross' ELSE 'net' END AS net_gross, d.effect_date<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;FROM corpdata.recovery_logic cr<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;JOIN corpdata.tenants t ON t.hmyperson = cr.htenant JOIN corpdata.properties p ON p.hmy = t.hproperty<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN corpdata.attributes a ON p.scode = a.scode AND a.subgroup1 = 'IPP Core'<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;JOIN corpdata.property_list l ON l.hproperty = t.hproperty LEFT JOIN corpdata.units un ON un.hmy = cr.hunit<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN corpdata.charge_types ct ON cr.hchargecode = ct.hmy CROSS JOIN dates d<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;----- codes omitted -------
-            </div>
-
+        <div class="code-block">
+        -- extract 7 year in-place lease data<br>
+        WITH dates AS (SELECT CAST('2023-1-1' AS DATE) AS effect_date),<br>
+        aa AS (<br>
+        &nbsp;&nbsp;SELECT *, un.scode as unit_no, round((unit_sqft * yearlyrate / 12),2) AS monthamount<br>
+        &nbsp;&nbsp;FROM (SELECT<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p.scode as property_code,cr.hunit as unit_code,cr.dcontractarea as unit_sqft,t.slastname as tenant_name,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;t.scode as tenant_code, COALESCE(t.dtleasefrom, t.dtmovein) as lease_from, COALESCE(t.dtmoveout, t.dtleaseto) as lease_to,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;cr.dtfrom as charge_from, cr.dtto as charge_to, ct.sname as charge_code, round(cr.dmonthlyamount*12/NULLIF(cr.dcontractarea,0),2) as yearlyrate, cr.hamendment, cr.hunit as dummy,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;cr.dadminpercent/100 as admin_fee, CASE WHEN cr.hchargecode = 70 THEN 'gross' ELSE 'net' END AS net_gross, d.effect_date<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;FROM yardi.camrule cr<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;JOIN yardi.tenant t ON t.hmyperson = cr.htenant JOIN yardi.property p ON p.hmy = t.hproperty<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN yardi.attributes a ON p.scode = a.scode AND a.subgroup1 = 'IPP Core'<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;JOIN yardi.listprop l ON l.hproperty = t.hproperty LEFT JOIN yardi.unit un ON un.hmy = cr.hunit<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN yardi.chargtyp ct ON cr.hchargecode = ct.hmy CROSS JOIN dates d<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;----- omitted codes -------
+        </div>
 
         <h4 class="mt-4 text-primary">2. 📥 Load Queried Data into Excel</h4>
         <ul>
@@ -275,7 +274,7 @@ def update_status_with_rent_roll_and_inputs(wb):
     &nbsp;&nbsp;all_charges_df = all_charges_df[all_charges_df['unit_no'].str.strip("'").notna() & (all_charges_df['unit_no'].str.strip("'") != "")]<br>
     &nbsp;&nbsp;inputs_sheet = wb.sheets["Inputs"]<br>
     &nbsp;&nbsp;inputs_range = inputs_sheet.range("S27:AL3000")<br>
-    &nbsp;&nbsp;&nbsp;&nbsp;----- codes omitted -------
+    &nbsp;&nbsp;&nbsp;&nbsp;----- omitted codes -------
       </div>
 
       <h4 class="mt-4 text-primary">📆 2. unnest_charges(df1, wb)</h4>
@@ -290,7 +289,7 @@ def update_status_with_rent_roll_and_inputs(wb):
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for month in all_months:<br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;month_start = month.to_timestamp(how='start')<br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;month_end = month.to_timestamp(how='end')<br>
-    &nbsp;&nbsp;&nbsp;&nbsp;----- codes omitted -------
+    &nbsp;&nbsp;&nbsp;&nbsp;----- omitted codes -------
       </div>
 
       <h4 class="mt-4 text-primary">🏢 3. integrate_vacancy(df_final, wb, all_months)</h4>
@@ -300,7 +299,7 @@ def update_status_with_rent_roll_and_inputs(wb):
     &nbsp;&nbsp;sqft_df = sqft_range.options(pd.DataFrame, header=1, index=False).value; sqft_df['unit_no'] = "'" + sqft_df['unit_no'].astype(str)<br>
     &nbsp;&nbsp;unit_entries = []<br>
     &nbsp;&nbsp;for _, unit in sqft_df.iterrows(): property_code = unit['property_code']; unit_no = unit['unit_no']; unit_record = {'Source': 'vacancy', 'property_code': property_code, 'prop_name': None, 'unit_no': unit_no}; ----- omitted codes -------
-    &nbsp;&nbsp;&nbsp;&nbsp;----- codes omitted -------
+    &nbsp;&nbsp;&nbsp;&nbsp;----- omitted codes -------
       </div>
 
       <h4 class="mt-4 text-primary">📏 4. process_sqft_month(wb)</h4>
@@ -314,7 +313,7 @@ def update_status_with_rent_roll_and_inputs(wb):
     &nbsp;&nbsp;for _, group in sqft_data_df.groupby(['property_code', 'unit_no']):<br>
     &nbsp;&nbsp;&nbsp;&nbsp;group = group.reset_index(drop=True)<br>
     &nbsp;&nbsp;&nbsp;&nbsp;for idx, row in group.iterrows():<br>
-    &nbsp;&nbsp;&nbsp;&nbsp;----- codes omitted -------
+    &nbsp;&nbsp;&nbsp;&nbsp;----- omitted codes -------
       </div>
 
       <h4 class="mt-4 text-primary">📊 5. update_status_with_rent_roll_and_inputs(wb)</h4>
@@ -322,7 +321,7 @@ def update_status_with_rent_roll_and_inputs(wb):
     def update_status_with_rent_roll_and_inputs(wb):<br>
     &nbsp;&nbsp;# Compares forecast vs actual data for reporting and control validation<br>
     &nbsp;&nbsp;pass  # (Function logic omitted here — add if available)<br>
-    &nbsp;&nbsp;&nbsp;&nbsp;----- codes omitted -------
+    &nbsp;&nbsp;&nbsp;&nbsp;----- omitted codes -------
       </div>
 
       <p class="mt-3">All Excel interaction handled via <code>xlwings</code> — ensuring seamless link to open or saved workbooks.</p>

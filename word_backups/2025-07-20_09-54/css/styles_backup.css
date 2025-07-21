@@ -124,13 +124,29 @@ body {
 }
 
 .post-heading {
-  padding: 60px 20px;
-  min-height: 250px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
+    padding: 60px 20px;
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: white;
+}
+
+.post-heading .subheading {
+    font-size: 1.1rem !important;
+    margin-top: 1rem;
+    color: #ccc;
+}
+
+.post-heading h1 {
+    font-size: 2.4rem !important;
+    line-height: 1.2 !important;
+    max-width: 28ch;
+    margin: 0 auto 0.75rem auto;
+    white-space: normal;
+    word-break: break-word;
 }
 
 /* ✅ Fix for post.html layout only */
@@ -183,6 +199,34 @@ h4 + ul {
 .section-content {
   margin-top: 0.18rem !important;
 }
+
+.code-block {
+  background-color: #f7f7f7;
+  border-left: 4px solid #007acc;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+  font-family: Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+<style>
+.code-block {
+  background-color: #f8f9fa;
+  border-left: 4px solid #007acc;
+  padding: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 2rem;
+  overflow-x: auto;
+  font-family: Consolas, monospace;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+</style>
+
 
 
 :root {
@@ -10925,9 +10969,10 @@ header.masthead .post-heading .meta a {
   header.masthead .post-heading h1, header.masthead .post-heading .h1 {
     font-size: 3.5rem;
   }
-  header.masthead .post-heading .subheading {
+
+header.masthead.post-banner .post-heading .subheading {
+    margin: 0.2rem 0 1.5rem !important;  /* top 0.2rem, bottom 1.5rem */
     font-size: 1.875rem;
-  }
 }
 
 .section-heading {
@@ -11030,4 +11075,21 @@ header.masthead .post-heading .meta a {
 .flash {
     color: #ee6f57;
     text-align: center;
+}
+
+/* Ensure post title uses only 2 lines and looks balanced */
+.post-heading h1 {
+    font-size: 2.4rem !important;
+    line-height: 1.2 !important;
+    max-width: 30ch;
+    margin: 0 auto 1rem auto;
+    white-space: normal !important;
+    word-break: break-word;
+}
+
+/* Subtitle tweaks */
+.post-heading .subheading {
+    font-size: 1.1rem !important;
+    margin-top: 0.5rem;
+    color: #ccc;
 }
