@@ -3,8 +3,39 @@
 {% block title %}Retirement Planner{% endblock %}
 
 {% block content %}
-<div class="text-center mt-4">
-    <h2>🧮 Retirement Planner</h2>
-    <p>This is the starting point for your savings & projection tool.</p>
+<div class="container mt-4">
+
+    <h2 class="text-center mb-4">🧮 Retirement Planner</h2>
+
+    <form method="POST" action="{{ url_for('projects.retirement') }}">
+        <div class="row g-3">
+
+            <div class="col-md-3">
+                <label class="form-label">Current Age</label>
+                <input type="number" name="current_age" class="form-control" value="53" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Retirement Age</label>
+                <input type="number" name="retire_age" class="form-control" value="57" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Monthly Savings ($)</label>
+                <input type="number" name="monthly_savings" class="form-control" value="8000" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Expected Return Rate (%)</label>
+                <input type="number" name="return_rate" step="0.01" class="form-control" value="7.0" required>
+            </div>
+
+        </div>
+
+        <div class="text-center mt-4">
+            <button type="submit" class="btn btn-primary px-4">Calculate</button>
+        </div>
+    </form>
+
 </div>
 {% endblock %}
