@@ -17,12 +17,12 @@
 
             <div class="col-md-3">
                 <label class="form-label">Retirement Age</label>
-                <input type="number" name="retirement_age" class="form-control" value="57" required>
+                <input type="number" name="retire_age" class="form-control" value="57" required>
             </div>
 
             <div class="col-md-3">
                 <label class="form-label">Monthly Savings ($)</label>
-                <input type="number" name="annual_saving" class="form-control" value="8000" required>
+                <input type="number" name="monthly_savings" class="form-control" value="8000" required>
             </div>
 
             <div class="col-md-3">
@@ -36,12 +36,6 @@
             <button type="submit" class="btn btn-primary px-4">Calculate</button>
         </div>
     </form>
-
-    {% if result %}
-    <div class="alert alert-success mt-5 text-center">
-        <h4>📈 Estimated Total Retirement Savings: <strong>${{ "{:,.2f}".format(result) }}</strong></h4>
-    </div>
-    {% endif %}
 
 </div>
 {% endblock %}
