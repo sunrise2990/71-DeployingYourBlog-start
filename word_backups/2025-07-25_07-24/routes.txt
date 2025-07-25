@@ -20,28 +20,24 @@ def retirement():
 
     if request.method == "POST":
         try:
-            # Collect form data
+            # Get form inputs from the frontend
             current_age = int(request.form.get("current_age"))
             retirement_age = int(request.form.get("retirement_age"))
             annual_saving = float(request.form.get("annual_saving"))
-            return_rate = float(request.form.get("return_rate")) / 100  # Convert percent to decimal
+            current_assets = float(request.form.get("current_assets"))
+            return_rate = float(request.form.get("return_rate")) / 100  # percent to decimal
+            annual_expense = float(request.form.get("annual_expense"))
 
-            # Static assumptions for now
-            current_assets = 0  # will add this input later
-            annual_expense = 0  # will add this input later
-
-            # Run your core logic
+            # Call your core logic function
             result = run_retirement_projection(
                 current_age=current_age,
                 retirement_age=retirement_age,
                 annual_saving=annual_saving,
                 current_assets=current_assets,
                 return_rate=return_rate,
-                annual_expense=annual_expense
+                annual_expense=annual_expense,
             )
-
         except Exception as e:
-            print("❌ Error during retirement calc:", e)
-            result = None
+            result = {"error": str(e)}
 
     return render_template("retirement.html", result=result)
