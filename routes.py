@@ -1,4 +1,6 @@
 from flask import Blueprint, request, render_template
+from models.retirement.retirement_calc import run_retirement_projection
+
 
 projects_bp = Blueprint('projects', __name__, template_folder='templates')
 
@@ -10,23 +12,32 @@ def budget_reforecast():
 def leasing_pipeline():
     return render_template("leasing_pipeline.html")
 
+
+
 @projects_bp.route("/retirement", methods=["GET", "POST"])
 def retirement():
+    result = None
+
     if request.method == "POST":
-        current_age = int(request.form.get("current_age", 0))
-        retire_age = int(request.form.get("retire_age", 0))
-        monthly_savings = float(request.form.get("monthly_savings", 0))
-        return_rate = float(request.form.get("return_rate", 0))
+        try:
+            # Get form inputs from the frontend
+            current_age = int(request.form.get("current_age"))
+            retirement_age = int(request.form.get("retirement_age"))
+            annual_saving = float(request.form.get("annual_saving"))
+            current_assets = float(request.form.get("current_assets"))
+            return_rate = float(request.form.get("return_rate")) / 100  # percent to decimal
+            annual_expense = float(request.form.get("annual_expense"))
 
-        return render_template("retirement.html",
-                               current_age=current_age,
-                               retire_age=retire_age,
-                               monthly_savings=monthly_savings,
-                               return_rate=return_rate)
+            # Call your core logic function
+            result = run_retirement_projection(
+                current_age=current_age,
+                retirement_age=retirement_age,
+                annual_saving=annual_saving,
+                current_assets=current_assets,
+                return_rate=return_rate,
+                annual_expense=annual_expense,
+            )
+        except Exception as e:
+            result = {"error": str(e)}
 
-    # On GET: Show defaults
-    return render_template("retirement.html",
-                           current_age=53,
-                           retire_age=57,
-                           monthly_savings=8000,
-                           return_rate=7.0)
+    return render_template("retirement.html", result=result)
