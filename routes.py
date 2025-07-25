@@ -14,7 +14,6 @@ def leasing_pipeline():
 
 # ✅ NEW: Retirement Planner Route (plug into existing blueprint)
 @projects_bp.route("/projects/retirement", methods=["GET", "POST"])
-@login_required
 def retirement():
     # These values would normally come from calculations or a database
     inputs = {
