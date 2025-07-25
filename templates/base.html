@@ -36,8 +36,9 @@
                         </a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{{ url_for('projects.budget_reforecast') }}">Budget & Reforecast</a></li>
-                            <li><a class="dropdown-item" href="#">CAM Recovery (WIP)</a></li>
-                            <li><a class="dropdown-item" href="#">Retirement Plan Simulator (WIP)</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('retirement') }}">Retirement Planner</a></li>
+                            <li><a class="dropdown-item" href="#">CAM Recovery (Coming Soon)</a></li>
+
                         </ul>
                     </li>
 
@@ -47,8 +48,8 @@
                         </a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{{ url_for('bp_stock.trigger_etl_form') }}">Stock ETL</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('bp_stock.stock_data_view') }}">📈 Stock Viewer</a></li>
-                            <li><a class="dropdown-item" href="#">Retirement Planner</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('bp_stock.stock_data_view') }}">📈 Stock Viewer (Test)</a></li>
+
                         </ul>
                     </li>
 
