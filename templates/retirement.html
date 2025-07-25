@@ -40,6 +40,7 @@
     {% if result %}
     <div class="alert alert-success mt-5 text-center">
         <h4>📈 Estimated Total Retirement Savings: <strong>${{ "{:,.2f}".format(result) }}</strong></h4>
+        <p>at age {{ retirement_age }}</p>
     </div>
     {% endif %}
 
