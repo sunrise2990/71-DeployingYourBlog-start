@@ -10,7 +10,7 @@ def budget_reforecast():
 def leasing_pipeline():
     return render_template("leasing_pipeline.html")
 
-@projects_bp.route("/projects/retirement", methods=["GET", "POST"])
+@projects_bp.route("/retirement", methods=["GET", "POST"])
 def retirement():
     if request.method == "POST":
         current_age = int(request.form.get("current_age", 0))
