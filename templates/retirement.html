@@ -4,95 +4,36 @@
 
 {% block content %}
 <div class="container mt-4">
-
     <h2 class="text-center mb-4">🧮 Retirement Planner</h2>
 
     <form method="POST" action="{{ url_for('projects.retirement') }}">
         <div class="row g-3">
+            <!-- Input fields -->
+            {% set inputs = [
+                ("Current Age", "current_age", "53"),
+                ("Retirement Age", "retirement_age", "57"),
+                ("Monthly Savings ($)", "annual_saving", "8000"),
+                ("Expected Return Rate (%)", "return_rate", "7.0"),
+                ("Expected Lifespan (Age)", "lifespan", "90"),
+                ("Monthly Living Expense ($)", "monthly_living_expense", "7000"),
+                ("Inflation Rate (%)", "inflation_rate", "2.0"),
+                ("Current Assets ($)", "current_assets", "1000000"),
+                ("Living Expense Support / CPP (Monthly $)", "cpp_support", "0"),
+                ("Extended Year From (Age)", "cpp_from_age", "65"),
+                ("Extended Year To (Age)", "cpp_to_age", "90"),
+                ("Asset Liquidation Amount 1", "asset_liquidation_1", "0"),
+                ("When (Age)", "asset_liquidation_age_1", "0"),
+                ("Asset Liquidation Amount 2", "asset_liquidation_2", "0"),
+                ("When (Age)", "asset_liquidation_age_2", "0"),
+                ("Asset Liquidation Amount 3", "asset_liquidation_3", "0"),
+                ("When (Age)", "asset_liquidation_age_3", "0")
+            ] %}
+            {% for label, name, default in inputs %}
             <div class="col-md-3">
-                <label class="form-label">Current Age</label>
-                <input type="number" name="current_age" class="form-control" value="53" required>
+                <label class="form-label">{{ label }}</label>
+                <input type="number" name="{{ name }}" class="form-control" value="{{ default }}" required>
             </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Retirement Age</label>
-                <input type="number" name="retirement_age" class="form-control" value="57" required>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Monthly Savings ($)</label>
-                <input type="number" name="annual_saving" class="form-control" value="8000" required>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Expected Return Rate (%)</label>
-                <input type="number" name="return_rate" step="0.01" class="form-control" value="7.0" required>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Expected Lifespan (Age)</label>
-                <input type="number" name="lifespan" class="form-control" value="90" required>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Monthly Living Expense ($)</label>
-                <input type="number" name="monthly_living_expense" class="form-control" value="7000" required>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Inflation Rate (%)</label>
-                <input type="number" name="inflation_rate" class="form-control" value="2.0" required>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Current Assets ($)</label>
-                <input type="number" name="current_assets" class="form-control" value="1000000" required>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Living Expense Support / CPP (Monthly $)</label>
-                <input type="number" name="cpp_support" class="form-control" value="0">
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Extended Year From (Age)</label>
-                <input type="number" name="cpp_from_age" class="form-control" value="65">
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Extended Year To (Age)</label>
-                <input type="number" name="cpp_to_age" class="form-control" value="90">
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Asset Liquidation Amount 1</label>
-                <input type="number" name="asset_liquidation_1" class="form-control" value="0">
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">When (Age)</label>
-                <input type="number" name="asset_liquidation_age_1" class="form-control" value="0">
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Asset Liquidation Amount 2</label>
-                <input type="number" name="asset_liquidation_2" class="form-control" value="0">
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">When (Age)</label>
-                <input type="number" name="asset_liquidation_age_2" class="form-control" value="0">
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">Asset Liquidation Amount 3</label>
-                <input type="number" name="asset_liquidation_3" class="form-control" value="0">
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label">When (Age)</label>
-                <input type="number" name="asset_liquidation_age_3" class="form-control" value="0">
-            </div>
+            {% endfor %}
         </div>
 
         <div class="text-center mt-4">
@@ -109,28 +50,26 @@
 
     {% if table %}
     <div class="table-responsive mt-5">
-        <h5>Retirement Projection Table</h5>
-        <table class="table table-bordered table-sm text-center">
+        <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
+        <table class="table table-bordered table-sm text-center align-middle">
             <thead class="table-light">
                 <tr>
-                    <th>Age</th>
-                    <th>Year</th>
-                    <th>Retire?</th>
-                    <th>Living Exp.</th>
-                    <th>Living Exp. – Ret.</th>
-                    <th>Savings – Before Retire</th>
-                    <th>Asset</th>
-                    <th>Asset – Working Years</th>
-                    <th>Asset – Retirement</th>
-                    <th>Investment Return</th>
-                    <th>Withdrawal Rate</th>
+                    {% for header in table_headers %}
+                        <th>{{ header }}</th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
                 {% for row in table %}
                 <tr>
                     {% for cell in row %}
-                    <td>{{ cell }}</td>
+                    <td>
+                        {% if cell is number %}
+                            {{ "{:,.0f}".format(cell) }}
+                        {% else %}
+                            {{ cell }}
+                        {% endif %}
+                    </td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
@@ -138,8 +77,6 @@
         </table>
     </div>
     {% endif %}
-
 </div>
 {% endblock %}
-
 
