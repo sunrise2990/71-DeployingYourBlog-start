@@ -15,14 +15,20 @@ def leasing_pipeline():
     return render_template("leasing_pipeline.html")
 
 # Retirement Planner route
+from flask import Blueprint, request, render_template
+from models.retirement.retirement_calc import run_retirement_projection
+
+# Define blueprint
+projects_bp = Blueprint('projects', __name__, template_folder='templates')
+
 @projects_bp.route("/retirement", methods=["GET", "POST"])
 def retirement():
     result = None
     table = []
     retirement_age = None
     table_headers = [
-        "Age", "Year", "Retire?", "Living Exp.", "Living Exp. – Ret.",
-        "CPP / Extra Income", "Asset Liquidation",
+        "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income",
+        "Living Exp. – Ret.", "Asset Liquidation",
         "Savings – Before Retire", "Asset",
         "Asset – Working Years", "Asset – Retirement",
         "Investment Return", "Withdrawal Rate"
@@ -79,7 +85,7 @@ def retirement():
                 f"${row.get('Living_Exp', 0):,.0f}",
                 f"${row.get('Living_Exp_Retirement', 0):,.0f}" if row.get("Living_Exp_Retirement") else "",
                 f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
-                f"${row.get('Liquidation', 0):,.0f}" if row.get("Liquidation") else "",
+                f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
                 f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
                 f"${row.get('Asset', 0):,.0f}",
                 f"${row.get('Asset_Working', 0):,.0f}" if row.get("Asset_Working") else "",
@@ -100,3 +106,4 @@ def retirement():
         table_headers=table_headers,
         retirement_age=retirement_age
     )
+

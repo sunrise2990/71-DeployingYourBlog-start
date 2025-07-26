@@ -5,76 +5,68 @@ def run_retirement_projection(
     current_assets,
     return_rate,
     annual_expense,
-    cpp_monthly,
-    cpp_start_age,
-    cpp_end_age,
-    asset_liquidations,
-    inflation_rate,
-    life_expectancy,
+    cpp_monthly=0,
+    cpp_start_age=None,
+    cpp_end_age=None,
+    asset_liquidations=None,
+    inflation_rate=0.021,
+    life_expectancy=90
 ):
-    table = []
-    assets = current_assets
+    result_table = []
+    age = current_age
     year = 1
+    assets = current_assets
     asset_retirement = None
 
-    for age in range(current_age, life_expectancy + 1):
-        row = {
-            "Age": age,
-            "Year": year,
-            "Retire": "retire" if age == retirement_age else "",
-        }
+    while age <= life_expectancy:
+        row = {"Age": age, "Year": year}
+        living_expense = annual_expense * ((1 + inflation_rate) ** (age - current_age))
+        cpp_support = cpp_monthly * 12 if cpp_start_age and cpp_end_age and cpp_start_age <= age <= cpp_end_age else 0
+        net_expense = max(living_expense - cpp_support, 0)
 
-        # Calculate expenses with inflation
-        inflation_factor = (1 + inflation_rate) ** (age - current_age)
-        living_exp = annual_expense * inflation_factor
-        row["Living_Exp"] = round(living_exp)
+        liquidation = sum(entry["amount"] for entry in asset_liquidations or [] if entry.get("age") == age)
 
-        # Determine if retired
-        retired = age >= retirement_age
+        row["Living_Exp"] = living_expense
+        row["Living_Exp_Retirement"] = net_expense if age >= retirement_age else ""
+        row["CPP_Support"] = cpp_support if age >= retirement_age else ""
+        row["Asset_Liquidation"] = liquidation if age >= retirement_age else ""
 
-        # Net expense = living expense - CPP income (if within age)
-        cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0
-        net_expense = max(0, living_exp - cpp_support)
-        row["Living_Exp_Retirement"] = round(net_expense) if retired else None
-
-        # Check for any asset liquidation at this age
-        liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
-
-        if not retired:
+        if age < retirement_age:
             savings = annual_saving
+            assets += savings
             inv_return = assets * return_rate
-            assets += savings + inv_return
-
-            row["Savings"] = round(savings)
-            row["CPP_Income"] = None
-            row["Asset_Liquidation"] = None
-            row["Asset"] = round(assets)
-            row["Asset_Working"] = round(assets)
-            row["Asset_Retirement"] = None
-            row["Investment_Return"] = round(inv_return)
-            row["Withdrawal_Rate"] = None
-
+            assets += inv_return
+            row.update({
+                "Savings": savings,
+                "Asset": assets,
+                "Asset_Working": assets,
+                "Asset_Retirement": None,
+                "Investment_Return": inv_return,
+                "Retire": "",
+                "Withdrawal_Rate": None
+            })
         else:
             if not asset_retirement:
                 asset_retirement = assets
             inv_return = assets * return_rate
             withdrawal = net_expense
             assets += inv_return - withdrawal + liquidation
+            row.update({
+                "Savings": None,
+                "Asset": assets,
+                "Asset_Working": None,
+                "Asset_Retirement": assets,  # fix: same as Asset
+                "Investment_Return": inv_return,
+                "Retire": "retire" if age == retirement_age else "",
+                "Withdrawal_Rate": f"{(withdrawal / assets * 100):.1f}%" if assets > 0 else "N/A"
+            })
 
-            row["Savings"] = None
-            row["CPP_Income"] = round(cpp_support)
-            row["Asset_Liquidation"] = round(liquidation)
-            row["Asset"] = round(assets)
-            row["Asset_Working"] = None
-            row["Asset_Retirement"] = round(asset_retirement)
-            row["Investment_Return"] = round(inv_return)
-            row["Withdrawal_Rate"] = f"{(withdrawal / assets * 100):.1f}%" if assets > 0 else "N/A"
-
-        table.append(row)
+        result_table.append(row)
+        age += 1
         year += 1
 
-    final_assets = assets
     return {
-        "final_assets": final_assets,
-        "table": table
+        "retirement_age": retirement_age,
+        "final_assets": assets,
+        "table": result_table
     }
