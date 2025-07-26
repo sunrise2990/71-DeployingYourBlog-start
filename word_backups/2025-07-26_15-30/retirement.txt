@@ -54,19 +54,9 @@
         <table class="table table-bordered table-sm text-center align-middle">
             <thead class="table-light">
                 <tr>
-                    <th>Age</th>
-                    <th>Year</th>
-                    <th>Retire?</th>
-                    <th>Living Exp.</th>
-                    <th>Living Exp. – Ret.</th>
-                    <th>CPP / Extra Income</th>
-                    <th>Asset Liquidation</th>
-                    <th>Savings – Before Retire</th>
-                    <th>Asset</th>
-                    <th>Asset – Working Years</th>
-                    <th>Asset – Retirement</th>
-                    <th>Investment Return</th>
-                    <th>Withdrawal Rate</th>
+                    {% for header in table_headers %}
+                        <th>{{ header }}</th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
