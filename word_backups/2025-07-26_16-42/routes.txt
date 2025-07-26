@@ -76,7 +76,7 @@ def retirement():
                 row.get("Year"),
                 row.get("Retire"),
                 f"${row.get('Living_Exp', 0):,.0f}",
-                f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
+                f"${row.get('CPP_Income', 0):,.0f}" if row.get("CPP_Income") else "",
                 f"${row.get('Living_Exp_Retirement', 0):,.0f}" if row.get("Living_Exp_Retirement") else "",
                 f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
                 f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
@@ -99,4 +99,3 @@ def retirement():
         table_headers=table_headers,
         retirement_age=retirement_age
     )
-
