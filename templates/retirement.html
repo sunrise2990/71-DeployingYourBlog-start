@@ -8,7 +8,6 @@
 
     <form method="POST" action="{{ url_for('projects.retirement') }}">
         <div class="row g-3">
-            <!-- Input fields -->
             {% set inputs = [
                 ("Current Age", "current_age", "53"),
                 ("Retirement Age", "retirement_age", "57"),
@@ -58,8 +57,8 @@
                     <th>Year</th>
                     <th>Retire?</th>
                     <th>Living Exp.</th>
-                    <th>Living Exp. – Ret.</th>
                     <th>CPP / Extra Income</th>
+                    <th>Living Exp. – Ret.</th>
                     <th>Asset Liquidation</th>
                     <th>Savings – Before Retire</th>
                     <th>Asset</th>
