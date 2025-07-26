@@ -21,8 +21,9 @@ def retirement():
     table = []
     retirement_age = None
     table_headers = [
-        "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Living Exp. – Ret.",
-        "Asset Liquidation", "Savings – Before Retire", "Asset",
+        "Age", "Year", "Retire?", "Living Exp.", "Living Exp. – Ret.",
+        "CPP / Extra Income", "Asset Liquidation",
+        "Savings – Before Retire", "Asset",
         "Asset – Working Years", "Asset – Retirement",
         "Investment Return", "Withdrawal Rate"
     ]
@@ -76,9 +77,9 @@ def retirement():
                 row.get("Year"),
                 row.get("Retire"),
                 f"${row.get('Living_Exp', 0):,.0f}",
-                f"${row.get('CPP_Income', 0):,.0f}" if row.get("CPP_Income") else "",
                 f"${row.get('Living_Exp_Retirement', 0):,.0f}" if row.get("Living_Exp_Retirement") else "",
-                f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
+                f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
+                f"${row.get('Liquidation', 0):,.0f}" if row.get("Liquidation") else "",
                 f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
                 f"${row.get('Asset', 0):,.0f}",
                 f"${row.get('Asset_Working', 0):,.0f}" if row.get("Asset_Working") else "",
