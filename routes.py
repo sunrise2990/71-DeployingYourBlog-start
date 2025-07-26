@@ -23,7 +23,7 @@ def retirement():
 
     if request.method == "POST":
         try:
-            # 🔹 Base inputs
+            # Base inputs
             current_age = int(request.form.get("current_age"))
             retirement_age = int(request.form.get("retirement_age"))
             monthly_saving = float(request.form.get("annual_saving"))
@@ -33,44 +33,49 @@ def retirement():
             inflation_rate = float(request.form.get("inflation_rate")) / 100
             current_assets = float(request.form.get("current_assets"))
 
-            # 🔹 CPP support
-            cpp_monthly = float(request.form.get("cpp_support"))
-            cpp_from = int(request.form.get("cpp_from_age"))
-            cpp_to = int(request.form.get("cpp_to_age"))
+            # CPP inputs
+            cpp_monthly = float(request.form.get("cpp_support") or 0)
+            cpp_from = int(request.form.get("cpp_from_age") or 0)
+            cpp_to = int(request.form.get("cpp_to_age") or 0)
 
-            # 🔹 Asset liquidation (3 slots)
-            asset_liquidation_1 = float(request.form.get("asset_liquidation_1") or 0)
-            asset_liquidation_age_1 = int(request.form.get("asset_liquidation_age_1") or 0)
-
-            asset_liquidation_2 = float(request.form.get("asset_liquidation_2") or 0)
-            asset_liquidation_age_2 = int(request.form.get("asset_liquidation_age_2") or 0)
-
-            asset_liquidation_3 = float(request.form.get("asset_liquidation_3") or 0)
-            asset_liquidation_age_3 = int(request.form.get("asset_liquidation_age_3") or 0)
-
+            # Asset liquidations
             asset_liquidation = []
-            if asset_liquidation_1 > 0:
-                asset_liquidation.append((asset_liquidation_age_1, asset_liquidation_1))
-            if asset_liquidation_2 > 0:
-                asset_liquidation.append((asset_liquidation_age_2, asset_liquidation_2))
-            if asset_liquidation_3 > 0:
-                asset_liquidation.append((asset_liquidation_age_3, asset_liquidation_3))
+            for i in range(1, 4):
+                amount = float(request.form.get(f"asset_liquidation_{i}") or 0)
+                age = int(request.form.get(f"asset_liquidation_age_{i}") or 0)
+                if amount > 0 and age > 0:
+                    asset_liquidation.append({"amount": amount, "age": age})
 
-            # 🧠 Run simulation
-            result, table = run_retirement_projection(
+            # Run projection
+            output = run_retirement_projection(
                 current_age=current_age,
                 retirement_age=retirement_age,
                 annual_saving=monthly_saving * 12,
-                return_rate=return_rate,
                 current_assets=current_assets,
-                lifespan=lifespan,
-                monthly_living_expense=monthly_living_expense,
+                return_rate=return_rate,
+                annual_expense=monthly_living_expense * 12,
+                cpp_monthly=cpp_monthly,
+                cpp_start_age=cpp_from,
+                cpp_end_age=cpp_to,
+                asset_liquidations=asset_liquidation,
                 inflation_rate=inflation_rate,
-                cpp_support=cpp_monthly,
-                cpp_from=cpp_from,
-                cpp_to=cpp_to,
-                asset_liquidation=asset_liquidation
+                life_expectancy=lifespan,
             )
+
+            result = output["final_assets"]
+            table = [[
+                row.get("Age"),
+                row.get("Year"),
+                row.get("Retire"),
+                f"${row.get('Living_Exp', 0):,.0f}",
+                f"${row.get('Living_Exp_Retirement', 0):,.0f}" if row.get("Living_Exp_Retirement") else "",
+                f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
+                f"${row.get('Asset', 0):,.0f}",
+                f"${row.get('Asset_Working', 0):,.0f}" if row.get("Asset_Working") else "",
+                f"${row.get('Asset_Retirement', 0):,.0f}" if row.get("Asset_Retirement") else "",
+                f"${row.get('Investment_Return', 0):,.0f}" if row.get("Investment_Return") else "",
+                row.get("Withdrawal_Rate") or "",
+            ] for row in output["table"]]
 
         except Exception as e:
             print("❌ Error in retirement projection:", e)
