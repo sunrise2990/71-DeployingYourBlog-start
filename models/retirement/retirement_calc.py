@@ -1,3 +1,5 @@
+# retirement_calc.py
+
 def run_retirement_projection(
     current_age,
     retirement_age,
@@ -36,9 +38,11 @@ def run_retirement_projection(
         cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0
         net_expense = max(0, living_exp - cpp_support)
         row["Living_Exp_Retirement"] = round(net_expense) if retired else None
+        row["CPP_Support"] = round(cpp_support) if retired else None
 
         # Check for any asset liquidation at this age
         liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
+        row["Asset_Liquidation"] = round(liquidation) if retired and liquidation > 0 else None
 
         if not retired:
             savings = annual_saving
@@ -46,8 +50,6 @@ def run_retirement_projection(
             assets += savings + inv_return
 
             row["Savings"] = round(savings)
-            row["CPP_Income"] = None
-            row["Asset_Liquidation"] = None
             row["Asset"] = round(assets)
             row["Asset_Working"] = round(assets)
             row["Asset_Retirement"] = None
@@ -55,15 +57,13 @@ def run_retirement_projection(
             row["Withdrawal_Rate"] = None
 
         else:
-            if not asset_retirement:
+            if asset_retirement is None:
                 asset_retirement = assets
             inv_return = assets * return_rate
             withdrawal = net_expense
             assets += inv_return - withdrawal + liquidation
 
             row["Savings"] = None
-            row["CPP_Income"] = round(cpp_support)
-            row["Asset_Liquidation"] = round(liquidation)
             row["Asset"] = round(assets)
             row["Asset_Working"] = None
             row["Asset_Retirement"] = round(asset_retirement)
