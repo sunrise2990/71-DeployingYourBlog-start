@@ -9,7 +9,7 @@
 
     <form method="POST" action="{{ url_for('projects.retirement') }}">
         <div class="row g-3">
-
+            <!-- Basic Inputs -->
             <div class="col-md-3">
                 <label class="form-label">Current Age</label>
                 <input type="number" name="current_age" class="form-control" value="53" required>
@@ -30,6 +30,69 @@
                 <input type="number" name="return_rate" step="0.01" class="form-control" value="7.0" required>
             </div>
 
+            <div class="col-md-3">
+                <label class="form-label">Current Asset ($)</label>
+                <input type="number" name="current_assets" class="form-control" value="300000">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Annual Living Expense ($)</label>
+                <input type="number" name="annual_expense" class="form-control" value="80000">
+            </div>
+        </div>
+
+        <hr class="my-4">
+
+        <!-- Advanced Inputs -->
+        <h5 class="text-muted mt-3">📌 CPP and Liquidation Options</h5>
+        <div class="row g-3">
+
+            <div class="col-md-3">
+                <label class="form-label">Monthly CPP Support ($)</label>
+                <input type="number" name="cpp_monthly" class="form-control" value="1500">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Extended Year From (Date)</label>
+                <input type="date" name="cpp_start_date" class="form-control">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Extended Year To (Date)</label>
+                <input type="date" name="cpp_end_date" class="form-control">
+            </div>
+        </div>
+
+        <div class="row g-3 mt-3">
+            <div class="col-md-3">
+                <label class="form-label">Asset Liquidation Amount 1</label>
+                <input type="number" name="liquidation_amount_1" class="form-control" value="0">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">When (Date)</label>
+                <input type="date" name="liquidation_date_1" class="form-control">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Asset Liquidation Amount 2</label>
+                <input type="number" name="liquidation_amount_2" class="form-control" value="0">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">When (Date)</label>
+                <input type="date" name="liquidation_date_2" class="form-control">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Asset Liquidation Amount 3</label>
+                <input type="number" name="liquidation_amount_3" class="form-control" value="0">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">When (Date)</label>
+                <input type="date" name="liquidation_date_3" class="form-control">
+            </div>
         </div>
 
         <div class="text-center mt-4">
@@ -39,10 +102,13 @@
 
     {% if result %}
     <div class="alert alert-success mt-5 text-center">
-        <h4>📈 Estimated Total Retirement Savings: <strong>${{ "{:,.2f}".format(result) }}</strong></h4>
-        <p>at age {{ retirement_age }}</p>
+        <h4>📈 Estimated Total Retirement Savings: <strong>${{ "{:,.2f}".format(result.final_assets) }}</strong></h4>
+        <p>at age {{ result.retirement_age }}</p>
     </div>
+
+    <!-- Future: Add result table or graph rendering -->
     {% endif %}
 
 </div>
 {% endblock %}
+
