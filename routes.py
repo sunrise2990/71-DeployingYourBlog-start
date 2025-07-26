@@ -66,25 +66,36 @@ def retirement():
             table = [[
                 row.get("Age"),
                 row.get("Year"),
-                row.get("Retire"),
-                f"${row.get('Living_Exp', 0):,.0f}",
-                f"${row.get('Living_Exp_Retirement', 0):,.0f}" if row.get("Living_Exp_Retirement") else "",
-                f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
-                f"${row.get('Asset', 0):,.0f}",
-                f"${row.get('Asset_Working', 0):,.0f}" if row.get("Asset_Working") else "",
-                f"${row.get('Asset_Retirement', 0):,.0f}" if row.get("Asset_Retirement") else "",
-                f"${row.get('Investment_Return', 0):,.0f}" if row.get("Investment_Return") else "",
+                "retire" if row.get("Age") == retirement_age else "",
+                row.get("Living_Exp"),
+                row.get("Living_Exp") if row.get("Age") >= retirement_age else "",
+                row.get("Savings") if row.get("Age") < retirement_age else "",
+                row.get("Asset"),
+                row.get("Asset_Working") or "",
+                row.get("Asset_Retirement") or "",
+                row.get("Investment_Return") or "",
                 row.get("Withdrawal_Rate") or "",
             ] for row in output["table"]]
+
+            table_headers = [
+                "Age", "Year", "Retire?", "Living Exp.", "Living Exp. – Ret.",
+                "Savings – Before Retire", "Asset", "Asset – Working Years",
+                "Asset – Retirement", "Investment Return", "Withdrawal Rate"
+            ]
 
         except Exception as e:
             print("❌ Error in retirement projection:", e)
             result = None
             table = []
+            table_headers = []
+
+    else:
+        table_headers = []
 
     return render_template(
         "retirement.html",
         result=result,
         table=table,
+        table_headers=table_headers,
         retirement_age=retirement_age
     )
