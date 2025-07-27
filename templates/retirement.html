@@ -54,24 +54,10 @@
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <script>
             const age = {{ chart_data["Age"] | safe }};
-            const assetWorking = {{ chart_data["Asset_Working"] | safe }};
             const assetRetirement = {{ chart_data["Asset_Retirement"] | safe }};
             const expense = {{ chart_data["Living_Exp_Retirement"] | safe }};
 
-            console.log("Age:", age);
-            console.log("Asset – Working:", assetWorking);
-            console.log("Asset – Retirement:", assetRetirement);
-            console.log("Living Exp – Retirement:", expense);
-
             const data = [
-                {
-                    x: age,
-                    y: assetWorking,
-                    type: 'scatter',
-                    mode: 'lines+markers',
-                    name: 'Asset – Working',
-                    line: { dash: 'dot' }
-                },
                 {
                     x: age,
                     y: assetRetirement,
@@ -97,7 +83,7 @@
                 legend: { orientation: "h", x: 0.1, y: -0.2 }
             };
 
-            if (age.length > 0 && assetWorking.some(v => v !== 0 && v !== null)) {
+            if (age.length > 0 && assetRetirement.some(v => v !== 0 && v !== null)) {
                 Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
             } else {
                 document.getElementById("retirement-chart").innerText = "No chart data to display.";
