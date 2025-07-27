@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2 class="text-center mb-4">🧾 Retirement Planner</h2>
+    <h2 class="text-center mb-4">🧮 Retirement Planner</h2>
 
     <form method="POST" action="{{ url_for('projects.retirement') }}">
         <div class="row g-3">
@@ -50,52 +50,43 @@
     {% if chart_data %}
     <div class="mt-5">
         <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
-        <div id="retirement-chart" style="height: 450px;"></div>
+        <div id="retirement-chart" style="height: 400px;"></div>
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <script>
             const age = {{ chart_data["Age"] | safe }};
-            const asset = {{ chart_data["Asset"] | safe }};
-            const livingExp = {{ chart_data["Living_Exp"] | safe }};
-            const withdrawalRate = {{ chart_data["Withdrawal_Rate"] | safe }};
-            const retirementAge = {{ chart_data["Retirement_Age"] | safe }};
+            const assetWorking = {{ chart_data["Asset_Working"] | safe }};
+            const assetRetirement = {{ chart_data["Asset_Retirement"] | safe }};
+            const expense = {{ chart_data["Living_Exp_Retirement"] | safe }};
 
-            // Build asset segments
-            const assetWorking = age.map((a, i) => a < retirementAge ? asset[i] : null);
-            const assetRetired = age.map((a, i) => a >= retirementAge ? asset[i] : null);
+            console.log("Age:", age);
+            console.log("Asset – Working:", assetWorking);
+            console.log("Asset – Retirement:", assetRetirement);
+            console.log("Living Exp – Retirement:", expense);
 
             const data = [
                 {
                     x: age,
                     y: assetWorking,
-                    name: "Asset Bal. – Working Years",
-                    type: "scatter",
-                    mode: "lines",
-                    line: { color: "green" }
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Asset – Working',
+                    line: { dash: 'dot' }
                 },
                 {
                     x: age,
-                    y: assetRetired,
-                    name: "Asset Bal. – Retirement",
-                    type: "scatter",
-                    mode: "lines",
-                    line: { color: "red" }
+                    y: assetRetirement,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Asset – Retirement',
+                    line: { color: 'green' }
                 },
                 {
                     x: age,
-                    y: livingExp,
-                    name: "Living Expenses – Retirement",
-                    type: "scatter",
-                    mode: "lines",
-                    line: { color: "blue" }
-                },
-                {
-                    x: age,
-                    y: withdrawalRate,
-                    name: "Withdrawal Rate",
-                    yaxis: 'y2',
-                    type: "scatter",
-                    mode: "lines",
-                    line: { color: "orange", dash: "dot" }
+                    y: expense,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Living Exp. – Retirement',
+                    line: { color: 'red' }
                 }
             ];
 
@@ -103,17 +94,14 @@
                 margin: { t: 30 },
                 xaxis: { title: "Age" },
                 yaxis: { title: "Amount ($)", tickprefix: "$", separatethousands: true },
-                yaxis2: {
-                    title: "Withdrawal Rate",
-                    overlaying: "y",
-                    side: "right",
-                    tickformat: ".1%",
-                    rangemode: "tozero"
-                },
-                legend: { orientation: "h", x: 0.05, y: -0.3 }
+                legend: { orientation: "h", x: 0.1, y: -0.2 }
             };
 
-            Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
+            if (age.length > 0 && assetWorking.some(v => v !== 0 || v !== null)) {
+                Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
+            } else {
+                document.getElementById("retirement-chart").innerText = "No chart data to display.";
+            }
         </script>
     </div>
     {% endif %}
