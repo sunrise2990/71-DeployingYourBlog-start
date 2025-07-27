@@ -35,7 +35,7 @@ def retirement():
             reset = True
         elif action == "calculate":
             try:
-                # 🧾 Input parsing
+                # 🧾 Parse Inputs
                 current_age = int(request.form.get("current_age") or 0)
                 retirement_age = int(request.form.get("retirement_age") or 0)
                 monthly_saving = float(request.form.get("annual_saving") or 0)
@@ -57,7 +57,7 @@ def retirement():
                     if amount != 0 and age > 0:
                         asset_liquidation.append({"amount": amount, "age": age})
 
-                # 🔄 Run projection
+                # 🔄 Run Projection
                 output = run_retirement_projection(
                     current_age=current_age,
                     retirement_age=retirement_age,
@@ -76,12 +76,12 @@ def retirement():
 
                 result = output["final_assets"]
 
-                # ✅ Ensure Living_Exp_Retirement is filled
+                # Ensure Living_Exp_Retirement fallback
                 for row in output["table"]:
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
-                # 📋 Build table with % formatting
+                # 📋 Format table
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
@@ -93,11 +93,11 @@ def retirement():
                     f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
                     f"${row.get('Asset', 0):,.0f}",
                     f"${row.get('Asset_Retirement', 0):,.0f}" if row.get("Asset_Retirement") else "",
-                    f"{row.get('Investment_Return')*100:.1f}%" if row.get("Investment_Return") is not None else "",
-                    f"{row.get('Withdrawal_Rate'):.1f}%" if isinstance(row.get("Withdrawal_Rate"), (int, float)) else ""
+                    f"{row.get('Investment_Return') * 100:.1f}%" if row.get("Investment_Return") is not None else "",
+                    f"{row.get('Withdrawal_Rate'):.1f}%" if row.get("Withdrawal_Rate") is not None else ""
                 ] for row in output["table"]]
 
-                # 📊 Chart data (with withdrawal rate as a decimal)
+                # 📊 Chart data for Plotly
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
                     "Living_Exp_Retirement": [
@@ -107,10 +107,8 @@ def retirement():
                         row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0
                         for row in output["table"]
                     ],
-                    "Withdrawal_Rate": [
-                        float(row.get("Withdrawal_Rate", "0").replace("%", "")) / 100
-                        if row.get("Withdrawal_Rate") not in [None, "N/A"]
-                        else None
+                    "FourPercentRule": [
+                        row.get("Asset_Retirement") * 0.04 if row.get("Asset_Retirement") else None
                         for row in output["table"]
                     ]
                 }
@@ -130,4 +128,5 @@ def retirement():
         reset=reset,
         chart_data=chart_data
     )
+
 

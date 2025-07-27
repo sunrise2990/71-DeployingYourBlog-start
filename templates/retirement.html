@@ -50,13 +50,13 @@
     {% if chart_data %}
     <div class="mt-5">
         <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
-        <div id="retirement-chart" style="height: 450px;"></div>
+        <div id="retirement-chart" style="height: 400px;"></div>
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <script>
             const age = {{ chart_data["Age"] | safe }};
             const assetRetirement = {{ chart_data["Asset_Retirement"] | safe }};
             const expense = {{ chart_data["Living_Exp_Retirement"] | safe }};
-            const withdrawalRate = {{ chart_data["Withdrawal_Rate"] | safe }};
+            const rule4 = {{ chart_data["FourPercentRule"] | safe }};
 
             const data = [
                 {
@@ -77,33 +77,18 @@
                 },
                 {
                     x: age,
-                    y: withdrawalRate,
+                    y: rule4,
                     type: 'scatter',
-                    mode: 'lines+markers',
-                    name: 'Withdrawal Rate',
-                    yaxis: 'y2',
-                    line: {
-                        color: 'blue',
-                        dash: 'dot'
-                    }
+                    mode: 'lines',
+                    name: '4% Rule Benchmark',
+                    line: { dash: 'dot', color: 'gray' }
                 }
             ];
 
             const layout = {
                 margin: { t: 30 },
                 xaxis: { title: "Age" },
-                yaxis: {
-                    title: "Amount ($)",
-                    tickprefix: "$",
-                    separatethousands: true
-                },
-                yaxis2: {
-                    title: "Withdrawal Rate (%)",
-                    overlaying: "y",
-                    side: "right",
-                    tickformat: ".1%",
-                    showgrid: false
-                },
+                yaxis: { title: "Amount ($)", tickprefix: "$", separatethousands: true },
                 legend: { orientation: "h", x: 0.1, y: -0.2 }
             };
 

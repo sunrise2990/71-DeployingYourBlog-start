@@ -52,7 +52,7 @@ def run_retirement_projection(
             row["Savings"] = round(savings)
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
-            row["Investment_Return"] = return_rate  # raw decimal rate
+            row["Investment_Return"] = return_rate
             row["Withdrawal_Rate"] = None
 
         else:
@@ -64,8 +64,14 @@ def run_retirement_projection(
             row["Savings"] = None
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
-            row["Investment_Return"] = return_rate  # raw decimal rate
-            row["Withdrawal_Rate"] = (withdrawal / assets) if assets > 0 else None  # decimal
+            row["Investment_Return"] = return_rate
+            row["Withdrawal_Rate"] = (withdrawal / assets * 100) if assets > 0 else None
+
+        # Add 4% rule benchmark: 25x of annual expense (only for retirement years)
+        if retired:
+            row["FourPercentRule"] = round(net_expense * 25)
+        else:
+            row["FourPercentRule"] = None
 
         table.append(row)
         year += 1
