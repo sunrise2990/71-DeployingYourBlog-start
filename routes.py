@@ -181,5 +181,6 @@ def retirement():
         chart_data=chart_data,
         monte_carlo_data=monte_carlo_data,
         depletion_stats=depletion_stats,
-
+        return_std=request.form.get("return_std") or "6",           # 👈 default fallback
+        inflation_std=request.form.get("inflation_std") or "0.5"    # 👈 default fallback
     )
