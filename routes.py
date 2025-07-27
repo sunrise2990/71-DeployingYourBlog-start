@@ -62,9 +62,11 @@ def retirement():
                 cpp_from = int(request.form.get("cpp_from_age") or 0)
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
 
+                # 🔹 Portfolio style input and MC parameter mapping
                 portfolio_style = request.form.get("portfolio_style", "Balanced")
-                return_mean = style_map.get(portfolio_style, {}).get("mean", return_rate)
-                return_std = style_map.get(portfolio_style, {}).get("std", 0.10)
+                selected = style_map.get(portfolio_style, style_map["Balanced"])
+                return_mean = selected["mean"]
+                return_std = selected["std"]
 
                 asset_liquidation = []
                 for i in range(1, 4):
@@ -170,7 +172,6 @@ def retirement():
         depletion_stats=depletion_stats,
         portfolio_style=portfolio_style
     )
-
 
 
 
