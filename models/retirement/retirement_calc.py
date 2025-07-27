@@ -109,32 +109,23 @@ def run_monte_carlo_simulation_locked_inputs(
         cum_infl = 1.0
 
         for idx, age in enumerate(ages):
-            # Generate nominal return and inflation
-            rand_return = np.random.normal(return_mean, return_std)  # e.g., 6% ± 12%
-            rand_infl = np.random.normal(inflation_mean, inflation_std)  # e.g., 2.5% ± 1%
-
-            # Compute inflation-adjusted (real) return
-            real_return = ((1 + rand_return) / (1 + rand_infl)) - 1
-            real_return = np.clip(real_return, -0.10, 0.10)  # Clip extreme paths
-
-            # Update cumulative inflation factor for living expense adjustment
+            rand_return = np.random.normal(return_mean, return_std)
+            rand_infl   = np.random.normal(inflation_mean, inflation_std)
             cum_infl *= (1 + rand_infl)
 
-            # Expense and support
             living_exp = annual_expense * cum_infl
             cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
 
-            # Retirement logic
             retired = age >= retirement_age
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
                 savings = annual_saving * saving_factor
-                inv_return = assets * real_return
+                inv_return = assets * rand_return
                 assets = max(0.0, assets + savings + inv_return)
             else:
                 withdrawal = max(0.0, living_exp - cpp_support)
-                inv_return = assets * real_return
+                inv_return = assets * rand_return
                 assets = max(0.0, assets + inv_return - withdrawal + liquidation)
 
             sim_paths[s, idx] = assets
