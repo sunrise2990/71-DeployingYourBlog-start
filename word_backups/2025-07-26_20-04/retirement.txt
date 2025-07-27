@@ -58,7 +58,7 @@
             const expense = {{ chart_data["Living_Exp_Retirement"] | tojson }};
             const withdrawalRate = {{ chart_data["Withdrawal_Rate"] | tojson }};
 
-            const chart1 = [
+            const data = [
                 {
                     x: age,
                     y: assetRetirement,
@@ -88,7 +88,7 @@
                 }
             ];
 
-            const layout1 = {
+            const layout = {
                 margin: { t: 30 },
                 xaxis: { title: "Age" },
                 yaxis: {
@@ -108,60 +108,11 @@
                 legend: { orientation: "h", x: 0.1, y: -0.2 }
             };
 
-            Plotly.newPlot("retirement-chart", chart1, layout1, { responsive: true });
-        </script>
-    </div>
-    {% endif %}
-
-    {% if monte_carlo_data %}
-    <div class="mt-5">
-        <h5 class="text-center mb-3">🎲 Monte Carlo Simulation: Retirement Asset Range</h5>
-        <div id="monte-carlo-chart" style="height: 400px;"></div>
-        <script>
-            const mc_age = {{ monte_carlo_data["Age"] | tojson }};
-            const mc_p10 = {{ monte_carlo_data["Percentile_10"] | tojson }};
-            const mc_p50 = {{ monte_carlo_data["Percentile_50"] | tojson }};
-            const mc_p90 = {{ monte_carlo_data["Percentile_90"] | tojson }};
-
-            const chart2 = [
-                {
-                    x: mc_age,
-                    y: mc_p10,
-                    fill: 'none',
-                    line: { color: 'rgba(0,100,200,0.2)', width: 0 },
-                    name: '10th Percentile',
-                    showlegend: false
-                },
-                {
-                    x: mc_age,
-                    y: mc_p90,
-                    fill: 'tonexty',
-                    fillcolor: 'rgba(0,100,200,0.2)',
-                    line: { color: 'rgba(0,100,200,0.2)', width: 0 },
-                    name: '90th Percentile',
-                    showlegend: false
-                },
-                {
-                    x: mc_age,
-                    y: mc_p50,
-                    mode: 'lines+markers',
-                    name: 'Median',
-                    line: { color: 'blue' }
-                }
-            ];
-
-            const layout2 = {
-                margin: { t: 30 },
-                xaxis: { title: "Age" },
-                yaxis: {
-                    title: "Projected Assets ($)",
-                    tickprefix: "$",
-                    separatethousands: true
-                },
-                legend: { orientation: "h", x: 0.1, y: -0.2 }
-            };
-
-            Plotly.newPlot("monte-carlo-chart", chart2, layout2, { responsive: true });
+            if (age && assetRetirement && age.length > 0 && assetRetirement.some(v => v !== 0 && v !== null)) {
+                Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
+            } else {
+                document.getElementById("retirement-chart").innerText = "No chart data to display.";
+            }
         </script>
     </div>
     {% endif %}
