@@ -56,7 +56,6 @@ def run_retirement_projection(
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = round(inv_return)
             row["Withdrawal_Rate"] = None
-
         else:
             inv_return = assets * return_rate
             withdrawal = net_expense
@@ -86,7 +85,7 @@ def run_monte_carlo_simulation_locked_inputs(
     saving_increase_rate: float,
     current_assets: float,
     return_mean: float,
-    return_std: float,
+    return_std: float,  # 🔸 now fully driven by dropdown
     annual_expense: float,
     inflation_mean: float,
     inflation_std: float,
@@ -97,9 +96,6 @@ def run_monte_carlo_simulation_locked_inputs(
     life_expectancy: int,
     num_simulations: int = 1000,
 ):
-    # 🔸 Apply override to reduce unrealistic spread
-    return_std = 0.12  # cap volatility to stabilize median
-
     years = life_expectancy - current_age + 1
     ages = np.arange(current_age, life_expectancy + 1)
     sim_paths = np.zeros((num_simulations, years), dtype=float)
@@ -109,7 +105,7 @@ def run_monte_carlo_simulation_locked_inputs(
         cum_infl = 1.0
 
         for idx, age in enumerate(ages):
-            rand_return = np.random.normal(return_mean, return_std)  # 🔸 keep nominal
+            rand_return = np.random.normal(return_mean, return_std)
             rand_infl = np.random.normal(inflation_mean, inflation_std)
             cum_infl *= (1 + rand_infl)
 
