@@ -44,7 +44,7 @@
         <div class="col-md-3">
             <label class="form-label">Return Std Dev (%)</label>
             <select class="form-select" name="return_std">
-                {% set std_options = [("Conservative (6%)", "6"), ("Balanced (10%)", "10"), ("Aggressive (15%)", "15")] %}
+                {% set std_options = [("Conservative (8%)", "8"), ("Balanced (15%)", "15"), ("Aggressive (20%)", "20")] %}
                 {% for label, value in std_options %}
                 <option value="{{ value }}" {% if return_std == value %}selected{% endif %}>
                     {{ label }}
