@@ -9,33 +9,29 @@
     <form method="POST" action="{{ url_for('projects.retirement') }}">
         <div class="row g-3">
             {% set inputs = [
-                ("Current Age", "current_age", ""),
-                ("Retirement Age", "retirement_age", ""),
-                ("Monthly Savings ($)", "annual_saving", ""),
-                ("Annual Saving Increase Rate (%)", "saving_increase_rate", ""),
-                ("Expected Return Rate (%)", "return_rate", ""),
-                ("Expected Lifespan (Age)", "lifespan", ""),
-                ("Monthly Living Expense ($)", "monthly_living_expense", ""),
-                ("Inflation Rate (%)", "inflation_rate", ""),
-                ("Current Assets ($)", "current_assets", ""),
-                ("Living Expense Support / CPP (Monthly $)", "cpp_support", ""),
-                ("Extended Year From (Age)", "cpp_from_age", ""),
-                ("Extended Year To (Age)", "cpp_to_age", ""),
-                ("Asset Liquidation Amount 1", "asset_liquidation_1", ""),
-                ("When (Age)", "asset_liquidation_age_1", ""),
-                ("Asset Liquidation Amount 2", "asset_liquidation_2", ""),
-                ("When (Age)", "asset_liquidation_age_2", ""),
-                ("Asset Liquidation Amount 3", "asset_liquidation_3", ""),
-                ("When (Age)", "asset_liquidation_age_3", "")
+                ("Current Age", "current_age"),
+                ("Retirement Age", "retirement_age"),
+                ("Monthly Savings ($)", "annual_saving"),
+                ("Expected Return Rate (%)", "return_rate"),
+                ("Expected Lifespan (Age)", "lifespan"),
+                ("Monthly Living Expense ($)", "monthly_living_expense"),
+                ("Inflation Rate (%)", "inflation_rate"),
+                ("Current Assets ($)", "current_assets"),
+                ("Living Expense Support / CPP (Monthly $)", "cpp_support"),
+                ("Extended Year From (Age)", "cpp_from_age"),
+                ("Extended Year To (Age)", "cpp_to_age"),
+                ("Asset Liquidation Amount 1", "asset_liquidation_1"),
+                ("When (Age)", "asset_liquidation_age_1"),
+                ("Asset Liquidation Amount 2", "asset_liquidation_2"),
+                ("When (Age)", "asset_liquidation_age_2"),
+                ("Asset Liquidation Amount 3", "asset_liquidation_3"),
+                ("When (Age)", "asset_liquidation_age_3")
             ] %}
 
-            {% for label, name, _ in inputs %}
+            {% for label, name in inputs %}
             <div class="col-md-3">
                 <label class="form-label">{{ label }}</label>
-                <input type="number" name="{{ name }}"
-                       class="form-control"
-                       step="{% if 'rate' in name or 'inflation' in name or 'return' in name %}0.1{% else %}1{% endif %}"
-                       {% if 'cpp' in name or 'liquidation' in name %}min="-999999"{% endif %}
+                <input type="number" name="{{ name }}" class="form-control"
                        value="{{ '0' if reset else request.form.get(name, '0') }}">
             </div>
             {% endfor %}
