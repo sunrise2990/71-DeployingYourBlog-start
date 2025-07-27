@@ -76,6 +76,7 @@ def run_retirement_projection(
         "table": table
     }
 
+
 def run_monte_carlo_simulation_locked_inputs(
     *,
     current_age: int,
@@ -106,14 +107,9 @@ def run_monte_carlo_simulation_locked_inputs(
         for idx, age in enumerate(ages):
             rand_return = np.random.normal(return_mean, return_std)
             rand_infl = np.random.normal(inflation_mean, inflation_std)
-
-            # 👇 Adjustment: apply inflation to expenses
             cum_infl *= (1 + rand_infl)
+
             living_exp = annual_expense * cum_infl
-
-            # 👇 Adjustment: reduce return by inflation to get *real* return
-            real_return = rand_return - rand_infl
-
             cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
             retired = age >= retirement_age
@@ -121,11 +117,11 @@ def run_monte_carlo_simulation_locked_inputs(
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
                 savings = annual_saving * saving_factor
-                inv_return = assets * real_return
+                inv_return = assets * rand_return  # ✅ NOMINAL return only
                 assets = max(0.0, assets + savings + inv_return)
             else:
                 withdrawal = max(0.0, living_exp - cpp_support)
-                inv_return = assets * real_return
+                inv_return = assets * rand_return  # ✅ NOMINAL return only
                 assets = max(0.0, assets + inv_return - withdrawal + liquidation)
 
             sim_paths[s, idx] = assets
@@ -146,6 +142,7 @@ def run_monte_carlo_simulation_locked_inputs(
         },
         "depletion_probs": probs,
     }
+
 
 
 
