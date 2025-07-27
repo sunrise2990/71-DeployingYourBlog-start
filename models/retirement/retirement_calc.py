@@ -109,46 +109,33 @@ def run_monte_carlo_simulation_locked_inputs(
         cum_infl = 1.0
 
         for idx, age in enumerate(ages):
-            # Simulate nominal return and inflation
             rand_return = np.random.normal(return_mean, return_std)
-            rand_infl = np.random.normal(inflation_mean, inflation_std)
+            rand_infl   = np.random.normal(inflation_mean, inflation_std)
+            cum_infl *= (1 + rand_infl)
 
-            # Inflation-adjusted (real) return: clip to avoid extreme values
-            real_return = np.clip(((1 + rand_return) / (1 + rand_infl)) - 1, -0.15, 0.10)
-
-            # Adjust living expense and CPP
             living_exp = annual_expense * cum_infl
             cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
 
-            # Retirement check
             retired = age >= retirement_age
-
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
                 savings = annual_saving * saving_factor
-                inv_return = assets * real_return
+                inv_return = assets * rand_return
                 assets = max(0.0, assets + savings + inv_return)
             else:
                 withdrawal = max(0.0, living_exp - cpp_support)
-                inv_return = assets * real_return
+                inv_return = assets * rand_return
                 assets = max(0.0, assets + inv_return - withdrawal + liquidation)
 
-            # Update simulation path
             sim_paths[s, idx] = assets
 
-            # Apply inflation compounding for next year
-            cum_infl *= (1 + rand_infl)
-
-    # Compute percentiles across simulations
     p10 = np.percentile(sim_paths, 10, axis=0).round(0)
     p50 = np.percentile(sim_paths, 50, axis=0).round(0)
     p90 = np.percentile(sim_paths, 90, axis=0).round(0)
 
-    # Compute probability of depletion
     probs = _compute_depletion_probabilities(sim_paths, current_age, [75, 85, 90])
 
-    # Return final simulation output
     return {
         "ages": ages.tolist(),
         "sim_paths": sim_paths,
