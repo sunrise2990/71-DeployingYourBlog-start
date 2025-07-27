@@ -167,7 +167,8 @@ def retirement():
         reset=reset,
         chart_data=chart_data,
         monte_carlo_data=monte_carlo_data,
-        depletion_stats=depletion_stats
+        depletion_stats=depletion_stats,
+        portfolio_style=portfolio_style
     )
 
 
