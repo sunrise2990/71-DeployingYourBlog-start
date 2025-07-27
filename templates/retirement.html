@@ -47,6 +47,56 @@
         </div>
     </form>
 
+    {% if chart_data %}
+    <div class="mt-5">
+        <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
+        <div id="retirement-chart" style="height: 400px;"></div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script>
+            const age = {{ chart_data["Age"] | safe }};
+            const assetWorking = {{ chart_data["Asset_Working"] | safe }};
+            const assetRetirement = {{ chart_data["Asset_Retirement"] | safe }};
+            const expense = {{ chart_data["Living_Exp_Retirement"] | safe }};
+
+            const data = [
+                {
+                    x: age,
+                    y: assetWorking,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Asset – Working',
+                    line: { dash: 'dot' }
+                },
+                {
+                    x: age,
+                    y: assetRetirement,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Asset – Retirement',
+                    line: { color: 'green' }
+                },
+                {
+                    x: age,
+                    y: expense,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Living Exp. – Retirement',
+                    line: { color: 'red' }
+                }
+            ];
+
+            const layout = {
+                margin: { t: 30 },
+                xaxis: { title: "Age" },
+                yaxis: { title: "Amount ($)", tickprefix: "$", separatethousands: true },
+                legend: { orientation: "h", x: 0.1, y: -0.2 }
+            };
+
+            Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
+        </script>
+    </div>
+    {% endif %}
+
     {% if result %}
     <div class="alert alert-success mt-5 text-center">
         <h4>📈 Estimated Total Retirement Savings: <strong>${{ "{:,.2f}".format(result) }}</strong></h4>
@@ -95,6 +145,7 @@
     {% endif %}
 </div>
 {% endblock %}
+
 
 
 

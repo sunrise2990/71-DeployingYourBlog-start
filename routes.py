@@ -19,6 +19,7 @@ def leasing_pipeline():
 def retirement():
     result = None
     table = []
+    chart_data = {}
     reset = False
     retirement_age = None
 
@@ -44,7 +45,7 @@ def retirement():
                 monthly_living_expense = float(request.form.get("monthly_living_expense") or 0)
                 inflation_rate = float(request.form.get("inflation_rate") or 0) / 100
                 current_assets = float(request.form.get("current_assets") or 0)
-                saving_increase_rate = float(request.form.get("saving_increase_rate") or 0) / 100  # ✅ New field
+                saving_increase_rate = float(request.form.get("saving_increase_rate") or 0) / 100
 
                 # 🔹 CPP Support
                 cpp_monthly = float(request.form.get("cpp_support") or 0)
@@ -64,7 +65,7 @@ def retirement():
                     current_age=current_age,
                     retirement_age=retirement_age,
                     annual_saving=monthly_saving * 12,
-                    saving_increase_rate=saving_increase_rate,  # ✅ New param
+                    saving_increase_rate=saving_increase_rate,
                     current_assets=current_assets,
                     return_rate=return_rate,
                     annual_expense=monthly_living_expense * 12,
@@ -95,10 +96,19 @@ def retirement():
                     row.get("Withdrawal_Rate") or "",
                 ] for row in output["table"]]
 
+                # 📊 Prepare chart data
+                chart_data = {
+                    "Age": [row.get("Age") for row in output["table"]],
+                    "Living_Exp_Retirement": [row.get("Living_Exp_Retirement") or 0 for row in output["table"]],
+                    "Asset_Working": [row.get("Asset_Working") or None for row in output["table"]],
+                    "Asset_Retirement": [row.get("Asset_Retirement") or None for row in output["table"]],
+                }
+
             except Exception as e:
                 print("❌ Error in retirement projection:", e)
                 result = None
                 table = []
+                chart_data = {}
 
     return render_template(
         "retirement.html",
@@ -106,5 +116,6 @@ def retirement():
         table=table,
         table_headers=table_headers,
         retirement_age=retirement_age,
-        reset=reset
+        reset=reset,
+        chart_data=chart_data  # ✅ Add this to enable graph
     )
