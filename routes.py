@@ -35,6 +35,13 @@ def retirement():
         "Asset – Retirement", "Investment Return", "Withdrawal Rate"
     ]
 
+    # Define portfolio style mappings
+    style_map = {
+        "Aggressive": {"mean": 0.09, "std": 0.18},
+        "Balanced": {"mean": 0.07, "std": 0.10},
+        "Conservative": {"mean": 0.055, "std": 0.06}
+    }
+
     if request.method == "POST":
         action = request.form.get("action")
         if action == "reset":
@@ -54,6 +61,10 @@ def retirement():
                 cpp_monthly = float(request.form.get("cpp_support") or 0)
                 cpp_from = int(request.form.get("cpp_from_age") or 0)
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
+
+                portfolio_style = request.form.get("portfolio_style", "Balanced")
+                return_mean = style_map.get(portfolio_style, {}).get("mean", return_rate)
+                return_std = style_map.get(portfolio_style, {}).get("std", 0.10)
 
                 asset_liquidation = []
                 for i in range(1, 4):
@@ -112,8 +123,8 @@ def retirement():
                     annual_saving=monthly_saving * 12,
                     saving_increase_rate=saving_increase_rate,
                     current_assets=current_assets,
-                    return_mean=return_rate,
-                    return_std=0.10,
+                    return_mean=return_mean,
+                    return_std=return_std,
                     annual_expense=monthly_living_expense * 12,
                     inflation_mean=inflation_rate,
                     inflation_std=0.01,
