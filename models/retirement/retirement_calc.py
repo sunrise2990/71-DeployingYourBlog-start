@@ -77,7 +77,6 @@ def run_retirement_projection(
     }
 
 
-# 🔹 Monte Carlo Simulation — only varies return and inflation
 def run_monte_carlo_simulation_locked_inputs(
     *,
     current_age: int,
@@ -106,11 +105,14 @@ def run_monte_carlo_simulation_locked_inputs(
         cum_infl = 1.0
 
         for idx, age in enumerate(ages):
+            # Simulate nominal return and inflation separately
             rand_return = np.random.normal(return_mean, return_std)
-            rand_infl = np.random.normal(inflation_mean, inflation_std)
-            cum_infl *= (1 + rand_infl)
+            rand_infl   = np.random.normal(inflation_mean, inflation_std)
 
+            # Compound inflation for expenses only
+            cum_infl *= (1 + rand_infl)
             living_exp = annual_expense * cum_infl
+
             cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
             retired = age >= retirement_age
@@ -127,6 +129,7 @@ def run_monte_carlo_simulation_locked_inputs(
 
             sim_paths[s, idx] = assets
 
+    # Compute percentiles across simulations
     p10 = np.percentile(sim_paths, 10, axis=0).round(0)
     p50 = np.percentile(sim_paths, 50, axis=0).round(0)
     p90 = np.percentile(sim_paths, 90, axis=0).round(0)
