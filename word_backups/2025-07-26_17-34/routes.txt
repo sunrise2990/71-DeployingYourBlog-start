@@ -44,19 +44,18 @@ def retirement():
                 monthly_living_expense = float(request.form.get("monthly_living_expense") or 0)
                 inflation_rate = float(request.form.get("inflation_rate") or 0) / 100
                 current_assets = float(request.form.get("current_assets") or 0)
-                saving_increase_rate = float(request.form.get("saving_increase_rate") or 0) / 100  # ✅ New field
 
                 # 🔹 CPP Support
                 cpp_monthly = float(request.form.get("cpp_support") or 0)
                 cpp_from = int(request.form.get("cpp_from_age") or 0)
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
 
-                # 🔹 Asset Liquidation slots (allowing negative values)
+                # 🔹 Asset Liquidation slots
                 asset_liquidation = []
                 for i in range(1, 4):
                     amount = float(request.form.get(f"asset_liquidation_{i}") or 0)
                     age = int(request.form.get(f"asset_liquidation_age_{i}") or 0)
-                    if amount != 0 and age > 0:
+                    if amount > 0 and age > 0:
                         asset_liquidation.append({"amount": amount, "age": age})
 
                 # 🧠 Run projection
@@ -64,7 +63,6 @@ def retirement():
                     current_age=current_age,
                     retirement_age=retirement_age,
                     annual_saving=monthly_saving * 12,
-                    saving_increase_rate=saving_increase_rate,  # ✅ New param
                     current_assets=current_assets,
                     return_rate=return_rate,
                     annual_expense=monthly_living_expense * 12,
@@ -84,9 +82,9 @@ def retirement():
                     row.get("Year"),
                     row.get("Retire"),
                     f"${row.get('Living_Exp', 0):,.0f}",
-                    f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") not in (None, 0) else "",
+                    f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
                     f"${row.get('Living_Exp_Retirement', 0):,.0f}" if row.get("Living_Exp_Retirement") else "",
-                    f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") not in (None, 0) else "",
+                    f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
                     f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
                     f"${row.get('Asset', 0):,.0f}",
                     f"${row.get('Asset_Working', 0):,.0f}" if row.get("Asset_Working") else "",

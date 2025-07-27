@@ -2,7 +2,6 @@ def run_retirement_projection(
     current_age,
     retirement_age,
     annual_saving,
-    saving_increase_rate,  # ✅ new parameter
     current_assets,
     return_rate,
     annual_expense,
@@ -24,36 +23,33 @@ def run_retirement_projection(
             "Retire": "retire" if age == retirement_age else "",
         }
 
-        # 🔸 Living expense with inflation
+        # 🔸 Apply inflation to living expenses
         inflation_factor = (1 + inflation_rate) ** (age - current_age)
         living_exp = annual_expense * inflation_factor
         row["Living_Exp"] = round(living_exp)
 
-        # 🔸 CPP Support (can be negative or positive)
+        # 🔸 CPP Support (always included in column)
         cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0
-        row["CPP_Support"] = round(cpp_support) if cpp_support != 0 else None
+        row["CPP_Support"] = round(cpp_support) if cpp_support > 0 else None
 
-        # 🔸 Net expense for retired period
+        # 🔸 Net expense if retired
         retired = age >= retirement_age
-        net_expense = living_exp - cpp_support
+        net_expense = max(0, living_exp - cpp_support)
         row["Living_Exp_Retirement"] = round(net_expense) if retired else None
 
-        # 🔸 Asset Liquidation (can be negative)
+        # 🔸 Asset liquidation (if scheduled at this age)
         liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
-        row["Asset_Liquidation"] = round(liquidation) if liquidation != 0 else None
+        row["Asset_Liquidation"] = round(liquidation) if liquidation > 0 else None
 
-        # 🔹 Accumulate if still working
         if not retired:
-            # 🔸 Apply increase rate to savings over time
-            saving_factor = (1 + saving_increase_rate) ** (age - current_age)
-            savings = annual_saving * saving_factor
+            savings = annual_saving
             inv_return = assets * return_rate
             assets += savings + inv_return
 
             row["Savings"] = round(savings)
             row["Asset"] = round(assets)
             row["Asset_Working"] = round(assets)
-            row["Asset_Retirement"] = round(assets)
+            row["Asset_Retirement"] = round(assets)  # ✅ always same as Asset
             row["Investment_Return"] = round(inv_return)
             row["Withdrawal_Rate"] = None
 
@@ -65,7 +61,7 @@ def run_retirement_projection(
             row["Savings"] = None
             row["Asset"] = round(assets)
             row["Asset_Working"] = None
-            row["Asset_Retirement"] = round(assets)
+            row["Asset_Retirement"] = round(assets)  # ✅ always same as Asset
             row["Investment_Return"] = round(inv_return)
             row["Withdrawal_Rate"] = (
                 f"{(withdrawal / assets * 100):.1f}%" if assets > 0 else "N/A"
@@ -74,8 +70,9 @@ def run_retirement_projection(
         table.append(row)
         year += 1
 
+    final_assets = assets
     return {
-        "final_assets": assets,
+        "final_assets": final_assets,
         "table": table
     }
 
