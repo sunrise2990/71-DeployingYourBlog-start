@@ -37,9 +37,9 @@ def retirement():
 
     # Define portfolio style mappings
     style_map = {
-        "Aggressive": {"mean": 0.09, "std": 0.18},
-        "Balanced": {"mean": 0.07, "std": 0.10},
-        "Conservative": {"mean": 0.055, "std": 0.06}
+        "aggressive": {"mean": 0.09, "std": 0.18},
+        "balanced": {"mean": 0.07, "std": 0.10},
+        "conservative": {"mean": 0.055, "std": 0.06}
     }
 
     if request.method == "POST":
@@ -63,8 +63,8 @@ def retirement():
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
 
                 # 🔹 Portfolio style input and MC parameter mapping
-                portfolio_style = request.form.get("portfolio_style", "Balanced")
-                selected = style_map.get(portfolio_style, style_map["Balanced"])
+                portfolio_style = request.form.get("portfolio_style", "Balanced").lower()
+                selected = style_map.get(portfolio_style, style_map["balanced"])
                 return_mean = selected["mean"]
                 return_std = selected["std"]
 
@@ -172,6 +172,5 @@ def retirement():
         depletion_stats=depletion_stats,
         portfolio_style=portfolio_style
     )
-
 
 
