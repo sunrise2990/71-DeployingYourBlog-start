@@ -76,12 +76,12 @@ def retirement():
 
                 result = output["final_assets"]
 
-                # ✅ Extend Living_Exp_Retirement from year 1
+                # ✅ Ensure Living_Exp_Retirement is filled
                 for row in output["table"]:
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
-                # 📋 Build table
+                # 📋 Build table with % formatting for returns and withdrawal rate
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
@@ -93,11 +93,11 @@ def retirement():
                     f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
                     f"${row.get('Asset', 0):,.0f}",
                     f"${row.get('Asset_Retirement', 0):,.0f}" if row.get("Asset_Retirement") else "",
-                    f"${row.get('Investment_Return', 0):,.0f}" if row.get("Investment_Return") else "",
-                    row.get("Withdrawal_Rate") or "",
+                    f"{row.get('Investment_Return')*100:.1f}%" if row.get("Investment_Return") is not None else "",
+                    f"{row.get('Withdrawal_Rate'):.1f}%" if row.get("Withdrawal_Rate") is not None else ""
                 ] for row in output["table"]]
 
-                # 📊 Chart data
+                # 📊 Chart data (only retirement period shown)
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
                     "Living_Exp_Retirement": [
@@ -124,3 +124,4 @@ def retirement():
         reset=reset,
         chart_data=chart_data
     )
+

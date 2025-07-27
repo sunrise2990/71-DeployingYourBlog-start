@@ -114,7 +114,6 @@
                     <th>Asset Liquidation</th>
                     <th>Savings – Before Retire</th>
                     <th>Asset</th>
-                    <th>Asset – Working Years</th>
                     <th>Asset – Retirement</th>
                     <th>Investment Return</th>
                     <th>Withdrawal Rate</th>
@@ -126,7 +125,7 @@
                     {% for cell in row %}
                     <td>
                         {% if cell is number %}
-                            {{ "{:,.0f}".format(cell) }}
+                            {{ "{:,.0f}".format(cell) if loop.index0 not in [10] else cell }}
                         {% else %}
                             {{ cell }}
                         {% endif %}
