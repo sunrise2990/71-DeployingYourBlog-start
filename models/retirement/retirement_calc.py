@@ -24,7 +24,7 @@ def run_retirement_projection(
     for i, age in enumerate(range(current_age, life_expectancy + 1)):
         row = {
             "Age": age,
-            "Year": start_year + i,
+            "Year": str(start_year + i),
             "Retire": "retire" if age == retirement_age else "",
         }
 
