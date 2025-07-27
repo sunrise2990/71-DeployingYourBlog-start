@@ -76,11 +76,12 @@ def retirement():
 
                 result = output["final_assets"]
 
+                # Ensure Living_Exp_Retirement fallback
                 for row in output["table"]:
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
-                # 📋 Format table for HTML
+                # 📋 Format table
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
@@ -106,8 +107,8 @@ def retirement():
                         row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0
                         for row in output["table"]
                     ],
-                    "Withdrawal_Rate": [
-                        round(row.get("Withdrawal_Rate") / 100, 4) if row.get("Withdrawal_Rate") is not None else None
+                    "FourPercentRule": [
+                        row.get("Asset_Retirement") * 0.04 if row.get("Asset_Retirement") else None
                         for row in output["table"]
                     ]
                 }
@@ -127,4 +128,5 @@ def retirement():
         reset=reset,
         chart_data=chart_data
     )
+
 
