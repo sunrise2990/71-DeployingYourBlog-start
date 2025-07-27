@@ -56,6 +56,9 @@ def retirement():
                 cpp_from = int(request.form.get("cpp_from_age") or 0)
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
 
+                return_std = float(request.form.get("return_std") or 0) / 100
+                inflation_std = float(request.form.get("inflation_std") or 0) / 100
+
                 asset_liquidation = []
                 for i in range(1, 3 + 1):
                     amount = float(request.form.get(f"asset_liquidation_{i}") or 0)
@@ -124,10 +127,10 @@ def retirement():
                     saving_increase_rate=saving_increase_rate,
                     current_assets=current_assets,
                     return_mean=return_rate,
-                    return_std=0.10,               # Default 10% std dev for return
+                    return_std=return_std,
                     annual_expense=monthly_living_expense * 12,
                     inflation_mean=inflation_rate,
-                    inflation_std=0.01,            # Default 1% std dev for inflation
+                    inflation_std=inflation_std,
                     cpp_monthly=cpp_monthly,
                     cpp_start_age=cpp_from,
                     cpp_end_age=cpp_to,

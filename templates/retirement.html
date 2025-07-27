@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2 class="text-center mb-4">🧮 Retirement Planner</h2>
+    <h2 class="text-center mb-4">🧼 Retirement Planner</h2>
 
     <form method="POST" action="{{ url_for('projects.retirement') }}">
         <div class="row g-3">
@@ -35,10 +35,36 @@
                 <input type="number" name="{{ name }}"
                        class="form-control"
                        step="{% if 'rate' in name or 'inflation' in name or 'return' in name %}0.1{% else %}1{% endif %}"
-                       {% if 'cpp' in name or 'liquidation' in name %}min="-999999"{% endif %}
+                       {% if 'cpp' in name or 'liquidation' in name %}min="-9999999"{% endif %}
                        value="{{ '0' if reset else request.form.get(name, '0') }}">
             </div>
             {% endfor %}
+
+                <!-- Return Std Dev Dropdown -->
+                <div class="col-md-3">
+                    <label class="form-label">Return Std Dev (%)</label>
+                    <select class="form-select" name="return_std">
+                        {% set std_options = [("Conservative (6%)", "6"), ("Balanced (10%)", "10"), ("Aggressive (15%)", "15")] %}
+                        {% for label, value in std_options %}
+                        <option value="{{ value }}" {% if request.form.get('return_std') == value|string %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Inflation Std Dev Dropdown -->
+                <div class="col-md-3">
+                    <label class="form-label">Inflation Std Dev (%)</label>
+                    <select class="form-select" name="inflation_std">
+                        {% set inf_options = [("Stable (0.5%)", "0.5"), ("Typical (1%)", "1.0"), ("Volatile (2%)", "2.0")] %}
+                        {% for label, value in inf_options %}
+                        <option value="{{ value }}" {% if request.form.get('inflation_std') == value|string %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
         </div>
 
         <div class="text-center mt-4">
@@ -173,7 +199,6 @@
             <li><strong>{{ (depletion_stats.age_75 * 100) | round(1) }}%</strong> chance of running out of money by <strong>age 75</strong></li>
             <li><strong>{{ (depletion_stats.age_85 * 100) | round(1) }}%</strong> chance by <strong>age 85</strong></li>
             <li><strong>{{ (depletion_stats.age_90 * 100) | round(1) }}%</strong> chance by <strong>age 90</strong></li>
-
         </ul>
         <p class="text-muted small">
             Assumes current savings, asset, CPP, expenses, and retirement age remain fixed.
@@ -229,5 +254,3 @@
     {% endif %}
 </div>
 {% endblock %}
-
-
