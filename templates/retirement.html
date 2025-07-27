@@ -4,16 +4,16 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2 class="text-center mb-4">🧼 Retirement Planner</h2>
+    <h2 class="text-center mb-4">🧺 Retirement Planner</h2>
 
     <form method="POST" action="{{ url_for('projects.retirement') }}">
         <div class="row g-3">
             <div class="col-md-6">
                 <label for="portfolio_style" class="form-label">Portfolio Style</label>
                 <select class="form-select" id="portfolio_style" name="portfolio_style" required>
-                    <option value="aggressive" {% if portfolio_style == 'aggressive' %}selected{% endif %}>Aggressive (100% stocks, std 18%)</option>
-                    <option value="balanced" {% if portfolio_style == 'balanced' %}selected{% endif %}>Balanced (60/40), std 10%</option>
-                    <option value="conservative" {% if portfolio_style == 'conservative' %}selected{% endif %}>Conservative (30/70) std 6%</option>
+                    <option value="Aggressive" {% if portfolio_style == 'Aggressive' %}selected{% endif %}>Aggressive (100% stocks, std 18%)</option>
+                    <option value="Balanced" {% if portfolio_style == 'Balanced' %}selected{% endif %}>Balanced (60/40), std 10%</option>
+                    <option value="Conservative" {% if portfolio_style == 'Conservative' %}selected{% endif %}>Conservative (30/70) std 6%</option>
                 </select>
             </div>
 
@@ -237,6 +237,4 @@
     {% endif %}
 </div>
 {% endblock %}
-
-
 
