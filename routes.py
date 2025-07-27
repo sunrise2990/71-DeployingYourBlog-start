@@ -103,10 +103,9 @@ def retirement():
                         row.get("Living_Exp_Retirement") or 0 for row in output["table"]
                     ],
                     "Asset_Working": [
-                        row.get("Asset_Working") if row.get("Retire") == "No" else None
+                        row.get("Asset_Working") if row.get("Asset_Working") is not None else 0
                         for row in output["table"]
                     ],
-
                     "Asset_Retirement": [
                         row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0
                         for row in output["table"]
