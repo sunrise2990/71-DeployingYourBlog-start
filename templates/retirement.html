@@ -102,13 +102,13 @@
                     title: "Withdrawal Rate (%)",
                     overlaying: 'y',
                     side: 'right',
-                    tickformat: '.1%',
+                    tickformat: '.1f',
                     showgrid: false
                 },
                 legend: { orientation: "h", x: 0.1, y: -0.2 }
             };
 
-            if (age.length > 0 && assetRetirement.some(v => v !== 0 && v !== null)) {
+            if (age && assetRetirement && age.length > 0 && assetRetirement.some(v => v !== 0 && v !== null)) {
                 Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
             } else {
                 document.getElementById("retirement-chart").innerText = "No chart data to display.";
@@ -150,7 +150,7 @@
                     {% for cell in row %}
                     <td>
                         {% if cell is number %}
-                            {{ "{:,.0f}".format(cell) if loop.index0 not in [10] else cell }}
+                            {{ "{:,.0f}".format(cell) if loop.index0 not in [10, 11] else cell }}
                         {% else %}
                             {{ cell }}
                         {% endif %}
@@ -164,6 +164,7 @@
     {% endif %}
 </div>
 {% endblock %}
+
 
 
 
