@@ -65,7 +65,13 @@ def run_retirement_projection(
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = return_rate
-            row["Withdrawal_Rate"] = round((withdrawal / assets * 100), 1) if assets > 0 else None
+            row["Withdrawal_Rate"] = (withdrawal / assets * 100) if assets > 0 else None
+
+        # Add 4% rule benchmark: 25x of annual expense (only for retirement years)
+        if retired:
+            row["FourPercentRule"] = round(net_expense * 25)
+        else:
+            row["FourPercentRule"] = None
 
         table.append(row)
         year += 1

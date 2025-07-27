@@ -56,7 +56,7 @@
             const age = {{ chart_data["Age"] | safe }};
             const assetRetirement = {{ chart_data["Asset_Retirement"] | safe }};
             const expense = {{ chart_data["Living_Exp_Retirement"] | safe }};
-            const withdrawalRate = {{ chart_data["Withdrawal_Rate"] | safe }};
+            const rule4 = {{ chart_data["FourPercentRule"] | safe }};
 
             const data = [
                 {
@@ -65,8 +65,7 @@
                     type: 'scatter',
                     mode: 'lines+markers',
                     name: 'Asset – Retirement',
-                    line: { color: 'green' },
-                    yaxis: 'y1'
+                    line: { color: 'green' }
                 },
                 {
                     x: age,
@@ -74,37 +73,22 @@
                     type: 'scatter',
                     mode: 'lines+markers',
                     name: 'Living Exp. – Retirement',
-                    line: { color: 'red' },
-                    yaxis: 'y1'
+                    line: { color: 'red' }
                 },
                 {
                     x: age,
-                    y: withdrawalRate,
+                    y: rule4,
                     type: 'scatter',
-                    mode: 'lines+markers',
-                    name: 'Withdrawal Rate',
-                    line: { color: 'gray', dash: 'dot' },
-                    yaxis: 'y2'
+                    mode: 'lines',
+                    name: '4% Rule Benchmark',
+                    line: { dash: 'dot', color: 'gray' }
                 }
             ];
 
             const layout = {
                 margin: { t: 30 },
                 xaxis: { title: "Age" },
-                yaxis: {
-                    title: "Amount ($)",
-                    tickprefix: "$",
-                    separatethousands: true,
-                    side: 'left',
-                    showgrid: true
-                },
-                yaxis2: {
-                    title: "Withdrawal Rate (%)",
-                    overlaying: 'y',
-                    side: 'right',
-                    tickformat: '.1%',
-                    showgrid: false
-                },
+                yaxis: { title: "Amount ($)", tickprefix: "$", separatethousands: true },
                 legend: { orientation: "h", x: 0.1, y: -0.2 }
             };
 
@@ -164,6 +148,5 @@
     {% endif %}
 </div>
 {% endblock %}
-
 
 
