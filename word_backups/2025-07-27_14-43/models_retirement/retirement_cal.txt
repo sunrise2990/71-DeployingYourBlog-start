@@ -1,5 +1,6 @@
 import numpy as np
 
+# 🔹 Deterministic Retirement Projection
 def run_retirement_projection(
     current_age,
     retirement_age,
@@ -45,7 +46,6 @@ def run_retirement_projection(
         row["Asset_Liquidation"] = round(liquidation) if liquidation != 0 else None
 
         if not retired:
-            # 🔹 While working
             saving_factor = (1 + saving_increase_rate) ** (age - current_age)
             savings = annual_saving * saving_factor
             inv_return = assets * return_rate
@@ -58,7 +58,6 @@ def run_retirement_projection(
             row["Withdrawal_Rate"] = None
 
         else:
-            # 🔹 Retirement phase
             inv_return = assets * return_rate
             withdrawal = net_expense
             assets += inv_return - withdrawal + liquidation
@@ -78,7 +77,7 @@ def run_retirement_projection(
     }
 
 
-# 🔄 Monte Carlo — ONLY randomizes return and inflation
+# 🔹 Monte Carlo Simulation with realistic inputs
 def run_monte_carlo_simulation_locked_inputs(
     *,
     current_age: int,
@@ -100,8 +99,6 @@ def run_monte_carlo_simulation_locked_inputs(
 ):
     years = life_expectancy - current_age + 1
     ages = np.arange(current_age, life_expectancy + 1)
-
-    # Store simulation paths
     sim_paths = np.zeros((num_simulations, years), dtype=float)
 
     for s in range(num_simulations):
@@ -109,15 +106,15 @@ def run_monte_carlo_simulation_locked_inputs(
         cum_infl = 1.0
 
         for idx, age in enumerate(ages):
-            rand_return = np.random.normal(return_mean, return_std)
-            rand_infl   = np.random.normal(inflation_mean, inflation_std)
+            rand_return = np.random.normal(return_mean, return_std)  # 🔸 nominal return
+            rand_infl = np.random.normal(inflation_mean, inflation_std)
             cum_infl *= (1 + rand_infl)
 
             living_exp = annual_expense * cum_infl
             cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
-
             retired = age >= retirement_age
+
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
                 savings = annual_saving * saving_factor
@@ -148,8 +145,8 @@ def run_monte_carlo_simulation_locked_inputs(
     }
 
 
+# 🔸 Track % of simulations depleted before checkpoints
 def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, checkpoints: list[int]):
-    """Return probability of hitting zero on or before each checkpoint age, plus 'ever'."""
     n_sims, n_years = sim_paths.shape
     probs = {}
     ever_zero = (sim_paths == 0).any(axis=1).mean()

@@ -4,10 +4,19 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2 class="text-center mb-4">🧮 Retirement Planner</h2>
+    <h2 class="text-center mb-4">🮡 Retirement Planner</h2>
 
     <form method="POST" action="{{ url_for('projects.retirement') }}">
         <div class="row g-3">
+            <div class="col-md-6">
+                <label for="portfolio_style" class="form-label">Portfolio Style</label>
+                <select class="form-select" id="portfolio_style" name="portfolio_style" required>
+                    <option value="Aggressive" {% if request.form.get('portfolio_style') == 'Aggressive' %}selected{% endif %}>Aggressive (100% stocks, std 18%)</option>
+                    <option value="Balanced" {% if request.form.get('portfolio_style') == 'Balanced' %}selected{% endif %}>Balanced (60/40), std 10%</option>
+                    <option value="Conservative" {% if request.form.get('portfolio_style') == 'Conservative' %}selected{% endif %}>Conservative (30/70) std 6%</option>
+                </select>
+            </div>
+
             {% set inputs = [
                 ("Current Age", "current_age", ""),
                 ("Retirement Age", "retirement_age", ""),
@@ -35,7 +44,7 @@
                 <input type="number" name="{{ name }}"
                        class="form-control"
                        step="{% if 'rate' in name or 'inflation' in name or 'return' in name %}0.1{% else %}1{% endif %}"
-                       {% if 'cpp' in name or 'liquidation' in name %}min="-999999"{% endif %}
+                       {% if 'cpp' in name or 'liquidation' in name %}min="-9999999"{% endif %}
                        value="{{ '0' if reset else request.form.get(name, '0') }}">
             </div>
             {% endfor %}
@@ -173,7 +182,6 @@
             <li><strong>{{ (depletion_stats.age_75 * 100) | round(1) }}%</strong> chance of running out of money by <strong>age 75</strong></li>
             <li><strong>{{ (depletion_stats.age_85 * 100) | round(1) }}%</strong> chance by <strong>age 85</strong></li>
             <li><strong>{{ (depletion_stats.age_90 * 100) | round(1) }}%</strong> chance by <strong>age 90</strong></li>
-
         </ul>
         <p class="text-muted small">
             Assumes current savings, asset, CPP, expenses, and retirement age remain fixed.
@@ -229,5 +237,4 @@
     {% endif %}
 </div>
 {% endblock %}
-
 
