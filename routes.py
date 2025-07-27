@@ -36,7 +36,7 @@ def retirement():
             reset = True
         elif action == "calculate":
             try:
-                # 🧾 User Inputs
+                # 🧾 Input parsing
                 current_age = int(request.form.get("current_age") or 0)
                 retirement_age = int(request.form.get("retirement_age") or 0)
                 monthly_saving = float(request.form.get("annual_saving") or 0)
@@ -47,12 +47,12 @@ def retirement():
                 current_assets = float(request.form.get("current_assets") or 0)
                 saving_increase_rate = float(request.form.get("saving_increase_rate") or 0) / 100
 
-                # CPP
+                # CPP & support income
                 cpp_monthly = float(request.form.get("cpp_support") or 0)
                 cpp_from = int(request.form.get("cpp_from_age") or 0)
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
 
-                # Liquidation
+                # One-time asset liquidation entries
                 asset_liquidation = []
                 for i in range(1, 4):
                     amount = float(request.form.get(f"asset_liquidation_{i}") or 0)
@@ -60,7 +60,7 @@ def retirement():
                     if amount != 0 and age > 0:
                         asset_liquidation.append({"amount": amount, "age": age})
 
-                # 🧠 Run projection logic
+                # 🔄 Run projection
                 output = run_retirement_projection(
                     current_age=current_age,
                     retirement_age=retirement_age,
@@ -79,15 +79,15 @@ def retirement():
 
                 result = output["final_assets"]
 
-                # 📋 Table formatting
+                # 📋 Build table
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
                     row.get("Retire"),
                     f"${row.get('Living_Exp', 0):,.0f}",
-                    f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") not in (None, 0) else "",
+                    f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
                     f"${row.get('Living_Exp_Retirement', 0):,.0f}" if row.get("Living_Exp_Retirement") else "",
-                    f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") not in (None, 0) else "",
+                    f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
                     f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
                     f"${row.get('Asset', 0):,.0f}",
                     f"${row.get('Asset_Working', 0):,.0f}" if row.get("Asset_Working") else "",
@@ -96,12 +96,20 @@ def retirement():
                     row.get("Withdrawal_Rate") or "",
                 ] for row in output["table"]]
 
-                # 📊 Chart data
+                # 📊 Prepare chart_data
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
-                    "Living_Exp_Retirement": [row.get("Living_Exp_Retirement") or 0 for row in output["table"]],
-                    "Asset_Working": [row.get("Asset_Working") if row.get("Asset_Working") is not None else 0 for row in output["table"]],
-                    "Asset_Retirement": [row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0 for row in output["table"]],
+                    "Living_Exp_Retirement": [
+                        row.get("Living_Exp_Retirement") or 0 for row in output["table"]
+                    ],
+                    "Asset_Working": [
+                        row.get("Asset_Working") if row.get("Asset_Working") is not None else 0
+                        for row in output["table"]
+                    ],
+                    "Asset_Retirement": [
+                        row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0
+                        for row in output["table"]
+                    ],
                 }
 
             except Exception as e:
