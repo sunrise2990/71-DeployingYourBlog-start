@@ -97,7 +97,7 @@
                 legend: { orientation: "h", x: 0.1, y: -0.2 }
             };
 
-            if (age.length > 0 && assetWorking.some(v => v !== 0 || v !== null)) {
+            if (age.length > 0 && assetWorking.some(v => v !== 0 && v !== null)) {
                 Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
             } else {
                 document.getElementById("retirement-chart").innerText = "No chart data to display.";
