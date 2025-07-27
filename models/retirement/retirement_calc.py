@@ -77,6 +77,7 @@ def run_retirement_projection(
     }
 
 
+# 🔹 Monte Carlo Simulation with realistic assumptions
 def run_monte_carlo_simulation_locked_inputs(
     *,
     current_age: int,
@@ -96,6 +97,9 @@ def run_monte_carlo_simulation_locked_inputs(
     life_expectancy: int,
     num_simulations: int = 1000,
 ):
+    # 🔸 Apply override to reduce unrealistic spread
+    return_std = 0.06  # cap volatility to stabilize median
+
     years = life_expectancy - current_age + 1
     ages = np.arange(current_age, life_expectancy + 1)
     sim_paths = np.zeros((num_simulations, years), dtype=float)
@@ -105,7 +109,7 @@ def run_monte_carlo_simulation_locked_inputs(
         cum_infl = 1.0
 
         for idx, age in enumerate(ages):
-            rand_return = np.random.normal(return_mean, return_std)
+            rand_return = np.random.normal(return_mean, return_std)  # 🔸 keep nominal
             rand_infl = np.random.normal(inflation_mean, inflation_std)
             cum_infl *= (1 + rand_infl)
 
@@ -117,11 +121,11 @@ def run_monte_carlo_simulation_locked_inputs(
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
                 savings = annual_saving * saving_factor
-                inv_return = assets * rand_return  # ✅ NOMINAL return only
+                inv_return = assets * rand_return
                 assets = max(0.0, assets + savings + inv_return)
             else:
                 withdrawal = max(0.0, living_exp - cpp_support)
-                inv_return = assets * rand_return  # ✅ NOMINAL return only
+                inv_return = assets * rand_return
                 assets = max(0.0, assets + inv_return - withdrawal + liquidation)
 
             sim_paths[s, idx] = assets
@@ -144,8 +148,6 @@ def run_monte_carlo_simulation_locked_inputs(
     }
 
 
-
-
 # 🔸 Track % of simulations depleted before checkpoints
 def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, checkpoints: list[int]):
     n_sims, n_years = sim_paths.shape
@@ -164,3 +166,4 @@ def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, chec
 
     probs["ever"] = ever_zero
     return probs
+
