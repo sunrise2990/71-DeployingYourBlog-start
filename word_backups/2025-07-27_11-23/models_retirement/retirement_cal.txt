@@ -109,7 +109,7 @@ def run_monte_carlo_simulation_locked_inputs(
         cum_infl = 1.0
 
         for idx, age in enumerate(ages):
-            rand_return = np.clip(np.random.normal(return_mean, return_stddev), -0.2, 0.12)
+            rand_return = np.random.normal(return_mean, return_std)
             rand_infl   = np.random.normal(inflation_mean, inflation_std)
             cum_infl *= (1 + rand_infl)
 
