@@ -117,5 +117,5 @@ def retirement():
         table_headers=table_headers,
         retirement_age=retirement_age,
         reset=reset,
-        chart_data=chart_data  # ✅ Add this to enable graph
+        chart_data=chart_data  # ✅ already defined safely
     )
