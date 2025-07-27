@@ -40,31 +40,31 @@
             </div>
             {% endfor %}
 
-                <!-- Return Std Dev Dropdown -->
-                <div class="col-md-3">
-                    <label class="form-label">Return Std Dev (%)</label>
-                    <select class="form-select" name="return_std">
-                        {% set std_options = [("Conservative (6%)", "6"), ("Balanced (10%)", "10"), ("Aggressive (15%)", "15")] %}
-                        {% for label, value in std_options %}
-                        <option value="{{ value }}" {% if request.form.get('return_std') == value|string %}selected{% endif %}>
-                            {{ label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
+            <!-- Return Std Dev Dropdown -->
+            <div class="col-md-3">
+                <label class="form-label">Return Std Dev (%)</label>
+                <select class="form-select" name="return_std">
+                    {% set std_options = [("Conservative (6%)", "6"), ("Balanced (10%)", "10"), ("Aggressive (15%)", "15")] %}
+                    {% for label, value in std_options %}
+                    <option value="{{ value }}" {% if return_std == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
 
-                <!-- Inflation Std Dev Dropdown -->
-                <div class="col-md-3">
-                    <label class="form-label">Inflation Std Dev (%)</label>
-                    <select class="form-select" name="inflation_std">
-                        {% set inf_options = [("Stable (0.5%)", "0.5"), ("Typical (1%)", "1.0"), ("Volatile (2%)", "2.0")] %}
-                        {% for label, value in inf_options %}
-                        <option value="{{ value }}" {% if request.form.get('inflation_std') == value|string %}selected{% endif %}>
-                            {{ label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
+            <!-- Inflation Std Dev Dropdown -->
+            <div class="col-md-3">
+                <label class="form-label">Inflation Std Dev (%)</label>
+                <select class="form-select" name="inflation_std">
+                    {% set inf_options = [("Stable (0.5%)", "0.5"), ("Typical (1%)", "1.0"), ("Volatile (2%)", "2.0")] %}
+                    {% for label, value in inf_options %}
+                    <option value="{{ value }}" {% if inflation_std == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
 
         <div class="text-center mt-4">

@@ -29,6 +29,9 @@ def retirement():
     reset = False
     retirement_age = None
 
+    # Store all form inputs for field repopulation
+    form_inputs = {}
+
     table_headers = [
         "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Living Exp. – Ret.",
         "Asset Liquidation", "Savings – Before Retire", "Asset",
@@ -42,27 +45,34 @@ def retirement():
         elif action == "calculate":
             try:
                 # 🧾 Parse Inputs
-                current_age = int(request.form.get("current_age") or 0)
-                retirement_age = int(request.form.get("retirement_age") or 0)
-                monthly_saving = float(request.form.get("annual_saving") or 0)
-                return_rate = float(request.form.get("return_rate") or 0) / 100
-                lifespan = int(request.form.get("lifespan") or 0)
-                monthly_living_expense = float(request.form.get("monthly_living_expense") or 0)
-                inflation_rate = float(request.form.get("inflation_rate") or 0) / 100
-                current_assets = float(request.form.get("current_assets") or 0)
-                saving_increase_rate = float(request.form.get("saving_increase_rate") or 0) / 100
+                def get_form_value(name, cast_func, default=0):
+                    value = request.form.get(name)
+                    form_inputs[name] = value  # Store for template
+                    return cast_func(value) if value else default
 
-                cpp_monthly = float(request.form.get("cpp_support") or 0)
-                cpp_from = int(request.form.get("cpp_from_age") or 0)
-                cpp_to = int(request.form.get("cpp_to_age") or 0)
+                current_age = get_form_value("current_age", int)
+                retirement_age = get_form_value("retirement_age", int)
+                monthly_saving = get_form_value("annual_saving", float)
+                return_rate = get_form_value("return_rate", float) / 100
+                lifespan = get_form_value("lifespan", int)
+                monthly_living_expense = get_form_value("monthly_living_expense", float)
+                inflation_rate = get_form_value("inflation_rate", float) / 100
+                current_assets = get_form_value("current_assets", float)
+                saving_increase_rate = get_form_value("saving_increase_rate", float) / 100
 
-                return_std = float(request.form.get("return_std") or 0) / 100
-                inflation_std = float(request.form.get("inflation_std") or 0) / 100
+                cpp_monthly = get_form_value("cpp_support", float)
+                cpp_from = get_form_value("cpp_from_age", int)
+                cpp_to = get_form_value("cpp_to_age", int)
+
+                return_std = get_form_value("return_std", float) / 100
+                inflation_std = get_form_value("inflation_std", float) / 100
 
                 asset_liquidation = []
-                for i in range(1, 3 + 1):
-                    amount = float(request.form.get(f"asset_liquidation_{i}") or 0)
-                    age = int(request.form.get(f"asset_liquidation_age_{i}") or 0)
+                for i in range(1, 4):
+                    amt_key = f"asset_liquidation_{i}"
+                    age_key = f"asset_liquidation_age_{i}"
+                    amount = get_form_value(amt_key, float)
+                    age = get_form_value(age_key, int)
                     if amount != 0 and age > 0:
                         asset_liquidation.append({"amount": amount, "age": age})
 
@@ -119,7 +129,7 @@ def retirement():
                     ]
                 }
 
-                # 🔄 Monte Carlo: Vary only return & inflation
+                # 🔄 Monte Carlo Simulation
                 mc_output = run_monte_carlo_simulation_locked_inputs(
                     current_age=current_age,
                     retirement_age=retirement_age,
@@ -171,6 +181,5 @@ def retirement():
         chart_data=chart_data,
         monte_carlo_data=monte_carlo_data,
         depletion_stats=depletion_stats,
-        return_std=request.form.get("return_std"),
-        inflation_std=request.form.get("inflation_std")
+        **form_inputs  # ✅ Pass all form values including return_std, inflation_std, etc.
     )
