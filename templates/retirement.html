@@ -11,9 +11,9 @@
             <div class="col-md-6">
                 <label for="portfolio_style" class="form-label">Portfolio Style</label>
                 <select class="form-select" id="portfolio_style" name="portfolio_style" required>
-                    <option value="aggressive">Aggressive (100% stocks, std 18%)</option>
-                    <option value="balanced" selected>Balanced (60/40), std 10%</option>
-                    <option value="conservative">Conservative (30/70) std 6%</option>
+                    <option value="aggressive" {% if portfolio_style == 'aggressive' %}selected{% endif %}>Aggressive (100% stocks, std 18%)</option>
+                    <option value="balanced" {% if portfolio_style == 'balanced' %}selected{% endif %}>Balanced (60/40), std 10%</option>
+                    <option value="conservative" {% if portfolio_style == 'conservative' %}selected{% endif %}>Conservative (30/70) std 6%</option>
                 </select>
             </div>
 
