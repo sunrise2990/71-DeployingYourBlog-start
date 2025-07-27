@@ -1,9 +1,6 @@
 from flask import Blueprint, request, render_template
+from models.retirement.retirement_calc import run_retirement_projection, run_monte_carlo_simulation
 import numpy as np
-from models.retirement.retirement_calc import (
-    run_retirement_projection,
-    run_monte_carlo_simulation_locked_inputs,
-)
 
 # Define blueprint
 projects_bp = Blueprint('projects', __name__, template_folder='templates')
@@ -25,7 +22,6 @@ def retirement():
     table = []
     chart_data = {}
     monte_carlo_data = {}
-    depletion_stats = {}
     reset = False
     retirement_age = None
 
@@ -86,6 +82,7 @@ def retirement():
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
+                # 📋 Format table for HTML display
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
@@ -101,6 +98,7 @@ def retirement():
                     f"{row.get('Withdrawal_Rate'):.1f}%" if row.get("Withdrawal_Rate") is not None else ""
                 ] for row in output["table"]]
 
+                # 📊 Chart data for Plotly
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
                     "Living_Exp_Retirement": [
@@ -116,38 +114,33 @@ def retirement():
                     ]
                 }
 
-                # 🔄 Monte Carlo: Vary only return & inflation
-                mc_output = run_monte_carlo_simulation_locked_inputs(
+                # 🔄 Monte Carlo Simulation (optional override with user input later)
+                mc_simulations = run_monte_carlo_simulation(
                     current_age=current_age,
                     retirement_age=retirement_age,
                     annual_saving=monthly_saving * 12,
                     saving_increase_rate=saving_increase_rate,
                     current_assets=current_assets,
                     return_mean=return_rate,
-                    return_std=0.10,               # Default 10% std dev for return
+                    return_stddev=0.10,  # Assume 10% standard deviation
                     annual_expense=monthly_living_expense * 12,
-                    inflation_mean=inflation_rate,
-                    inflation_std=0.01,            # Default 1% std dev for inflation
                     cpp_monthly=cpp_monthly,
                     cpp_start_age=cpp_from,
                     cpp_end_age=cpp_to,
                     asset_liquidations=asset_liquidation,
+                    inflation_rate=inflation_rate,
                     life_expectancy=lifespan,
                     num_simulations=1000
                 )
 
+                # Convert to numpy array to get percentile stats
+                mc_array = np.array(mc_simulations)
+                ages = list(range(current_age, lifespan + 1))
                 monte_carlo_data = {
-                    "Age": mc_output["ages"],
-                    "Percentile_10": mc_output["percentiles"]["p10"],
-                    "Percentile_50": mc_output["percentiles"]["p50"],
-                    "Percentile_90": mc_output["percentiles"]["p90"]
-                }
-
-                depletion_stats = {
-                    "age_75": mc_output["depletion_probs"].get(75, 0.0),
-                    "age_85": mc_output["depletion_probs"].get(85, 0.0),
-                    "age_90": mc_output["depletion_probs"].get(90, 0.0),
-                    "ever":   mc_output["depletion_probs"].get("ever", 0.0)
+                    "Age": ages,
+                    "Percentile_10": list(np.percentile(mc_array, 10, axis=0).round(0)),
+                    "Percentile_50": list(np.percentile(mc_array, 50, axis=0).round(0)),
+                    "Percentile_90": list(np.percentile(mc_array, 90, axis=0).round(0))
                 }
 
             except Exception as e:
@@ -156,7 +149,6 @@ def retirement():
                 table = []
                 chart_data = {}
                 monte_carlo_data = {}
-                depletion_stats = {}
 
     return render_template(
         "retirement.html",
@@ -166,8 +158,7 @@ def retirement():
         retirement_age=retirement_age,
         reset=reset,
         chart_data=chart_data,
-        monte_carlo_data=monte_carlo_data,
-        depletion_stats=depletion_stats
+        monte_carlo_data=monte_carlo_data
     )
 
 
