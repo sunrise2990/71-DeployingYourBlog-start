@@ -181,5 +181,5 @@ def retirement():
         chart_data=chart_data,
         monte_carlo_data=monte_carlo_data,
         depletion_stats=depletion_stats,
-        **form_inputs  # ✅ Pass all form values including return_std, inflation_std, etc.
+
     )
