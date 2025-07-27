@@ -78,91 +78,54 @@ def run_retirement_projection(
     }
 
 
-# 🔄 Monte Carlo — ONLY randomizes return and inflation
-def run_monte_carlo_simulation_locked_inputs(
-    *,
-    current_age: int,
-    retirement_age: int,
-    annual_saving: float,
-    saving_increase_rate: float,
-    current_assets: float,
-    return_mean: float,
-    return_std: float,
-    annual_expense: float,
-    inflation_mean: float,
-    inflation_std: float,
-    cpp_monthly: float,
-    cpp_start_age: int,
-    cpp_end_age: int,
-    asset_liquidations: list,
-    life_expectancy: int,
-    num_simulations: int = 1000,
+# 🔄 Monte Carlo simulation version
+def run_monte_carlo_simulation(
+    current_age,
+    retirement_age,
+    annual_saving,
+    saving_increase_rate,
+    current_assets,
+    return_mean,
+    return_stddev,
+    annual_expense,
+    cpp_monthly,
+    cpp_start_age,
+    cpp_end_age,
+    asset_liquidations,
+    inflation_rate,
+    life_expectancy,
+    num_simulations=1000
 ):
-    years = life_expectancy - current_age + 1
-    ages = np.arange(current_age, life_expectancy + 1)
+    sim_results = []
 
-    # Store simulation paths
-    sim_paths = np.zeros((num_simulations, years), dtype=float)
-
-    for s in range(num_simulations):
+    for sim in range(num_simulations):
         assets = current_assets
-        cum_infl = 1.0
+        sim_path = []
+        for age in range(current_age, life_expectancy + 1):
+            # Randomized return for this year
+            rand_return = np.random.normal(return_mean, return_stddev)
 
-        for idx, age in enumerate(ages):
-            rand_return = np.random.normal(return_mean, return_std)
-            rand_infl   = np.random.normal(inflation_mean, inflation_std)
-            cum_infl *= (1 + rand_infl)
-
-            living_exp = annual_expense * cum_infl
-            cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
+            inflation_factor = (1 + inflation_rate) ** (age - current_age)
+            living_exp = annual_expense * inflation_factor
+            cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0
+            net_expense = living_exp - cpp_support
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
-
             retired = age >= retirement_age
+
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
                 savings = annual_saving * saving_factor
                 inv_return = assets * rand_return
-                assets = max(0.0, assets + savings + inv_return)
+                assets += savings + inv_return
             else:
-                withdrawal = max(0.0, living_exp - cpp_support)
                 inv_return = assets * rand_return
-                assets = max(0.0, assets + inv_return - withdrawal + liquidation)
+                withdrawal = net_expense
+                assets += inv_return - withdrawal + liquidation
+                if assets < 0:
+                    assets = 0  # Cap at zero if depleted
 
-            sim_paths[s, idx] = assets
+            sim_path.append(round(assets))
 
-    p10 = np.percentile(sim_paths, 10, axis=0).round(0)
-    p50 = np.percentile(sim_paths, 50, axis=0).round(0)
-    p90 = np.percentile(sim_paths, 90, axis=0).round(0)
+        sim_results.append(sim_path)
 
-    probs = _compute_depletion_probabilities(sim_paths, current_age, [75, 85, 90])
-
-    return {
-        "ages": ages.tolist(),
-        "sim_paths": sim_paths,
-        "percentiles": {
-            "p10": p10.tolist(),
-            "p50": p50.tolist(),
-            "p90": p90.tolist(),
-        },
-        "depletion_probs": probs,
-    }
-
-
-def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, checkpoints: list[int]):
-    """Return probability of hitting zero on or before each checkpoint age, plus 'ever'."""
-    n_sims, n_years = sim_paths.shape
-    probs = {}
-    ever_zero = (sim_paths == 0).any(axis=1).mean()
-
-    for cp_age in checkpoints:
-        idx = cp_age - start_age
-        if idx < 0:
-            probs[cp_age] = 0.0
-            continue
-        if idx >= n_years:
-            idx = n_years - 1
-        depleted = (sim_paths[:, : idx + 1] == 0).any(axis=1).mean()
-        probs[cp_age] = depleted
-
-    probs["ever"] = ever_zero
-    return probs
+    return sim_results  # List of simulations, each a list of yearly asset values
