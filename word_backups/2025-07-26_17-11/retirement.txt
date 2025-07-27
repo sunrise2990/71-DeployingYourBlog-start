@@ -30,15 +30,13 @@
             {% for label, name, default in inputs %}
             <div class="col-md-3">
                 <label class="form-label">{{ label }}</label>
-                <<input type="number" name="{{ name }}" class="form-control"
-                    value="{{ request.form.get(name, default) }}" required>
+                <input type="number" name="{{ name }}" class="form-control" value="{{ default }}" required>
             </div>
             {% endfor %}
         </div>
 
         <div class="text-center mt-4">
             <button type="submit" class="btn btn-primary px-4">Calculate</button>
-            <button type="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
         </div>
     </form>
 
