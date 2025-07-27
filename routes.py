@@ -47,12 +47,10 @@ def retirement():
                 current_assets = float(request.form.get("current_assets") or 0)
                 saving_increase_rate = float(request.form.get("saving_increase_rate") or 0) / 100
 
-                # CPP & support income
                 cpp_monthly = float(request.form.get("cpp_support") or 0)
                 cpp_from = int(request.form.get("cpp_from_age") or 0)
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
 
-                # One-time asset liquidation entries
                 asset_liquidation = []
                 for i in range(1, 4):
                     amount = float(request.form.get(f"asset_liquidation_{i}") or 0)
@@ -79,14 +77,19 @@ def retirement():
 
                 result = output["final_assets"]
 
-                # 📋 Build table
+                # ✅ Fill Living_Exp_Retirement from year 1
+                for row in output["table"]:
+                    if not row.get("Living_Exp_Retirement"):
+                        row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
+
+                # 📋 Table
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
                     row.get("Retire"),
                     f"${row.get('Living_Exp', 0):,.0f}",
                     f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
-                    f"${row.get('Living_Exp_Retirement', 0):,.0f}" if row.get("Living_Exp_Retirement") else "",
+                    f"${row.get('Living_Exp_Retirement', 0):,.0f}",
                     f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
                     f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
                     f"${row.get('Asset', 0):,.0f}",
@@ -96,20 +99,11 @@ def retirement():
                     row.get("Withdrawal_Rate") or "",
                 ] for row in output["table"]]
 
-                # 📊 Prepare chart_data
+                # 📊 Chart data — removed Asset_Working
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
-                    "Living_Exp_Retirement": [
-                        row.get("Living_Exp_Retirement") or 0 for row in output["table"]
-                    ],
-                    "Asset_Working": [
-                        row.get("Asset_Working") if row.get("Asset_Working") is not None else 0
-                        for row in output["table"]
-                    ],
-                    "Asset_Retirement": [
-                        row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0
-                        for row in output["table"]
-                    ],
+                    "Living_Exp_Retirement": [row.get("Living_Exp_Retirement") or 0 for row in output["table"]],
+                    "Asset_Retirement": [row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0 for row in output["table"]],
                 }
 
             except Exception as e:
