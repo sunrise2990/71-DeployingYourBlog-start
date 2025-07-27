@@ -96,7 +96,7 @@ def retirement():
                     f"{row.get('Withdrawal_Rate'):.1f}%" if row.get("Withdrawal_Rate") is not None else ""
                 ] for row in output["table"]]
 
-                # 📊 Chart data for Plotly (include Withdrawal Rate)
+                # 📊 Chart data for Plotly (Assets, Expense, and Withdrawal Rate)
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
                     "Living_Exp_Retirement": [
@@ -127,5 +127,6 @@ def retirement():
         reset=reset,
         chart_data=chart_data
     )
+
 
 
