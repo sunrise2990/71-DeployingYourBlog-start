@@ -98,7 +98,7 @@ def run_monte_carlo_simulation_locked_inputs(
     num_simulations: int = 1000,
 ):
     # 🔸 Apply override to reduce unrealistic spread
-    return_std = 0.18  # cap volatility to stabilize median
+    return_std = 0.06  # cap volatility to stabilize median
 
     years = life_expectancy - current_age + 1
     ages = np.arange(current_age, life_expectancy + 1)

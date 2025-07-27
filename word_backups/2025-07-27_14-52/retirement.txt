@@ -1,0 +1,233 @@
+{% extends 'base.html' %}
+
+{% block title %}Retirement Planner{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="text-center mb-4">🧮 Retirement Planner</h2>
+
+    <form method="POST" action="{{ url_for('projects.retirement') }}">
+        <div class="row g-3">
+            {% set inputs = [
+                ("Current Age", "current_age", ""),
+                ("Retirement Age", "retirement_age", ""),
+                ("Monthly Savings ($)", "annual_saving", ""),
+                ("Annual Saving Increase Rate (%)", "saving_increase_rate", ""),
+                ("Expected Return Rate (%)", "return_rate", ""),
+                ("Expected Lifespan (Age)", "lifespan", ""),
+                ("Monthly Living Expense ($)", "monthly_living_expense", ""),
+                ("Inflation Rate (%)", "inflation_rate", ""),
+                ("Current Assets ($)", "current_assets", ""),
+                ("Living Expense Support / CPP (Monthly $)", "cpp_support", ""),
+                ("Extended Year From (Age)", "cpp_from_age", ""),
+                ("Extended Year To (Age)", "cpp_to_age", ""),
+                ("Asset Liquidation Amount 1", "asset_liquidation_1", ""),
+                ("When (Age)", "asset_liquidation_age_1", ""),
+                ("Asset Liquidation Amount 2", "asset_liquidation_2", ""),
+                ("When (Age)", "asset_liquidation_age_2", ""),
+                ("Asset Liquidation Amount 3", "asset_liquidation_3", ""),
+                ("When (Age)", "asset_liquidation_age_3", "")
+            ] %}
+
+            {% for label, name, _ in inputs %}
+            <div class="col-md-3">
+                <label class="form-label">{{ label }}</label>
+                <input type="number" name="{{ name }}"
+                       class="form-control"
+                       step="{% if 'rate' in name or 'inflation' in name or 'return' in name %}0.1{% else %}1{% endif %}"
+                       {% if 'cpp' in name or 'liquidation' in name %}min="-999999"{% endif %}
+                       value="{{ '0' if reset else request.form.get(name, '0') }}">
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="text-center mt-4">
+            <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
+            <button type="submit" name="action" value="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
+        </div>
+    </form>
+
+    {% if chart_data %}
+    <div class="mt-5">
+        <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
+        <div id="retirement-chart" style="height: 400px;"></div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script>
+            const age = {{ chart_data["Age"] | tojson }};
+            const assetRetirement = {{ chart_data["Asset_Retirement"] | tojson }};
+            const expense = {{ chart_data["Living_Exp_Retirement"] | tojson }};
+            const withdrawalRate = {{ chart_data["Withdrawal_Rate"] | tojson }};
+
+            const chart1 = [
+                {
+                    x: age,
+                    y: assetRetirement,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Asset – Retirement',
+                    line: { color: 'green' },
+                    yaxis: 'y1'
+                },
+                {
+                    x: age,
+                    y: expense,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Living Exp. – Retirement',
+                    line: { color: 'red' },
+                    yaxis: 'y1'
+                },
+                {
+                    x: age,
+                    y: withdrawalRate,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Withdrawal Rate',
+                    line: { color: 'gray', dash: 'dot' },
+                    yaxis: 'y2'
+                }
+            ];
+
+            const layout1 = {
+                margin: { t: 30 },
+                xaxis: { title: "Age" },
+                yaxis: {
+                    title: "Amount ($)",
+                    tickprefix: "$",
+                    separatethousands: true,
+                    side: 'left',
+                    showgrid: true
+                },
+                yaxis2: {
+                    title: "Withdrawal Rate (%)",
+                    overlaying: 'y',
+                    side: 'right',
+                    tickformat: '.1%',
+                    showgrid: false
+                },
+                legend: { orientation: "h", x: 0.1, y: -0.2 }
+            };
+
+            Plotly.newPlot("retirement-chart", chart1, layout1, { responsive: true });
+        </script>
+    </div>
+    {% endif %}
+
+    {% if monte_carlo_data %}
+    <div class="mt-5">
+        <h5 class="text-center mb-3">🎲 Monte Carlo Simulation: Retirement Asset Range</h5>
+        <div id="monte-carlo-chart" style="height: 400px;"></div>
+        <script>
+            const mc_age = {{ monte_carlo_data["Age"] | tojson }};
+            const mc_p10 = {{ monte_carlo_data["Percentile_10"] | tojson }};
+            const mc_p50 = {{ monte_carlo_data["Percentile_50"] | tojson }};
+            const mc_p90 = {{ monte_carlo_data["Percentile_90"] | tojson }};
+
+            const chart2 = [
+                {
+                    x: mc_age,
+                    y: mc_p10,
+                    fill: 'none',
+                    line: { color: 'rgba(0,100,200,0.2)', width: 0 },
+                    name: '10th Percentile',
+                    showlegend: false
+                },
+                {
+                    x: mc_age,
+                    y: mc_p90,
+                    fill: 'tonexty',
+                    fillcolor: 'rgba(0,100,200,0.2)',
+                    line: { color: 'rgba(0,100,200,0.2)', width: 0 },
+                    name: '90th Percentile',
+                    showlegend: false
+                },
+                {
+                    x: mc_age,
+                    y: mc_p50,
+                    mode: 'lines+markers',
+                    name: 'Median',
+                    line: { color: 'blue' }
+                }
+            ];
+
+            const layout2 = {
+                margin: { t: 30 },
+                xaxis: { title: "Age" },
+                yaxis: {
+                    title: "Projected Assets ($)",
+                    tickprefix: "$",
+                    separatethousands: true
+                },
+                legend: { orientation: "h", x: 0.1, y: -0.2 }
+            };
+
+            Plotly.newPlot("monte-carlo-chart", chart2, layout2, { responsive: true });
+        </script>
+    </div>
+    {% endif %}
+
+    {% if depletion_stats %}
+    <div class="mt-4">
+        <h6>⚠️ Depletion Risk Summary (Based on 1,000 Monte Carlo Simulations)</h6>
+        <ul class="mb-1">
+            <li><strong>{{ (depletion_stats.age_75 * 100) | round(1) }}%</strong> chance of running out of money by <strong>age 75</strong></li>
+            <li><strong>{{ (depletion_stats.age_85 * 100) | round(1) }}%</strong> chance by <strong>age 85</strong></li>
+            <li><strong>{{ (depletion_stats.age_90 * 100) | round(1) }}%</strong> chance by <strong>age 90</strong></li>
+
+        </ul>
+        <p class="text-muted small">
+            Assumes current savings, asset, CPP, expenses, and retirement age remain fixed.
+            Market returns and inflation are randomly varied in each simulation.
+        </p>
+    </div>
+    {% endif %}
+
+    {% if result %}
+    <div class="alert alert-success mt-5 text-center">
+        <h4>📈 Estimated Total Retirement Savings: <strong>${{ "{:,.2f}".format(result) }}</strong></h4>
+        <p>at retirement age {{ retirement_age }}</p>
+    </div>
+    {% endif %}
+
+    {% if table %}
+    <div class="table-responsive mt-5">
+        <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
+        <table class="table table-bordered table-sm text-center align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Age</th>
+                    <th>Year</th>
+                    <th>Retire?</th>
+                    <th>Living Exp.</th>
+                    <th>CPP / Extra Income</th>
+                    <th>Living Exp. – Ret.</th>
+                    <th>Asset Liquidation</th>
+                    <th>Savings – Before Retire</th>
+                    <th>Asset</th>
+                    <th>Asset – Retirement</th>
+                    <th>Investment Return</th>
+                    <th>Withdrawal Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table %}
+                <tr>
+                    {% for cell in row %}
+                    <td>
+                        {% if cell is number %}
+                            {{ "{:,.0f}".format(cell) if loop.index0 not in [11] else "{:.1f}%".format(cell * 100 if '.' in cell|string else cell) }}
+                        {% else %}
+                            {{ cell }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+
