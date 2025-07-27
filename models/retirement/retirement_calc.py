@@ -1,5 +1,3 @@
-# retirement_calc.py
-
 def run_retirement_projection(
     current_age,
     retirement_age,
@@ -30,16 +28,16 @@ def run_retirement_projection(
         living_exp = annual_expense * inflation_factor
         row["Living_Exp"] = round(living_exp)
 
-        # 🔸 CPP Support (applies whether retired or not)
+        # 🔸 CPP Support (always included in column)
         cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0
-        row["CPP_Support"] = round(cpp_support) if cpp_support else None
+        row["CPP_Support"] = round(cpp_support) if cpp_support > 0 else None
 
         # 🔸 Net expense if retired
         retired = age >= retirement_age
         net_expense = max(0, living_exp - cpp_support)
         row["Living_Exp_Retirement"] = round(net_expense) if retired else None
 
-        # 🔸 Asset liquidation
+        # 🔸 Asset liquidation (if scheduled at this age)
         liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
         row["Asset_Liquidation"] = round(liquidation) if liquidation > 0 else None
 
@@ -65,7 +63,9 @@ def run_retirement_projection(
             row["Asset_Working"] = None
             row["Asset_Retirement"] = round(assets)  # ✅ always same as Asset
             row["Investment_Return"] = round(inv_return)
-            row["Withdrawal_Rate"] = f"{(withdrawal / assets * 100):.1f}%" if assets > 0 else "N/A"
+            row["Withdrawal_Rate"] = (
+                f"{(withdrawal / assets * 100):.1f}%" if assets > 0 else "N/A"
+            )
 
         table.append(row)
         year += 1
