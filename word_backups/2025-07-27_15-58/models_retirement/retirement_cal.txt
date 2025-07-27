@@ -1,5 +1,4 @@
 import numpy as np
-from datetime import datetime
 
 # 🔹 Deterministic Retirement Projection
 def run_retirement_projection(
@@ -19,12 +18,12 @@ def run_retirement_projection(
 ):
     table = []
     assets = current_assets
-    start_year = datetime.now().year
+    year = 1
 
-    for i, age in enumerate(range(current_age, life_expectancy + 1)):
+    for age in range(current_age, life_expectancy + 1):
         row = {
             "Age": age,
-            "Year": start_year + i,
+            "Year": year,
             "Retire": "retire" if age == retirement_age else "",
         }
 
@@ -69,7 +68,7 @@ def run_retirement_projection(
             row["Withdrawal_Rate"] = round((withdrawal / assets * 100), 1) if assets > 0 else None
 
         table.append(row)
-
+        year += 1
 
     return {
         "final_assets": round(assets),
