@@ -36,7 +36,7 @@ def retirement():
             reset = True
         elif action == "calculate":
             try:
-                # 🔹 Base inputs
+                # 🧾 User Inputs
                 current_age = int(request.form.get("current_age") or 0)
                 retirement_age = int(request.form.get("retirement_age") or 0)
                 monthly_saving = float(request.form.get("annual_saving") or 0)
@@ -47,12 +47,12 @@ def retirement():
                 current_assets = float(request.form.get("current_assets") or 0)
                 saving_increase_rate = float(request.form.get("saving_increase_rate") or 0) / 100
 
-                # 🔹 CPP Support
+                # CPP
                 cpp_monthly = float(request.form.get("cpp_support") or 0)
                 cpp_from = int(request.form.get("cpp_from_age") or 0)
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
 
-                # 🔹 Asset Liquidation slots (allowing negative values)
+                # Liquidation
                 asset_liquidation = []
                 for i in range(1, 4):
                     amount = float(request.form.get(f"asset_liquidation_{i}") or 0)
@@ -60,7 +60,7 @@ def retirement():
                     if amount != 0 and age > 0:
                         asset_liquidation.append({"amount": amount, "age": age})
 
-                # 🧠 Run projection
+                # 🧠 Run projection logic
                 output = run_retirement_projection(
                     current_age=current_age,
                     retirement_age=retirement_age,
@@ -79,7 +79,7 @@ def retirement():
 
                 result = output["final_assets"]
 
-                # 🔢 Build display table
+                # 📋 Table formatting
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
@@ -96,12 +96,12 @@ def retirement():
                     row.get("Withdrawal_Rate") or "",
                 ] for row in output["table"]]
 
-                # 📊 Prepare chart data
+                # 📊 Chart data
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
                     "Living_Exp_Retirement": [row.get("Living_Exp_Retirement") or 0 for row in output["table"]],
-                    "Asset_Working": [row.get("Asset_Working") or None for row in output["table"]],
-                    "Asset_Retirement": [row.get("Asset_Retirement") or None for row in output["table"]],
+                    "Asset_Working": [row.get("Asset_Working") if row.get("Asset_Working") is not None else 0 for row in output["table"]],
+                    "Asset_Retirement": [row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0 for row in output["table"]],
                 }
 
             except Exception as e:
@@ -117,5 +117,5 @@ def retirement():
         table_headers=table_headers,
         retirement_age=retirement_age,
         reset=reset,
-        chart_data=chart_data  # ✅ already defined safely
+        chart_data=chart_data
     )

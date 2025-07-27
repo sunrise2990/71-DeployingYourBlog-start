@@ -58,6 +58,11 @@
             const assetRetirement = {{ chart_data["Asset_Retirement"] | safe }};
             const expense = {{ chart_data["Living_Exp_Retirement"] | safe }};
 
+            console.log("Age:", age);
+            console.log("Asset – Working:", assetWorking);
+            console.log("Asset – Retirement:", assetRetirement);
+            console.log("Living Exp – Retirement:", expense);
+
             const data = [
                 {
                     x: age,
@@ -92,7 +97,11 @@
                 legend: { orientation: "h", x: 0.1, y: -0.2 }
             };
 
-            Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
+            if (age.length > 0 && assetWorking.some(v => v !== 0 || v !== null)) {
+                Plotly.newPlot("retirement-chart", data, layout, { responsive: true });
+            } else {
+                document.getElementById("retirement-chart").innerText = "No chart data to display.";
+            }
         </script>
     </div>
     {% endif %}
@@ -145,6 +154,7 @@
     {% endif %}
 </div>
 {% endblock %}
+
 
 
 
