@@ -113,7 +113,7 @@ def run_monte_carlo_simulation_locked_inputs(
             rand_infl = np.random.normal(inflation_mean, inflation_std)
 
             # Inflation-adjusted (real) return
-            real_return = np.clip(((1 + rand_return) / (1 + rand_infl)) - 1, -0.2, 0.15)
+            real_return = np.clip(((1 + rand_return) / (1 + rand_infl)) - 1, -0.15, 0.10)
 
             living_exp = annual_expense * cum_infl
             cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
