@@ -51,7 +51,7 @@ def retirement():
                 cpp_to = int(request.form.get("cpp_to_age") or 0)
 
                 asset_liquidation = []
-                for i in range(1, 4):
+                for i in range(1, 3 + 1):
                     amount = float(request.form.get(f"asset_liquidation_{i}") or 0)
                     age = int(request.form.get(f"asset_liquidation_age_{i}") or 0)
                     if amount != 0 and age > 0:
@@ -80,7 +80,7 @@ def retirement():
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
-                # 📋 Format table for HTML
+                # 📋 Format table for HTML display
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
@@ -96,7 +96,7 @@ def retirement():
                     f"{row.get('Withdrawal_Rate'):.1f}%" if row.get("Withdrawal_Rate") is not None else ""
                 ] for row in output["table"]]
 
-                # 📊 Chart data for Plotly (Assets, Expense, and Withdrawal Rate)
+                # 📊 Chart data for Plotly
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
                     "Living_Exp_Retirement": [
@@ -127,6 +127,7 @@ def retirement():
         reset=reset,
         chart_data=chart_data
     )
+
 
 
 

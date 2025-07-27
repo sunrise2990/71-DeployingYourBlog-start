@@ -52,7 +52,7 @@ def run_retirement_projection(
             row["Savings"] = round(savings)
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
-            row["Investment_Return"] = return_rate
+            row["Investment_Return"] = round(inv_return)
             row["Withdrawal_Rate"] = None
 
         else:
@@ -64,15 +64,14 @@ def run_retirement_projection(
             row["Savings"] = None
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
-            row["Investment_Return"] = return_rate
+            row["Investment_Return"] = round(inv_return)
             row["Withdrawal_Rate"] = round((withdrawal / assets * 100), 1) if assets > 0 else None
 
         table.append(row)
         year += 1
 
     return {
-        "final_assets": assets,
+        "final_assets": round(assets),
         "table": table
     }
-
 

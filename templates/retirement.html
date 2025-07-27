@@ -102,7 +102,7 @@
                     title: "Withdrawal Rate (%)",
                     overlaying: 'y',
                     side: 'right',
-                    tickformat: '.1f',
+                    tickformat: '.1%',
                     showgrid: false
                 },
                 legend: { orientation: "h", x: 0.1, y: -0.2 }
@@ -150,7 +150,7 @@
                     {% for cell in row %}
                     <td>
                         {% if cell is number %}
-                            {{ "{:,.0f}".format(cell) if loop.index0 not in [10, 11] else cell }}
+                            {{ "{:,.0f}".format(cell) if loop.index0 not in [11] else "{:.1f}%".format(cell * 100 if '.' in cell|string else cell) }}
                         {% else %}
                             {{ cell }}
                         {% endif %}
@@ -164,7 +164,6 @@
     {% endif %}
 </div>
 {% endblock %}
-
 
 
 
