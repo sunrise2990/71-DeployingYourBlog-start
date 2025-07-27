@@ -81,7 +81,7 @@ def retirement():
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
-                # 📋 Build table with % formatting
+                # 📋 Build table with % formatting for returns and withdrawal rate
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
@@ -94,10 +94,10 @@ def retirement():
                     f"${row.get('Asset', 0):,.0f}",
                     f"${row.get('Asset_Retirement', 0):,.0f}" if row.get("Asset_Retirement") else "",
                     f"{row.get('Investment_Return')*100:.1f}%" if row.get("Investment_Return") is not None else "",
-                    f"{row.get('Withdrawal_Rate'):.1f}%" if isinstance(row.get("Withdrawal_Rate"), (int, float)) else ""
+                    f"{row.get('Withdrawal_Rate'):.1f}%" if row.get("Withdrawal_Rate") is not None else ""
                 ] for row in output["table"]]
 
-                # 📊 Chart data (with withdrawal rate as a decimal)
+                # 📊 Chart data (only retirement period shown)
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
                     "Living_Exp_Retirement": [
@@ -107,12 +107,6 @@ def retirement():
                         row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0
                         for row in output["table"]
                     ],
-                    "Withdrawal_Rate": [
-                        float(row.get("Withdrawal_Rate", "0").replace("%", "")) / 100
-                        if row.get("Withdrawal_Rate") not in [None, "N/A"]
-                        else None
-                        for row in output["table"]
-                    ]
                 }
 
             except Exception as e:
