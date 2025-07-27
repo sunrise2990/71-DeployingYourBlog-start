@@ -26,8 +26,7 @@ def retirement():
     table_headers = [
         "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Living Exp. – Ret.",
         "Asset Liquidation", "Savings – Before Retire", "Asset",
-        "Asset – Working Years", "Asset – Retirement",
-        "Investment Return", "Withdrawal Rate"
+        "Asset – Retirement", "Investment Return", "Withdrawal Rate"
     ]
 
     if request.method == "POST":
@@ -77,12 +76,12 @@ def retirement():
 
                 result = output["final_assets"]
 
-                # ✅ Fill Living_Exp_Retirement from year 1
+                # ✅ Extend Living_Exp_Retirement from year 1
                 for row in output["table"]:
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
-                # 📋 Table
+                # 📋 Build table
                 table = [[
                     row.get("Age"),
                     row.get("Year"),
@@ -93,17 +92,21 @@ def retirement():
                     f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
                     f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
                     f"${row.get('Asset', 0):,.0f}",
-                    f"${row.get('Asset_Working', 0):,.0f}" if row.get("Asset_Working") else "",
                     f"${row.get('Asset_Retirement', 0):,.0f}" if row.get("Asset_Retirement") else "",
                     f"${row.get('Investment_Return', 0):,.0f}" if row.get("Investment_Return") else "",
                     row.get("Withdrawal_Rate") or "",
                 ] for row in output["table"]]
 
-                # 📊 Chart data — removed Asset_Working
+                # 📊 Chart data
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
-                    "Living_Exp_Retirement": [row.get("Living_Exp_Retirement") or 0 for row in output["table"]],
-                    "Asset_Retirement": [row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0 for row in output["table"]],
+                    "Living_Exp_Retirement": [
+                        row.get("Living_Exp_Retirement") or 0 for row in output["table"]
+                    ],
+                    "Asset_Retirement": [
+                        row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0
+                        for row in output["table"]
+                    ],
                 }
 
             except Exception as e:
