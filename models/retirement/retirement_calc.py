@@ -34,7 +34,7 @@ def run_retirement_projection(
         row["Living_Exp"] = round(living_exp)
 
         # 🔸 CPP Support
-        cpp_support = cpp_monthly * (1 + inflation_rate) ** (age - current_age) * 12 if cpp_start_age <= age <= cpp_end_age else 0
+        cpp_support = cpp_monthly * (1 + inflation_rate) ** (age - cpp_start_age) * 12 if cpp_start_age <= age <= cpp_end_age else 0
         row["CPP_Support"] = round(cpp_support) if cpp_support != 0 else None
 
         # 🔸 Net retirement expense
@@ -111,7 +111,8 @@ def run_monte_carlo_simulation_locked_inputs(
             cum_infl *= (1 + rand_infl)
 
             living_exp = annual_expense * cum_infl
-            cpp_support = cpp_monthly * cum_infl * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
+            cpp_support = cpp_monthly * (
+                        cum_infl / (1 + inflation_mean)) * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
             retired = age >= retirement_age
 
