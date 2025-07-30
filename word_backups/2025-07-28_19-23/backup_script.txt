@@ -52,11 +52,22 @@ if css_file.exists():
 else:
     print(f"⚠️ CSS file not found: {css_file}")
 
-# === STEP 5: Delete old folders, keeping 2 most recent ===
+# === STEP 5: Copy models/retirement/retirement_cal.py ===
+retirement_calc_path = Path("models/retirement/retirement_calc.py")
+retirement_backup_dir = backup_dir / "models_retirement"
+retirement_backup_dir.mkdir(parents=True, exist_ok=True)
+
+if retirement_calc_path.exists():
+    dst_file = retirement_backup_dir / "retirement_cal.txt"
+    shutil.copy2(retirement_calc_path, dst_file)
+    print(f"📁 Copied: {retirement_calc_path} → {dst_file}")
+else:
+    print(f"⚠️ File not found: {retirement_calc_path}")
+
+# === STEP 6: Delete old folders, keeping 2 most recent ===
 cutoff = datetime.now() - timedelta(days=N_DAYS)
 all_folders = [f for f in BACKUP_ROOT.iterdir() if f.is_dir()]
 
-# Sort folders by timestamp descending
 valid_folders = []
 for f in all_folders:
     try:
@@ -73,3 +84,4 @@ for i, (folder, folder_time) in enumerate(valid_folders):
     if i >= 2 and folder_time < cutoff:
         shutil.rmtree(folder)
         print(f"🗑️ Deleted old backup: {folder}")
+
