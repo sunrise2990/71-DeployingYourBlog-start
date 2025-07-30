@@ -34,7 +34,7 @@ def run_retirement_projection(
         row["Living_Exp"] = round(living_exp)
 
         # 🔸 CPP Support
-        cpp_support = cpp_monthly * 12 if cpp_start_age <= age <= cpp_end_age else 0
+        cpp_support = cpp_monthly * 12 * inflation_factor if cpp_start_age <= age <= cpp_end_age else 0
         row["CPP_Support"] = round(cpp_support) if cpp_support != 0 else None
 
         # 🔸 Net retirement expense
