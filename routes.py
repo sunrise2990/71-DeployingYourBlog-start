@@ -54,6 +54,7 @@ def retirement():
                 retirement_age = get_form_value("retirement_age", int)
                 monthly_saving = get_form_value("annual_saving", float)
                 return_rate = get_form_value("return_rate", float) / 100
+                return_rate_after = get_form_value("return_rate_after", float) / 100   # ✅ NEW
                 lifespan = get_form_value("lifespan", int)
                 monthly_living_expense = get_form_value("monthly_living_expense", float)
                 inflation_rate = get_form_value("inflation_rate", float) / 100
@@ -84,6 +85,7 @@ def retirement():
                     saving_increase_rate=saving_increase_rate,
                     current_assets=current_assets,
                     return_rate=return_rate,
+                    return_rate_after=return_rate_after,   # ✅ NEW
                     annual_expense=monthly_living_expense * 12,
                     cpp_monthly=cpp_monthly,
                     cpp_start_age=cpp_from,
@@ -181,6 +183,7 @@ def retirement():
         chart_data=chart_data,
         monte_carlo_data=monte_carlo_data,
         depletion_stats=depletion_stats,
-        return_std=request.form.get("return_std") or "8",           # 👈 default fallback
-        inflation_std=request.form.get("inflation_std") or "0.5"    # 👈 default fallback
+        return_std=request.form.get("return_std") or "8",
+        inflation_std=request.form.get("inflation_std") or "0.5"
     )
+
