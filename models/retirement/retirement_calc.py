@@ -8,8 +8,7 @@ def run_retirement_projection(
     annual_saving,
     saving_increase_rate,
     current_assets,
-    return_rate_before,
-    return_rate_after,
+    return_rate,
     annual_expense,
     cpp_monthly,
     cpp_start_age,
@@ -29,28 +28,28 @@ def run_retirement_projection(
             "Retire": "retire" if age == retirement_age else "",
         }
 
+        # 🔸 Inflation-adjusted expense
         inflation_factor = (1 + inflation_rate) ** (age - current_age)
         living_exp = annual_expense * inflation_factor
         row["Living_Exp"] = round(living_exp)
 
-        cpp_support = (
-            cpp_monthly * (1 + inflation_rate) ** (age - cpp_start_age) * 12
-            if cpp_start_age <= age <= cpp_end_age
-            else 0
-        )
+        # 🔸 CPP Support
+        cpp_support = cpp_monthly * (1 + inflation_rate) ** (age - cpp_start_age) * 12 if cpp_start_age <= age <= cpp_end_age else 0
         row["CPP_Support"] = round(cpp_support) if cpp_support != 0 else None
 
+        # 🔸 Net retirement expense
         retired = age >= retirement_age
         net_expense = living_exp - cpp_support
         row["Living_Exp_Retirement"] = round(net_expense) if retired else None
 
+        # 🔸 Asset Liquidation
         liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
         row["Asset_Liquidation"] = round(liquidation) if liquidation != 0 else None
 
         if not retired:
             saving_factor = (1 + saving_increase_rate) ** (age - current_age)
             savings = annual_saving * saving_factor
-            inv_return = assets * return_rate_before
+            inv_return = assets * return_rate
             assets += savings + inv_return
 
             row["Savings"] = round(savings)
@@ -58,9 +57,8 @@ def run_retirement_projection(
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = round(inv_return)
             row["Withdrawal_Rate"] = None
-            row["Effective_Return_Rate"] = return_rate_before * 100
         else:
-            inv_return = assets * return_rate_after
+            inv_return = assets * return_rate
             withdrawal = net_expense
             assets += inv_return - withdrawal + liquidation
 
@@ -69,9 +67,9 @@ def run_retirement_projection(
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = round(inv_return)
             row["Withdrawal_Rate"] = round((withdrawal / assets * 100), 1) if assets > 0 else None
-            row["Effective_Return_Rate"] = return_rate_after * 100
 
         table.append(row)
+
 
     return {
         "final_assets": round(assets),
@@ -79,7 +77,7 @@ def run_retirement_projection(
     }
 
 
-# 🔹 Monte Carlo Simulation with Pre/Post Retirement Return Rate Support
+# 🔹 Monte Carlo Simulation with realistic assumptions
 def run_monte_carlo_simulation_locked_inputs(
     *,
     current_age: int,
@@ -87,9 +85,8 @@ def run_monte_carlo_simulation_locked_inputs(
     annual_saving: float,
     saving_increase_rate: float,
     current_assets: float,
-    return_mean_pre: float,
-    return_mean_post: float,
-    return_std: float,
+    return_mean: float,
+    return_std: float,  # 🔸 now fully driven by dropdown
     annual_expense: float,
     inflation_mean: float,
     inflation_std: float,
@@ -100,12 +97,6 @@ def run_monte_carlo_simulation_locked_inputs(
     life_expectancy: int,
     num_simulations: int = 1000,
 ):
-    # 🔍 Sanity check to catch config bugs early
-    if return_std == 0:
-        raise ValueError("🚨 return_std cannot be zero. Check dropdown values or route logic.")
-    if return_mean_pre == 0 or return_mean_post == 0:
-        raise ValueError("🚨 return_rate_before or return_rate_after is zero. Check routes or form inputs.")
-
     years = life_expectancy - current_age + 1
     ages = np.arange(current_age, life_expectancy + 1)
     sim_paths = np.zeros((num_simulations, years), dtype=float)
@@ -115,16 +106,15 @@ def run_monte_carlo_simulation_locked_inputs(
         cum_infl = 1.0
 
         for idx, age in enumerate(ages):
-            retired = age >= retirement_age
-            mean_return = return_mean_post if retired else return_mean_pre
-            rand_return = np.random.normal(mean_return, return_std)
+            rand_return = np.random.normal(return_mean, return_std)
             rand_infl = np.random.normal(inflation_mean, inflation_std)
             cum_infl *= (1 + rand_infl)
 
             living_exp = annual_expense * cum_infl
             cpp_support = cpp_monthly * (
-                cum_infl / (1 + inflation_mean)) * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
+                        cum_infl / (1 + inflation_mean)) * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
+            retired = age >= retirement_age
 
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
@@ -156,7 +146,7 @@ def run_monte_carlo_simulation_locked_inputs(
     }
 
 
-# 🔸 Track % of Simulations Depleted
+# 🔸 Track % of simulations depleted before checkpoints
 def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, checkpoints: list[int]):
     n_sims, n_years = sim_paths.shape
     probs = {}
@@ -174,5 +164,3 @@ def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, chec
 
     probs["ever"] = ever_zero
     return probs
-
-

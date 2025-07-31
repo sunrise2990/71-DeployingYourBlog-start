@@ -13,8 +13,7 @@
                 ("Retirement Age", "retirement_age", ""),
                 ("Monthly Savings ($)", "annual_saving", ""),
                 ("Annual Saving Increase Rate (%)", "saving_increase_rate", ""),
-                ("Expected Return Rate (Before Retirement) (%)", "return_rate_before", ""),
-                ("Investment Return (After Retirement) (%)", "return_rate_after", ""),
+                ("Expected Return Rate (%)", "return_rate", ""),
                 ("Expected Lifespan (Age)", "lifespan", ""),
                 ("Monthly Living Expense ($)", "monthly_living_expense", ""),
                 ("Inflation Rate (%)", "inflation_rate", ""),
@@ -41,29 +40,32 @@
             </div>
             {% endfor %}
 
-            <div class="col-md-3">
-                <label class="form-label">Return Std Dev (%)</label>
-                <select class="form-select" name="return_std">
-                    {% set std_options = [("Conservative (8%)", "8"), ("Balanced (12%)", "12"), ("Aggressive (18%)", "18")] %}
-                    {% for label, value in std_options %}
-                    <option value="{{ value }}" {% if return_std == value %}selected{% endif %}>
-                        {{ label }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
+        <!-- Return Std Dev Dropdown -->
+        <div class="col-md-3">
+            <label class="form-label">Return Std Dev (%)</label>
+            <select class="form-select" name="return_std">
+                {% set std_options = [("Conservative (8%)", "8"), ("Balanced (12%)", "12"), ("Aggressive (18%)", "18")] %}
+                {% for label, value in std_options %}
+                <option value="{{ value }}" {% if return_std == value %}selected{% endif %}>
+                    {{ label }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
 
-            <div class="col-md-3">
-                <label class="form-label">Inflation Std Dev (%)</label>
-                <select class="form-select" name="inflation_std">
-                    {% set inf_options = [("Stable (0.5%)", "0.5"), ("Typical (1%)", "1.0"), ("Volatile (2%)", "2.0")] %}
-                    {% for label, value in inf_options %}
-                    <option value="{{ value }}" {% if inflation_std == value %}selected{% endif %}>
-                        {{ label }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
+        <!-- Inflation Std Dev Dropdown -->
+        <div class="col-md-3">
+            <label class="form-label">Inflation Std Dev (%)</label>
+            <select class="form-select" name="inflation_std">
+                {% set inf_options = [("Stable (0.5%)", "0.5"), ("Typical (1%)", "1.0"), ("Volatile (2%)", "2.0")] %}
+                {% for label, value in inf_options %}
+                <option value="{{ value }}" {% if inflation_std == value %}selected{% endif %}>
+                    {{ label }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
         </div>
 
         <div class="text-center mt-4">
@@ -73,10 +75,12 @@
     </form>
 
     {% if result %}
-    <div class="alert alert-info mt-5 text-center">
-        <h5>💰 Estimated Total Retirement Savings (at Estate): <strong>${{ "{:,.0f}".format(result) }}</strong></h5>
+    <div class="alert alert-success mt-5 text-center">
+        <h4>📈 Estimated Final Asset Balance: <strong>${{ "{:,.0f}".format(result) }}</strong></h4>
+        <p>assuming retirement at age {{ retirement_age }}</p>
     </div>
     {% endif %}
+
 
     {% if chart_data %}
     <div class="mt-5">
@@ -212,6 +216,8 @@
     </div>
     {% endif %}
 
+
+
     {% if table %}
     <div class="table-responsive mt-5">
         <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
@@ -229,23 +235,18 @@
                     <th>Asset</th>
                     <th>Asset – Retirement</th>
                     <th>Investment Return</th>
-                    <th>Return Rate</th>
                     <th>Withdrawal Rate</th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in table %}
                 <tr>
-                    {% for key, val in row.items() %}
+                    {% for cell in row %}
                     <td>
-                        {% if val is number %}
-                            {% if key == 'Withdrawal_Rate' or key == 'Return_Rate' %}
-                                {{ "{:.1f}%".format(val) }}
-                            {% else %}
-                                {{ "{:,.0f}".format(val) }}
-                            {% endif %}
+                        {% if cell is number %}
+                            {{ "{:,.0f}".format(cell) if loop.index0 not in [11] else "{:.1f}%".format(cell * 100 if '.' in cell|string else cell) }}
                         {% else %}
-                            {{ val }}
+                            {{ cell }}
                         {% endif %}
                     </td>
                     {% endfor %}
