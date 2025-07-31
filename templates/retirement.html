@@ -242,7 +242,11 @@
                     {% for cell in row %}
                     <td>
                         {% if cell is number %}
-                            {{ "{:,.0f}".format(cell) if loop.index0 not in [11, 12] else "{:.1f}%".format(cell * 100 if '.' in cell|string else cell) }}
+                            {% if loop.index0 in [11, 12] %}
+                                {{ "{:.1f}%".format(cell) }}
+                            {% else %}
+                                {{ "{:,.0f}".format(cell) }}
+                            {% endif %}
                         {% else %}
                             {{ cell }}
                         {% endif %}
