@@ -243,7 +243,7 @@
     <td>
         {% if cell is number %}
             {% if loop.index0 == 11 %} {# Return Rate column #}
-                {{ "{}%".format(cell) }}  {# Just append % without dividing #}
+                {{ "{}%".format(cell) }}
             {% elif loop.index0 == 12 %} {# Withdrawal Rate column #}
                 {{ "{:.1f}%".format(cell) }}
             {% else %}
