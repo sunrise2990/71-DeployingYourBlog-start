@@ -136,6 +136,7 @@ def retirement():
                     saving_increase_rate=saving_increase_rate,
                     current_assets=current_assets,
                     return_mean=return_rate,
+                    return_mean_after=return_rate_after,
                     return_std=return_std,
                     annual_expense=monthly_living_expense * 12,
                     inflation_mean=inflation_rate,
