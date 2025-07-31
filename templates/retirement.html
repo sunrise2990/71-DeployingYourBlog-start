@@ -243,9 +243,9 @@
                     <td>
                         {% if cell is number %}
                             {% if loop.index0 in [11, 12] %}
-                                {{ "{:.1f}%".format(cell) }}
+                              {{ "{:.1f}%".format(cell * 100) }}
                             {% else %}
-                                {{ "{:,.0f}".format(cell) }}
+                              {{ "{:,.0f}".format(cell) }}
                             {% endif %}
                         {% else %}
                             {{ cell }}

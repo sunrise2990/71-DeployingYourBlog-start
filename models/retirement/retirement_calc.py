@@ -61,7 +61,7 @@ def run_retirement_projection(
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = round(inv_return)
-            row["Return_Rate"] = applied_return_rate * 100 # Add return rate per row
+            row["Return_Rate"] = applied_return_rate # Add return rate per row
             row["Withdrawal_Rate"] = None
         else:
             inv_return = assets * applied_return_rate
