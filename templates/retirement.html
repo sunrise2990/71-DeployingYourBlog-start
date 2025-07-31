@@ -237,23 +237,23 @@
                 </tr>
             </thead>
             <tbody>
-                {% for row in table %}
-                <tr>
-                    {% for cell in row %}
-                    <td>
-                        {% if cell is number %}
-                          {% if loop.index0 in [11, 12] %}
-                            {{ "{:.1f}%".format(cell) }}
-                          {% else %}
-                            {{ "{:,.0f}".format(cell) }}
-                          {% endif %}
-                        {% else %}
-                          {{ cell }}
-                        {% endif %}
-                    </td>
-                    {% endfor %}
-                </tr>
-                {% endfor %}
+{% for row in table %}
+  <tr>
+    {% for cell in row %}
+      <td>
+        {% if cell is number %}
+          {% if loop.index0 in [11, 12] %}
+            {{ "{:.1f}%".format(cell) }}
+          {% else %}
+            {{ "{:,.0f}".format(cell) }}
+          {% endif %}
+        {% else %}
+          {{ cell }}
+        {% endif %}
+      </td>
+    {% endfor %}
+  </tr>
+{% endfor %}
             </tbody>
         </table>
     </div>
