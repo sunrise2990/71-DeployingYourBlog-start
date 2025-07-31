@@ -237,21 +237,23 @@
                 </tr>
             </thead>
             <tbody>
-            {% for row in table %}
-            <tr>
-              {% for col_name, cell in row.items() %}
-              <td>
-                {% if col_name == "Return Rate" %}
-                  {{ "{:.1f}%".format(cell * 100) }}
-                {% elif col_name == "Withdrawal Rate" %}
-                  {{ "{:.1f}%".format(cell) }}
-                {% else %}
-                  {{ "{:,.0f}".format(cell) if cell is number else cell }}
-                {% endif %}
-              </td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
+                {% for row in table %}
+                <tr>
+                    {% for cell in row %}
+                    <td>
+                        {% if cell is number %}
+                          {% if loop.index0 in [11, 12] %}
+                            {{ "{:.1f}%".format(cell) }}
+                          {% else %}
+                            {{ "{:,.0f}".format(cell) }}
+                          {% endif %}
+                        {% else %}
+                          {{ cell }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
