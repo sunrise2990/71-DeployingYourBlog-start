@@ -9,14 +9,14 @@ def run_retirement_projection(
     saving_increase_rate,
     current_assets,
     return_rate,
-    return_rate_after=None,
+    return_rate_after,  # ← No default needed if required
     annual_expense,
     cpp_monthly,
     cpp_start_age,
     cpp_end_age,
     asset_liquidations,
     inflation_rate,
-    life_expectancy,
+    life_expectancy
 ):
     table = []
     assets = current_assets
