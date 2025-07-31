@@ -215,44 +215,44 @@
     </div>
     {% endif %}
 
- {% if table %}
-<div class="table-responsive mt-5">
-    <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
-    <table class="table table-bordered table-sm text-center align-middle">
-        <thead class="table-light">
-            <tr>
-                <th>Age</th>
-                <th>Year</th>
-                <th>Retire?</th>
-                <th>Living Exp.</th>
-                <th>CPP / Extra Income</th>
-                <th>Living Exp. – Ret.</th>
-                <th>Asset Liquidation</th>
-                <th>Savings – Before Retire</th>
-                <th>Asset</th>
-                <th>Asset – Retirement</th>
-                <th>Investment Return</th>
-                <th>Return Rate</th>
-                <th>Withdrawal Rate</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in table %}
-              <tr>
-                {% for col_name, cell in row.items() %}
-                  <td>
-                    {% if col_name in ["Return Rate", "Withdrawal Rate"] %}
-                      {{ "{:.1f}%".format(cell) }}
-                    {% else %}
-                      {{ "{:,.0f}".format(cell) if cell is number else cell }}
-                    {% endif %}
-                  </td>
+    {% if table %}
+    <div class="table-responsive mt-5">
+        <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
+        <table class="table table-bordered table-sm text-center align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Age</th>
+                    <th>Year</th>
+                    <th>Retire?</th>
+                    <th>Living Exp.</th>
+                    <th>CPP / Extra Income</th>
+                    <th>Living Exp. – Ret.</th>
+                    <th>Asset Liquidation</th>
+                    <th>Savings – Before Retire</th>
+                    <th>Asset</th>
+                    <th>Asset – Retirement</th>
+                    <th>Investment Return</th>
+                    <th>Return Rate</th>
+                    <th>Withdrawal Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table %}
+                <tr>
+                    {% for cell in row %}
+                    <td>
+                        {% if cell is number %}
+                            {{ "{:,.0f}".format(cell) if loop.index0 not in [11, 12] else "{:.1f}%".format(cell * 100 if '.' in cell|string else cell) }}
+                        {% else %}
+                            {{ cell }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
                 {% endfor %}
-              </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% endif %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
