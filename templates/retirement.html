@@ -242,10 +242,12 @@
     {% for cell in row %}
       <td>
 {% if cell is number %}
-{% if loop.index0 in [11, 12] %}
-  {{ "{}%".format(cell) }}
+{% if loop.index0 == 11 %}  {# Return Rate column #}
+    {{ "{}%".format(cell) }}  {# Just add % sign, no formatting #}
+{% elif loop.index0 == 12 %}  {# Withdrawal Rate column #}
+    {{ "{:.1f}%".format(cell) }}  {# Format as float percentage #}
 {% else %}
-  {{ "{:,.0f}".format(cell) }}
+    {{ "{:,.0f}".format(cell) }}
 {% endif %}
 {% else %}
   {{ cell }}
