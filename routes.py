@@ -34,7 +34,7 @@ def retirement():
     table_headers = [
         "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Living Exp. – Ret.",
         "Asset Liquidation", "Savings – Before Retire", "Asset",
-        "Asset – Retirement", "Investment Return", "Return Rate", "Withdrawal Rate"
+        "Asset – Retirement", "Investment Return", "Effective Return Rate", "Withdrawal Rate"
     ]
 
     if request.method == "POST":
@@ -75,7 +75,6 @@ def retirement():
                     if amount != 0 and age > 0:
                         asset_liquidation.append({"amount": amount, "age": age})
 
-                # 🧠 Run Deterministic Projection
                 output = run_retirement_projection(
                     current_age=current_age,
                     retirement_age=retirement_age,
@@ -111,33 +110,25 @@ def retirement():
                     f"${row.get('Asset', 0):,.0f}",
                     f"${row.get('Asset_Retirement', 0):,.0f}" if row.get("Asset_Retirement") else "",
                     f"${row.get('Investment_Return', 0):,.0f}" if row.get("Investment_Return") is not None else "",
-                    f"{row.get('Effective_Return_Rate'):.1f}%" if row.get("Effective_Return_Rate") is not None else "",
-                    f"{row.get('Withdrawal_Rate'):.1f}%" if row.get("Withdrawal_Rate") is not None else ""
+                    f"{row.get('Effective_Return_Rate'):.1%}" if row.get("Effective_Return_Rate") is not None else "",
+                    f"{row.get('Withdrawal_Rate'):.1%}" if row.get("Withdrawal_Rate") is not None else ""
                 ] for row in output["table"]]
 
                 chart_data = {
                     "Age": [row.get("Age") for row in output["table"]],
-                    "Living_Exp_Retirement": [
-                        row.get("Living_Exp_Retirement") or 0 for row in output["table"]
-                    ],
-                    "Asset_Retirement": [
-                        row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0
-                        for row in output["table"]
-                    ],
-                    "Withdrawal_Rate": [
-                        round(row.get("Withdrawal_Rate") / 100, 4) if row.get("Withdrawal_Rate") is not None else None
-                        for row in output["table"]
-                    ]
+                    "Living_Exp_Retirement": [row.get("Living_Exp_Retirement") or 0 for row in output["table"]],
+                    "Asset_Retirement": [row.get("Asset_Retirement") if row.get("Asset_Retirement") is not None else 0 for row in output["table"]],
+                    "Withdrawal_Rate": [round(row.get("Withdrawal_Rate") / 100, 4) if row.get("Withdrawal_Rate") is not None else None for row in output["table"]]
                 }
 
-                # 🎲 Monte Carlo Simulation
                 mc_output = run_monte_carlo_simulation_locked_inputs(
                     current_age=current_age,
                     retirement_age=retirement_age,
                     annual_saving=monthly_saving * 12,
                     saving_increase_rate=saving_increase_rate,
                     current_assets=current_assets,
-                    return_mean=return_rate_after,
+                    return_mean_pre=return_rate_before,
+                    return_mean_post=return_rate_after,
                     return_std=return_std,
                     annual_expense=monthly_living_expense * 12,
                     inflation_mean=inflation_rate,
@@ -185,4 +176,3 @@ def retirement():
         return_std=request.form.get("return_std") or "8",
         inflation_std=request.form.get("inflation_std") or "0.5"
     )
-
