@@ -100,6 +100,12 @@ def run_monte_carlo_simulation_locked_inputs(
     life_expectancy: int,
     num_simulations: int = 1000,
 ):
+    # 🔍 Sanity check to catch config bugs early
+    if return_std == 0:
+        raise ValueError("🚨 return_std cannot be zero. Check dropdown values or route logic.")
+    if return_mean_pre == 0 or return_mean_post == 0:
+        raise ValueError("🚨 return_rate_before or return_rate_after is zero. Check routes or form inputs.")
+
     years = life_expectancy - current_age + 1
     ages = np.arange(current_age, life_expectancy + 1)
     sim_paths = np.zeros((num_simulations, years), dtype=float)
@@ -151,7 +157,6 @@ def run_monte_carlo_simulation_locked_inputs(
 
 
 # 🔸 Track % of Simulations Depleted
-
 def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, checkpoints: list[int]):
     n_sims, n_years = sim_paths.shape
     probs = {}
@@ -169,4 +174,5 @@ def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, chec
 
     probs["ever"] = ever_zero
     return probs
+
 

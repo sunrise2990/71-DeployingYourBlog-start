@@ -73,9 +73,8 @@
     </form>
 
     {% if result %}
-    <div class="alert alert-success mt-5 text-center">
-        <h4>📈 Estimated Final Asset Balance: <strong>${{ "{:,.0f}".format(result) }}</strong></h4>
-        <p>assuming retirement at age {{ retirement_age }}</p>
+    <div class="alert alert-info mt-5 text-center">
+        <h5>💰 Estimated Total Retirement Savings (at Estate): <strong>${{ "{:,.0f}".format(result) }}</strong></h5>
     </div>
     {% endif %}
 
