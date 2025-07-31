@@ -74,14 +74,6 @@
         </div>
     </form>
 
-    {% if result %}
-    <div class="alert alert-success mt-5 text-center">
-        <h4>📈 Estimated Total Retirement Savings <small>(at estate)</small>: <strong>${{ "{:,.2f}".format(result) }}</strong></h4>
-        <p>at retirement age {{ retirement_age }}</p>
-    </div>
-    {% endif %}
-
-
     {% if chart_data %}
     <div class="mt-5">
         <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
@@ -216,7 +208,12 @@
     </div>
     {% endif %}
 
-
+    {% if result %}
+    <div class="alert alert-success mt-5 text-center">
+        <h4>📈 Estimated Total Retirement Savings: <strong>${{ "{:,.2f}".format(result) }}</strong></h4>
+        <p>at retirement age {{ retirement_age }}</p>
+    </div>
+    {% endif %}
 
     {% if table %}
     <div class="table-responsive mt-5">
