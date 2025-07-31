@@ -238,23 +238,23 @@
             </thead>
             <tbody>
 {% for row in table %}
-  <tr>
+<tr>
     {% for cell in row %}
-      <td>
-{% if cell is number %}
-{% if loop.index0 == 11 %}  {# Return Rate column #}
-    {{ "{}%".format(cell) }}  {# Just add % sign, no formatting #}
-{% elif loop.index0 == 12 %}  {# Withdrawal Rate column #}
-    {{ "{:.1f}%".format(cell) }}  {# Format as float percentage #}
-{% else %}
-    {{ "{:,.0f}".format(cell) }}
-{% endif %}
-{% else %}
-  {{ cell }}
-{% endif %}
-      </td>
+    <td>
+        {% if cell is number %}
+            {% if loop.index0 == 11 %} {# Return Rate column #}
+                {{ "{}%".format(cell) }}  {# Just append % without dividing #}
+            {% elif loop.index0 == 12 %} {# Withdrawal Rate column #}
+                {{ "{:.1f}%".format(cell) }}
+            {% else %}
+                {{ "{:,.0f}".format(cell) }}
+            {% endif %}
+        {% else %}
+            {{ cell }}
+        {% endif %}
+    </td>
     {% endfor %}
-  </tr>
+</tr>
 {% endfor %}
             </tbody>
         </table>
