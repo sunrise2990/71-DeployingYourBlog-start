@@ -9,7 +9,7 @@ def run_retirement_projection(
     saving_increase_rate,
     current_assets,
     return_rate,
-    return_rate_after,  # ← No default needed if required
+    return_rate_after,  # No default needed if required
     annual_expense,
     cpp_monthly,
     cpp_start_age,
@@ -47,20 +47,24 @@ def run_retirement_projection(
         liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
         row["Asset_Liquidation"] = round(liquidation) if liquidation != 0 else None
 
-        # 🔸 Asset updates (use original return_rate only for now)
+        # 🔸 Determine return rate based on retirement status
+        applied_return_rate = return_rate if age < retirement_age else return_rate_after
+
+        # 🔸 Asset updates
         if not retired:
             saving_factor = (1 + saving_increase_rate) ** (age - current_age)
             savings = annual_saving * saving_factor
-            inv_return = assets * return_rate
+            inv_return = assets * applied_return_rate
             assets += savings + inv_return
 
             row["Savings"] = round(savings)
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = round(inv_return)
+            row["Return_Rate"] = applied_return_rate  # Add return rate per row
             row["Withdrawal_Rate"] = None
         else:
-            inv_return = assets * return_rate
+            inv_return = assets * applied_return_rate
             withdrawal = net_expense
             assets += inv_return - withdrawal + liquidation
 
@@ -68,6 +72,7 @@ def run_retirement_projection(
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = round(inv_return)
+            row["Return_Rate"] = applied_return_rate  # Add return rate per row
             row["Withdrawal_Rate"] = round((withdrawal / assets * 100), 1) if assets > 0 else None
 
         table.append(row)
