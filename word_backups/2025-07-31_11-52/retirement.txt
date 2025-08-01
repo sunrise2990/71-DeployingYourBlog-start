@@ -41,19 +41,9 @@
             </div>
             {% endfor %}
 
-            <!-- Return Std Dev Dropdown with tooltip -->
+            <!-- Return Std Dev Dropdown -->
             <div class="col-md-3">
-                <label class="form-label"
-                       data-bs-toggle="tooltip"
-                       data-bs-placement="top"
-                       title="Standard deviation measures the variability of your investment returns, representing the level of risk or volatility.
-                - Conservative (8%): Lower volatility, steadier returns, less chance of large losses or gains. Suitable if you prefer stability.
-                - Balanced (12%): Moderate volatility, a balance between risk and reward. Suitable for typical investors aiming for growth with manageable risk.
-                - Aggressive (18%): Higher volatility, higher chance of large gains or losses. Suitable if you are willing to take more risk for potentially higher returns.
-                It impacts the Monte Carlo simulation results by affecting the range and likelihood of possible future outcomes.">
-                    Return Std Dev (%)
-                    <i class="bi bi-info-circle"></i>
-                </label>
+                <label class="form-label">Return Std Dev (%)</label>
                 <select class="form-select" name="return_std">
                     {% set std_options = [("Conservative (8%)", "8"), ("Balanced (12%)", "12"), ("Aggressive (18%)", "18")] %}
                     {% for label, value in std_options %}
@@ -83,16 +73,6 @@
             <button type="submit" name="action" value="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
         </div>
     </form>
-
-    <!-- Initialize Bootstrap Tooltips -->
-    <script>
-      var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-      var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
-      })
-    </script>
-
-
 
     {% if result %}
     <div class="alert alert-success mt-5 text-center">
@@ -258,21 +238,21 @@
             </thead>
             <tbody>
 {% for row in table %}
-        <tr>
-            {% for cell in row %}
-            <td>
-                {% if cell is number %}
-        {% if loop.index0 in [11, 12] %}
-          {{ "{:.1f}%".format(cell) }}
+<tr>
+    {% for cell in row %}
+    <td>
+        {% if cell is number %}
+{% if loop.index0 in [11, 12] %}
+  {{ "{:.1f}%".format(cell) }}
+{% else %}
+  {{ "{:,.0f}".format(cell) }}
+{% endif %}
         {% else %}
-          {{ "{:,.0f}".format(cell) }}
+            {{ cell }}
         {% endif %}
-                {% else %}
-                    {{ cell }}
-                {% endif %}
-            </td>
-            {% endfor %}
-        </tr>
+    </td>
+    {% endfor %}
+</tr>
 {% endfor %}
             </tbody>
         </table>
