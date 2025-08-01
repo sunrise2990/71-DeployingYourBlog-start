@@ -11093,3 +11093,11 @@ header.masthead.post-banner .post-heading .subheading {
     margin-top: 0.5rem;
     color: #ccc;
 }
+
+.tooltip-inner {
+  max-width: 320px;  /* increase max width from default 200px */
+  white-space: normal; /* allow text to wrap naturally */
+  padding: 10px 15px; /* add some padding for better readability */
+  font-size: 0.9rem; /* slightly smaller font for better fit */
+  line-height: 1.3;  /* improve line spacing */
+}
