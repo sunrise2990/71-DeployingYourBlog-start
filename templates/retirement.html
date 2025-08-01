@@ -91,7 +91,17 @@
 
             <!-- Inflation Std Dev Dropdown -->
             <div class="col-md-3">
-                <label class="form-label">Inflation Std Dev (%)</label>
+                <label class="form-label">
+                  Inflation Std Dev (%)
+                  <span
+                    tabindex="0"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-html="true"
+                    title="Represents variability in inflation. Higher values indicate more unpredictable inflation affecting your expenses."
+                    style="cursor: pointer; color: #0d6efd; font-weight: bold;"
+                  >&#9432;</span>
+                </label>
                 <select class="form-select" name="inflation_std">
                     {% set inf_options = [("Stable (0.5%)", "0.5"), ("Typical (1%)", "1.0"), ("Volatile (2%)", "2.0")] %}
                     {% for label, value in inf_options %}
@@ -101,7 +111,7 @@
                     {% endfor %}
                 </select>
             </div>
-        </div>
+
 
         <div class="text-center mt-4">
             <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
