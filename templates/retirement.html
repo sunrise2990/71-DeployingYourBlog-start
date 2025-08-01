@@ -43,7 +43,10 @@
 
             <!-- Return Std Dev Dropdown with tooltip -->
             <div class="col-md-3">
-                <label class="form-label"
+                <label class="form-label">
+                    Return Std Dev (%)
+                    <i class="bi bi-info-circle text-info ms-1"
+                       style="cursor: pointer;"
                        data-bs-toggle="tooltip"
                        data-bs-placement="top"
                        title="Standard deviation measures the variability of your investment returns, representing the level of risk or volatility.
@@ -51,8 +54,7 @@
                 - Balanced (12%): Moderate volatility, a balance between risk and reward. Suitable for typical investors aiming for growth with manageable risk.
                 - Aggressive (18%): Higher volatility, higher chance of large gains or losses. Suitable if you are willing to take more risk for potentially higher returns.
                 It impacts the Monte Carlo simulation results by affecting the range and likelihood of possible future outcomes.">
-                    Return Std Dev (%)
-                    <i class="bi bi-info-circle"></i>
+                    </i>
                 </label>
                 <select class="form-select" name="return_std">
                     {% set std_options = [("Conservative (8%)", "8"), ("Balanced (12%)", "12"), ("Aggressive (18%)", "18")] %}
