@@ -113,23 +113,6 @@
             </div>
 
 
-            <div class="col-md-6 mt-3">
-  <label for="scenario_name_input" class="form-label">
-    Scenario Name
-    <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Name your retirement scenario to save it for future use." style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
-  </label>
-  <input type="text" id="scenario_name_input" name="scenario_name" class="form-control" placeholder="Enter scenario name to save" />
-</div>
-
-<div class="text-center mt-4">
-    <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
-    <button type="submit" name="action" value="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
-    <button type="button" class="btn btn-success px-4 ms-2" onclick="triggerSaveScenario()">
-      Save Scenario
-    </button>
-</div>
-
-
         <div class="text-center mt-4">
             <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
             <button type="submit" name="action" value="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
@@ -333,52 +316,4 @@
     </div>
     {% endif %}
 </div>
-
-<script>
-  // Collect all form inputs into a JSON object
-  function collectFormInputs() {
-    const inputs = {};
-    const formElements = document.querySelectorAll('form input[type="number"], form input[type="text"], form select');
-
-    formElements.forEach(input => {
-      inputs[input.name] = input.value;
-    });
-
-    return inputs;
-  }
-
-  // Function to call your Flask API and save the scenario
-  function saveScenario(scenarioName, inputsJson) {
-    fetch('/scenarios/save', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ scenario_name: scenarioName, inputs_json: inputsJson })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.message) {
-        alert('Scenario saved successfully!');
-      } else if (data.error) {
-        alert('Error: ' + data.error);
-      }
-    })
-    .catch(error => alert('Network error: ' + error));
-  }
-
-  // Trigger Save Scenario on button click
-  function triggerSaveScenario() {
-    const scenarioName = document.getElementById('scenario_name_input').value.trim();
-
-    if (!scenarioName) {
-      alert('Please enter a scenario name before saving.');
-      return;
-    }
-
-    const inputsJson = collectFormInputs();
-    saveScenario(scenarioName, inputsJson);
-  }
-</script>
-
 {% endblock %}
