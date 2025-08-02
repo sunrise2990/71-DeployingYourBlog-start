@@ -6,7 +6,7 @@ from models.retirement.retirement_calc import (
     run_monte_carlo_simulation_locked_inputs,
 )
 from models import db
-from models.retirement import RetirementScenario  # adjust import path as needed
+from models.retirement.retirement_scenario import RetirementScenario # adjust import path as needed
 
 # Define main projects blueprint (existing)
 projects_bp = Blueprint('projects', __name__, template_folder='templates')
@@ -24,8 +24,6 @@ def leasing_pipeline():
 # Retirement Planner route
 @projects_bp.route("/retirement", methods=["GET", "POST"])
 def retirement():
-    # ... [Your full existing retirement route logic here unchanged] ...
-    # (Insert the full code you provided for this route)
     result = None
     table = []
     chart_data = {}
@@ -193,11 +191,7 @@ def retirement():
 
 # ===== New Scenario Blueprint and Routes =====
 
-from flask import jsonify
-from flask_login import login_required, current_user
-
 scenarios_bp = Blueprint("scenarios", __name__, url_prefix="/scenarios")
-
 
 @scenarios_bp.route("/save", methods=["POST"])
 @login_required
@@ -256,4 +250,5 @@ def load_scenario(scenario_id):
             "updated_at": scenario.updated_at.isoformat(),
         }
     ), 200
+
 

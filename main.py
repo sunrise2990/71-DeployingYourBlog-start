@@ -20,6 +20,7 @@ from routes import projects_bp
 from routes import scenarios_bp
 
 
+
 # 🔧 Initialize logging + environment
 logging.basicConfig(level=logging.DEBUG)
 load_dotenv()
@@ -100,17 +101,6 @@ class Comment(db.Model):
     post_id: Mapped[str] = mapped_column(Integer, db.ForeignKey("blog_posts.id"))
     parent_post = relationship("BlogPost", back_populates="comments")
 
-# ✅ Add RetirementScenario model
-class RetirementScenario(db.Model):
-    __tablename__ = "retirement_scenarios"
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    scenario_name = db.Column(db.String(100), nullable=False)
-    inputs_json = db.Column(JSON, nullable=False)  # Store form inputs as JSON
-    created_at = db.Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = db.Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-    user = db.relationship("User", backref="retirement_scenarios")
 
 # ✅ Create tables
 with app.app_context():
