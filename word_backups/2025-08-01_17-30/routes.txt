@@ -1,14 +1,11 @@
-from flask import Blueprint, request, render_template, jsonify
-from flask_login import login_required, current_user
+from flask import Blueprint, request, render_template
 import numpy as np
 from models.retirement.retirement_calc import (
     run_retirement_projection,
     run_monte_carlo_simulation_locked_inputs,
 )
-from models import db
-from models.retirement import RetirementScenario  # adjust import path as needed
 
-# Define main projects blueprint (existing)
+# Define blueprint
 projects_bp = Blueprint('projects', __name__, template_folder='templates')
 
 # Budget Reforecast route
@@ -24,8 +21,6 @@ def leasing_pipeline():
 # Retirement Planner route
 @projects_bp.route("/retirement", methods=["GET", "POST"])
 def retirement():
-    # ... [Your full existing retirement route logic here unchanged] ...
-    # (Insert the full code you provided for this route)
     result = None
     table = []
     chart_data = {}
@@ -189,71 +184,4 @@ def retirement():
         return_std=request.form.get("return_std") or "8",
         inflation_std=request.form.get("inflation_std") or "0.5"
     )
-
-
-# ===== New Scenario Blueprint and Routes =====
-
-from flask import jsonify
-from flask_login import login_required, current_user
-
-scenarios_bp = Blueprint("scenarios", __name__, url_prefix="/scenarios")
-
-
-@scenarios_bp.route("/save", methods=["POST"])
-@login_required
-def save_scenario():
-    data = request.get_json()
-    scenario_name = data.get("scenario_name")
-    inputs_json = data.get("inputs_json")
-
-    if not scenario_name or not inputs_json:
-        return jsonify({"error": "Missing scenario_name or inputs_json"}), 400
-
-    # Check if scenario with same name exists for user
-    existing = RetirementScenario.query.filter_by(
-        user_id=current_user.id, scenario_name=scenario_name
-    ).first()
-
-    if existing:
-        existing.inputs_json = inputs_json
-    else:
-        new_scenario = RetirementScenario(
-            user_id=current_user.id, scenario_name=scenario_name, inputs_json=inputs_json
-        )
-        db.session.add(new_scenario)
-
-    db.session.commit()
-    return jsonify({"message": "Scenario saved successfully."}), 200
-
-
-@scenarios_bp.route("/list", methods=["GET"])
-@login_required
-def list_scenarios():
-    scenarios = RetirementScenario.query.filter_by(user_id=current_user.id).all()
-    result = [
-        {
-            "id": s.id,
-            "scenario_name": s.scenario_name,
-            "created_at": s.created_at.isoformat(),
-            "updated_at": s.updated_at.isoformat(),
-        }
-        for s in scenarios
-    ]
-    return jsonify(result), 200
-
-
-@scenarios_bp.route("/load/<int:scenario_id>", methods=["GET"])
-@login_required
-def load_scenario(scenario_id):
-    scenario = RetirementScenario.query.filter_by(id=scenario_id, user_id=current_user.id).first()
-    if not scenario:
-        return jsonify({"error": "Scenario not found"}), 404
-    return jsonify(
-        {
-            "scenario_name": scenario.scenario_name,
-            "inputs_json": scenario.inputs_json,
-            "created_at": scenario.created_at.isoformat(),
-            "updated_at": scenario.updated_at.isoformat(),
-        }
-    ), 200
 
