@@ -114,27 +114,21 @@
 
 
             <div class="col-md-6 mt-3">
-  <label for="scenario_name_input" class="form-label">
-    Scenario Name
-    <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Name your retirement scenario to save it for future use." style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
-  </label>
-  <input type="text" id="scenario_name_input" name="scenario_name" class="form-control" placeholder="Enter scenario name to save" />
-</div>
-
-<div class="text-center mt-4">
-    <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
-    <button type="submit" name="action" value="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
-    <button type="button" class="btn btn-success px-4 ms-2" onclick="triggerSaveScenario()">
-      Save Scenario
-    </button>
-</div>
-
+          <label for="scenario_name_input" class="form-label">
+            Scenario Name
+            <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Name your retirement scenario to save it for future use." style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
+          </label>
+          <input type="text" id="scenario_name_input" name="scenario_name" class="form-control" placeholder="Enter scenario name to save" />
+        </div>
 
         <div class="text-center mt-4">
             <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
             <button type="submit" name="action" value="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
+            <button type="button" class="btn btn-success px-4 ms-2" onclick="triggerSaveScenario()">
+              Save Scenario
+            </button>
         </div>
-    </form>
+
 
     <!-- Initialize Bootstrap Tooltips -->
     <script>
