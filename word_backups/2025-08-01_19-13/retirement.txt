@@ -17,7 +17,6 @@
                 ("Post-Retire Return Rate (%)", "return_rate_after", "Expected average annual return on your investments after retirement. Usually lower due to conservative investment strategies."),
                 ("Expected Lifespan (Age)", "lifespan", "Your estimated age until which you expect to live. Important for planning how long your assets must last."),
                 ("Monthly Living Expense ($)", "monthly_living_expense", "Average monthly spending expected during retirement for living costs."),
-                ("Income Tax Rate (%)", "income_tax_rate", "Your effective income tax rate applied to income."),
                 ("Inflation Rate (%)", "inflation_rate", "Annual inflation rate used to adjust expenses and asset growth for future purchasing power."),
                 ("Current Assets ($)", "current_assets", "Total value of your current investment and savings assets."),
                 ("Living Expense Support / CPP (Monthly $)", "cpp_support", "Monthly income expected from CPP or other support reducing your living expenses during retirement."),
