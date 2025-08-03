@@ -35,7 +35,7 @@ def retirement():
     form_inputs = {}
 
     table_headers = [
-        "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Living Exp. – Ret.",
+        "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Income Tax Payment", "Living Exp. – Ret.",
         "Asset Liquidation", "Savings – Before Retire", "Asset",
         "Asset – Retirement", "Investment Return", "Return Rate", "Withdrawal Rate"
     ]
@@ -62,8 +62,7 @@ def retirement():
                 current_assets = get_form_value("current_assets", float)
                 saving_increase_rate = get_form_value("saving_increase_rate", float) / 100
 
-                # New variable: Income Tax Rate (%)
-                income_tax_rate = get_form_value("income_tax_rate", float) / 100
+                income_tax_rate = get_form_value("income_tax_rate", float) / 100  # Currently unused in calc
 
                 cpp_monthly = get_form_value("cpp_support", float)
                 cpp_from = get_form_value("cpp_from_age", int)
@@ -96,7 +95,7 @@ def retirement():
                     asset_liquidations=asset_liquidation,
                     inflation_rate=inflation_rate,
                     life_expectancy=lifespan
-                    # income_tax_rate not used yet
+                    # income_tax_rate could be added here if logic updated
                 )
 
                 result = output["final_assets"]
@@ -111,6 +110,7 @@ def retirement():
                     row.get("Retire"),
                     f"${row.get('Living_Exp', 0):,.0f}",
                     f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
+                    f"${row.get('Income_Tax_Payment', 0):,.0f}",  # New column added here
                     f"${row.get('Living_Exp_Retirement', 0):,.0f}",
                     f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
                     f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",

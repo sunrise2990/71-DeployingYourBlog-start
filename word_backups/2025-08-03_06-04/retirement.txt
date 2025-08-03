@@ -308,7 +308,6 @@
                     <th>Retire?</th>
                     <th>Living Exp.</th>
                     <th>CPP / Extra Income</th>
-                    <th>Income Tax Payment</th>  <!-- New header -->
                     <th>Living Exp. – Ret.</th>
                     <th>Asset Liquidation</th>
                     <th>Savings – Before Retire</th>

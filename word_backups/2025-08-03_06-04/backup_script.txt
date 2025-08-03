@@ -52,7 +52,7 @@ if css_file.exists():
 else:
     print(f"⚠️ CSS file not found: {css_file}")
 
-# === STEP 5: Copy models/retirement/retirement_cal.py ===
+# === STEP 5: Copy models/retirement/retirement_calc.py ===
 retirement_calc_path = Path("models/retirement/retirement_calc.py")
 retirement_backup_dir = backup_dir / "models_retirement"
 retirement_backup_dir.mkdir(parents=True, exist_ok=True)
@@ -64,7 +64,16 @@ if retirement_calc_path.exists():
 else:
     print(f"⚠️ File not found: {retirement_calc_path}")
 
-# === STEP 6: Delete old folders, keeping 2 most recent ===
+# === STEP 6: Copy entire migrations folder recursively ===
+migrations_src = Path("migrations")
+migrations_dst = backup_dir / "migrations"
+if migrations_src.exists() and migrations_src.is_dir():
+    shutil.copytree(migrations_src, migrations_dst)
+    print(f"📁 Recursively copied migrations folder → {migrations_dst}")
+else:
+    print(f"⚠️ Migrations folder not found: {migrations_src}")
+
+# === STEP 7: Delete old folders, keeping 2 most recent ===
 cutoff = datetime.now() - timedelta(days=N_DAYS)
 all_folders = [f for f in BACKUP_ROOT.iterdir() if f.is_dir()]
 
@@ -84,4 +93,5 @@ for i, (folder, folder_time) in enumerate(valid_folders):
     if i >= 2 and folder_time < cutoff:
         shutil.rmtree(folder)
         print(f"🗑️ Deleted old backup: {folder}")
+
 

@@ -35,12 +35,20 @@ def run_retirement_projection(
         row["Living_Exp"] = round(living_exp)
 
         # 🔸 CPP Support
-        cpp_support = cpp_monthly * (1 + inflation_rate) ** (age - cpp_start_age) * 12 if cpp_start_age <= age <= cpp_end_age else 0
+        cpp_support = (
+            cpp_monthly * (1 + inflation_rate) ** (age - cpp_start_age) * 12
+            if cpp_start_age <= age <= cpp_end_age
+            else 0
+        )
         row["CPP_Support"] = round(cpp_support) if cpp_support != 0 else None
 
-        # 🔸 Net retirement expense
+        # 🔸 Income Tax Payment = (living_exp + cpp_support) * 0.15
+        income_tax = (living_exp + cpp_support) * 0.15
+        row["Income_Tax_Payment"] = round(income_tax)
+
+        # 🔸 Net retirement expense = living_exp - cpp_support - income_tax
         retired = age >= retirement_age
-        net_expense = living_exp - cpp_support
+        net_expense = living_exp - cpp_support - income_tax
         row["Living_Exp_Retirement"] = round(net_expense) if retired else None
 
         # 🔸 Asset Liquidation
@@ -61,7 +69,7 @@ def run_retirement_projection(
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = round(inv_return)
-            row["Return_Rate"] = applied_return_rate *100 # Add return rate per row
+            row["Return_Rate"] = applied_return_rate * 100  # Add return rate per row
             row["Withdrawal_Rate"] = None
         else:
             inv_return = assets * applied_return_rate
@@ -72,7 +80,7 @@ def run_retirement_projection(
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
             row["Investment_Return"] = round(inv_return)
-            row["Return_Rate"] = applied_return_rate *100 # Add return rate per row
+            row["Return_Rate"] = applied_return_rate * 100  # Add return rate per row
             row["Withdrawal_Rate"] = round((withdrawal / assets * 100), 1) if assets > 0 else None
 
         table.append(row)
@@ -120,9 +128,11 @@ def run_monte_carlo_simulation_locked_inputs(
             cum_infl *= (1 + rand_infl)
 
             living_exp = annual_expense * cum_infl
-            cpp_support = cpp_monthly * (
-                cum_infl / (1 + inflation_mean)
-            ) * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
+            cpp_support = (
+                cpp_monthly * (cum_infl / (1 + inflation_mean)) * 12
+                if cpp_start_age <= age <= cpp_end_age
+                else 0.0
+            )
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
 
             if not retired:
