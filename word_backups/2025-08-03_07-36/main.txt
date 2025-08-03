@@ -8,7 +8,8 @@ from flask_ckeditor import CKEditor
 from flask_gravatar import Gravatar
 from flask_login import UserMixin, login_user, LoginManager, current_user, logout_user
 from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Integer, String, Text, func
+from sqlalchemy import Integer, String, Text, func, JSON, DateTime
+from sqlalchemy.sql import func
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
@@ -16,6 +17,8 @@ import os
 import logging
 from dotenv import load_dotenv
 from routes import projects_bp
+from routes import scenarios_bp
+
 
 
 # 🔧 Initialize logging + environment
@@ -35,6 +38,7 @@ app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY")
 db.init_app(app)
 migrate = Migrate(app, db)
 app.register_blueprint(projects_bp)
+app.register_blueprint(scenarios_bp)
 
 # ✅ Extensions
 ckeditor = CKEditor(app)
@@ -96,6 +100,7 @@ class Comment(db.Model):
     comment_author = relationship("User", back_populates="comments")
     post_id: Mapped[str] = mapped_column(Integer, db.ForeignKey("blog_posts.id"))
     parent_post = relationship("BlogPost", back_populates="comments")
+
 
 # ✅ Create tables
 with app.app_context():

@@ -62,7 +62,7 @@ def retirement():
                 current_assets = get_form_value("current_assets", float)
                 saving_increase_rate = get_form_value("saving_increase_rate", float) / 100
 
-                income_tax_rate = get_form_value("income_tax_rate", float) / 100  # Currently unused in calc
+                income_tax_rate = get_form_value("income_tax_rate", float) / 100
 
                 cpp_monthly = get_form_value("cpp_support", float)
                 cpp_from = get_form_value("cpp_from_age", int)
@@ -94,8 +94,8 @@ def retirement():
                     cpp_end_age=cpp_to,
                     asset_liquidations=asset_liquidation,
                     inflation_rate=inflation_rate,
-                    life_expectancy=lifespan
-                    # income_tax_rate could be added here if logic updated
+                    life_expectancy=lifespan,
+                    income_tax_rate = income_tax_rate
                 )
 
                 result = output["final_assets"]
@@ -153,6 +153,7 @@ def retirement():
                     cpp_end_age=cpp_to,
                     asset_liquidations=asset_liquidation,
                     life_expectancy=lifespan,
+                    income_tax_rate=income_tax_rate,
                     num_simulations=1000
                 )
 

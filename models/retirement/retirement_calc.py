@@ -16,7 +16,8 @@ def run_retirement_projection(
     cpp_end_age,
     asset_liquidations,
     inflation_rate,
-    life_expectancy
+    life_expectancy,
+    income_tax_rate=0.15,
 ):
     table = []
     assets = current_assets
@@ -44,7 +45,7 @@ def run_retirement_projection(
 
         # 🔸 Income Tax Payment = (living_exp + cpp_support) * 0.15
         retired = age >= retirement_age
-        income_tax = (living_exp + cpp_support) * 0.15 if retired else 0
+        income_tax = (living_exp + cpp_support) * income_tax_rate if retired else 0
         row["Income_Tax_Payment"] = round(income_tax)
 
         # 🔸 Net retirement expense = living_exp - cpp_support - income_tax
@@ -111,6 +112,7 @@ def run_monte_carlo_simulation_locked_inputs(
     asset_liquidations: list,
     life_expectancy: int,
     num_simulations: int = 1000,
+    income_tax_rate=0.15,
 ):
     years = life_expectancy - current_age + 1
     ages = np.arange(current_age, life_expectancy + 1)
@@ -137,7 +139,7 @@ def run_monte_carlo_simulation_locked_inputs(
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
 
             # Income tax payment applies only after retirement
-            income_tax = (living_exp + cpp_support) * 0.15 if retired else 0.0
+            income_tax = (living_exp + cpp_support) * income_tax_rate if retired else 0.0
 
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
