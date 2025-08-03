@@ -129,15 +129,10 @@ def run_monte_carlo_simulation_locked_inputs(
             cum_infl *= (1 + rand_infl)
 
             living_exp = annual_expense * cum_infl
-            cpp_support = (
-                cpp_monthly * (cum_infl / (1 + inflation_mean)) * 12
-                if cpp_start_age <= age <= cpp_end_age
-                else 0.0
-            )
+            cpp_support = cpp_monthly * (
+                cum_infl / (1 + inflation_mean)
+            ) * 12 if cpp_start_age <= age <= cpp_end_age else 0.0
             liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
-
-            # Calculate income tax payment only if retired
-            income_tax = (living_exp + cpp_support) * 0.15 if retired else 0.0
 
             if not retired:
                 saving_factor = (1 + saving_increase_rate) ** (age - current_age)
@@ -145,8 +140,7 @@ def run_monte_carlo_simulation_locked_inputs(
                 inv_return = assets * rand_return
                 assets = max(0.0, assets + savings + inv_return)
             else:
-                # Withdrawal includes tax payment now
-                withdrawal = max(0.0, living_exp - cpp_support + income_tax)
+                withdrawal = max(0.0, living_exp - cpp_support)
                 inv_return = assets * rand_return
                 assets = max(0.0, assets + inv_return - withdrawal + liquidation)
 
@@ -168,7 +162,6 @@ def run_monte_carlo_simulation_locked_inputs(
         },
         "depletion_probs": probs,
     }
-
 
 # 🔸 Track % of simulations depleted before checkpoints
 def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, checkpoints: list[int]):
