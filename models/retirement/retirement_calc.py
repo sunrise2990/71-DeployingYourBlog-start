@@ -43,12 +43,13 @@ def run_retirement_projection(
         row["CPP_Support"] = round(cpp_support) if cpp_support != 0 else None
 
         # 🔸 Income Tax Payment = (living_exp + cpp_support) * 0.15
-        income_tax = (living_exp + cpp_support) * 0.15
+        retired = age >= retirement_age
+        income_tax = (living_exp + cpp_support) * 0.15 if retired else 0
         row["Income_Tax_Payment"] = round(income_tax)
 
         # 🔸 Net retirement expense = living_exp - cpp_support - income_tax
         retired = age >= retirement_age
-        net_expense = living_exp - cpp_support - income_tax
+        net_expense = living_exp - cpp_support + income_tax
         row["Living_Exp_Retirement"] = round(net_expense) if retired else None
 
         # 🔸 Asset Liquidation
