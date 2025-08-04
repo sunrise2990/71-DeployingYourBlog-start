@@ -258,3 +258,18 @@ def load_scenario(scenario_id):
     ), 200
 
 
+# === New DELETE route to delete a scenario ===
+@scenarios_bp.route("/delete/<int:scenario_id>", methods=["DELETE"])
+@login_required
+def delete_scenario(scenario_id):
+    scenario = RetirementScenario.query.filter_by(id=scenario_id, user_id=current_user.id).first()
+    if not scenario:
+        return jsonify({"error": "Scenario not found"}), 404
+
+    try:
+        db.session.delete(scenario)
+        db.session.commit()
+        return jsonify({"message": f"Scenario '{scenario.scenario_name}' deleted successfully."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
