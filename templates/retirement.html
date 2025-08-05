@@ -434,6 +434,9 @@
           }
         });
 
+        // Set the dropdown selection explicitly to the loaded scenario
+        select.value = data.id || data.scenario_id || scenarioId;
+
         alert(`Loaded scenario: ${data.scenario_name}`);
       })
       .catch(err => alert('Failed to load scenario: ' + err.message));
@@ -469,6 +472,7 @@
     .catch(err => alert('Error deleting scenario: ' + err.message));
   }
 </script>
+
 
 
 
