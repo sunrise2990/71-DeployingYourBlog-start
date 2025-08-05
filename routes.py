@@ -181,6 +181,14 @@ def retirement():
 
     selected_scenario_id = request.form.get("load_scenario_select", "")
 
+    # Only query DB if user is logged in
+    if current_user.is_authenticated:
+        saved_scenarios = RetirementScenario.query.filter_by(
+            user_id=current_user.id
+        ).all()
+    else:
+        saved_scenarios = []
+
     return render_template(
         "retirement.html",
         result=result,
@@ -194,7 +202,7 @@ def retirement():
         return_std=request.form.get("return_std") or "8",
         inflation_std=request.form.get("inflation_std") or "0.5",
         selected_scenario_id=selected_scenario_id,
-        saved_scenarios = RetirementScenario.query.filter_by(user_id=current_user.id).all()
+        saved_scenarios = saved_scenarios
     )
 
 
