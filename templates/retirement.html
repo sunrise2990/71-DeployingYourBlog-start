@@ -404,21 +404,7 @@
 
 
 <script>
-  // Fetch saved scenarios on page load
-  document.addEventListener('DOMContentLoaded', () => {
-    fetch('/scenarios/list')
-      .then(response => response.json())
-      .then(data => {
-        const select = document.getElementById('load_scenario_select');
-        data.forEach(scenario => {
-          const option = document.createElement('option');
-          option.value = scenario.id;
-          option.textContent = scenario.scenario_name;
-          select.appendChild(option);
-        });
-      })
-      .catch(err => console.error('Error loading scenarios:', err));
-  });
+  // Removed the fetch on page load to prevent duplicate options
 
   function loadSelectedScenario() {
     const select = document.getElementById('load_scenario_select');
@@ -453,37 +439,37 @@
       .catch(err => alert('Failed to load scenario: ' + err.message));
   }
 
-function deleteSelectedScenario() {
-  const select = document.getElementById('load_scenario_select');
-  const scenarioId = select.value;
+  function deleteSelectedScenario() {
+    const select = document.getElementById('load_scenario_select');
+    const scenarioId = select.value;
 
-  if (!scenarioId) {
-    alert('Please select a scenario to delete.');
-    return;
+    if (!scenarioId) {
+      alert('Please select a scenario to delete.');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this scenario? This action cannot be undone.')) {
+      return;
+    }
+
+    fetch(`/scenarios/delete/${scenarioId}`, {
+      method: 'DELETE',
+    })
+    .then(response => {
+      if (!response.ok) throw new Error('Failed to delete scenario.');
+      return response.json();
+    })
+    .then(data => {
+      alert(data.message || 'Scenario deleted successfully.');
+      // Remove deleted option from select dropdown
+      const optionToRemove = select.querySelector(`option[value="${scenarioId}"]`);
+      if (optionToRemove) optionToRemove.remove();
+      select.value = ''; // reset selection
+    })
+    .catch(err => alert('Error deleting scenario: ' + err.message));
   }
-
-  if (!confirm('Are you sure you want to delete this scenario? This action cannot be undone.')) {
-    return;
-  }
-
-  fetch(`/scenarios/delete/${scenarioId}`, {
-    method: 'DELETE',
-  })
-  .then(response => {
-    if (!response.ok) throw new Error('Failed to delete scenario.');
-    return response.json();
-  })
-  .then(data => {
-    alert(data.message || 'Scenario deleted successfully.');
-    // Remove deleted option from select dropdown
-    const optionToRemove = select.querySelector(`option[value="${scenarioId}"]`);
-    if (optionToRemove) optionToRemove.remove();
-    select.value = ''; // reset selection
-  })
-  .catch(err => alert('Error deleting scenario: ' + err.message));
-}
-
 </script>
+
 
 
 {% endblock %}
