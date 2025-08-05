@@ -195,6 +195,15 @@ def retirement():
 
     selected_scenario_id = request.form.get("load_scenario_select", "")
 
+    # Build saved_scenarios based on login status
+    if current_user.is_authenticated:
+        saved_scenarios = RetirementScenario.query.filter_by(
+            user_id=current_user.id
+        ).all()
+    else:
+        saved_scenarios = []
+
+    # Render exactly once, using the local saved_scenarios
     return render_template(
         "retirement.html",
         result=result,
@@ -205,14 +214,12 @@ def retirement():
         chart_data=chart_data,
         monte_carlo_data=monte_carlo_data,
         depletion_stats=depletion_stats,
-        sensitivities=sensitivities,            # ← pass it here
+        sensitivities=sensitivities,
         return_std=request.form.get("return_std") or "8",
         inflation_std=request.form.get("inflation_std") or "0.5",
         selected_scenario_id=selected_scenario_id,
-        saved_scenarios=RetirementScenario.query.filter_by(user_id=current_user.id).all()
+        saved_scenarios=saved_scenarios
     )
-
-
 
 # ===== New Scenario Blueprint and Routes =====
 
