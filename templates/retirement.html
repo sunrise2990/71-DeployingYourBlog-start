@@ -355,50 +355,74 @@
     {% endif %}
 </div>
 
+
+<!-- 1) Expose login state from Flask -->
+<script type="text/javascript">
+  const isUserLoggedIn = {{ 'true' if current_user.is_authenticated else 'false' }};
+</script>
+
+<!-- 2) Initialize Bootstrap tooltips -->
 <script>
-  // Collect all form inputs into a JSON object
+  const tooltipTriggerList = Array.from(
+    document.querySelectorAll('[data-bs-toggle="tooltip"]')
+  );
+  tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+</script>
+
+<!-- 3) Collect inputs, call save endpoint, and guard by login -->
+<script>
+  // Gather all the form’s inputs into a JSON object
   function collectFormInputs() {
     const inputs = {};
-    const formElements = document.querySelectorAll('form input[type="number"], form input[type="text"], form select');
-
-    formElements.forEach(input => {
-      inputs[input.name] = input.value;
+    document.querySelectorAll(
+      'form input[type="number"], form input[type="text"], form select'
+    ).forEach(el => {
+      inputs[el.name] = el.value;
     });
-
     return inputs;
   }
 
-  // Function to call your Flask API and save the scenario
+  // POST to your Flask /scenarios/save endpoint
   function saveScenario(scenarioName, inputsJson) {
     fetch('/scenarios/save', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ scenario_name: scenarioName, inputs_json: inputsJson })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scenario_name: scenarioName,
+        inputs_json: inputsJson
+      })
     })
-    .then(response => response.json())
+    .then(r => r.json())
     .then(data => {
       if (data.message) {
         alert('Scenario saved successfully!');
-      } else if (data.error) {
-        alert('Error: ' + data.error);
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
       }
     })
-    .catch(error => alert('Network error: ' + error));
+    .catch(err => {
+      alert('Network error: ' + err);
+    });
   }
 
-  // Trigger Save Scenario on button click
+  // Entry point for Save Scenario button
   function triggerSaveScenario() {
-    const scenarioName = document.getElementById('scenario_name_input').value.trim();
+    // 1) Redirect anonymous users
+    if (!isUserLoggedIn) {
+      alert('You need to register or log in to save a scenario.');
+      return;
+    }
 
-    if (!scenarioName) {
+    // 2) Ensure they entered a name
+    const name = document.getElementById('scenario_name_input').value.trim();
+    if (!name) {
       alert('Please enter a scenario name before saving.');
       return;
     }
 
+    // 3) Collect the inputs and send
     const inputsJson = collectFormInputs();
-    saveScenario(scenarioName, inputsJson);
+    saveScenario(name, inputsJson);
   }
 </script>
 
