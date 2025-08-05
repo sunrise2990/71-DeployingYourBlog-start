@@ -114,130 +114,57 @@
             </div>
 
 
-       <!-- Scenario Name -->
-        <div class="col-md-6 mt-3">
+            <div class="col-md-6 mt-3">
           <label for="scenario_name_input" class="form-label">
             Scenario Name
-            <span
-              tabindex="0"
-              data-bs-toggle="tooltip"
-              data-bs-placement="top"
-              title="Name your retirement scenario to save it for future use."
-              style="cursor: pointer; color: #0d6efd; font-weight: bold;"
-            >&#9432;</span>
+            <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Name your retirement scenario to save it for future use." style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
           </label>
-          <input
-            type="text"
-            id="scenario_name_input"
-            name="scenario_name"
-            class="form-control"
-            placeholder="Enter scenario name to save"
-          />
+          <input type="text" id="scenario_name_input" name="scenario_name" class="form-control" placeholder="Enter scenario name to save" />
         </div>
 
-        <!-- Calculate / Reset / Save Scenario buttons -->
-        <div class="text-center mt-4 col-12">
-          <button
-            type="submit"
-            name="action"
-            value="calculate"
-            class="btn btn-primary px-4"
-          >
-            Calculate
-          </button>
-          <button
-            type="submit"
-            name="action"
-            value="reset"
-            class="btn btn-secondary px-4 ms-2"
-          >
-            Reset
-          </button>
-          <button
-            type="button"
-            class="btn btn-success px-4 ms-2"
-            onclick="triggerSaveScenario()"
-          >
-            Save Scenario
-          </button>
-          <!-- hidden submit for the “save” action -->
-          <button
-            type="submit"
-            name="action"
-            value="save"
-            id="hidden-save-btn"
-            style="display: none;"
-          ></button>
+        <div class="text-center mt-4">
+            <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
+            <button type="submit" name="action" value="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
+            <button type="button" class="btn btn-success px-4 ms-2" onclick="triggerSaveScenario()">
+              Save Scenario
+            </button>
         </div>
 
-        <!-- Load Saved Scenario -->
+
         <div class="col-md-6 mt-3">
           <label for="load_scenario_select" class="form-label">
             Load Saved Scenario
-            <span
-              tabindex="0"
-              data-bs-toggle="tooltip"
-              data-bs-placement="top"
-              title="Select a saved scenario to load."
-              style="cursor: pointer; color: #0d6efd; font-weight: bold;"
-            >&#9432;</span>
+            <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top"
+                  title="Select a saved scenario to load."
+                  style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
           </label>
-          <select
-            id="load_scenario_select"
-            name="load_scenario_select"
-            class="form-select"
-          >
+          <select id="load_scenario_select" name="load_scenario_select" class="form-select">
             <option value="">-- Select Scenario --</option>
             {% for scenario in saved_scenarios %}
-            <option
-              value="{{ scenario.id }}"
-              {% if selected_scenario_id|string == scenario.id|string %}selected{% endif %}
-            >
-              {{ scenario.scenario_name }}
-            </option>
+              <option value="{{ scenario.id }}" {% if selected_scenario_id|string == scenario.id|string %}selected{% endif %}>
+                {{ scenario.scenario_name }}
+              </option>
             {% endfor %}
           </select>
+
           <div class="mt-2">
-            <button
-              type="button"
-              class="btn btn-info me-2"
-              onclick="loadSelectedScenario()"
-            >
-              Load Scenario
-            </button>
-            <button
-              type="button"
-              class="btn btn-danger"
-              onclick="deleteSelectedScenario()"
-            >
-              Delete Scenario
-            </button>
+            <button type="button" class="btn btn-info me-2" onclick="loadSelectedScenario()">Load Scenario</button>
+            <button type="button" class="btn btn-danger" onclick="deleteSelectedScenario()">Delete Scenario</button>
           </div>
         </div>
 
-      </div> <!-- end .row.g-3 -->
-    </form>  <!-- **this CLOSES** your form -->
 
-    <!-- Initialize Bootstrap tooltips & Save helper -->
+
+
+    <!-- Initialize Bootstrap Tooltips -->
     <script>
-      // Bootstrap tooltip init
-      var tooltipTriggerList = [].slice.call(
-        document.querySelectorAll('[data-bs-toggle="tooltip"]')
-      );
-      var tooltipList = tooltipTriggerList.map(function (el) {
-        return new bootstrap.Tooltip(el);
-      });
-
-      // Programmatically trigger the hidden "save" submit
-      function triggerSaveScenario() {
-        const name = document.getElementById('scenario_name_input').value.trim();
-        if (!name) {
-          alert('Please enter a scenario name before saving.');
-          return;
-        }
-        document.getElementById('hidden-save-btn').click();
-      }
+      var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+      var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+      })
     </script>
+</div>
+
 
 
 
@@ -381,33 +308,6 @@
         </p>
     </div>
     {% endif %}
-
-
-    {% if sensitivities %}
-      <div class="mt-4">
-        <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered text-center">
-            <thead class="table-light">
-              <tr>
-                <th>Parameter</th>
-                <th>Elasticity<br/>(Δ Output / Output)% / (Δ Input / Input)%</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for var, coef in sensitivities.items() %}
-                <tr>
-                  <td>{{ var.replace('_',' ').title() }}</td>
-                  <td>{{ "%.2f"|format(coef) }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {% endif %}
-
-
 
     {% if table %}
     <div class="table-responsive mt-5">

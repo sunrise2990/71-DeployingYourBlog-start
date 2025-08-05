@@ -92,51 +92,6 @@ def run_retirement_projection(
         "table": table
     }
 
-
-# 🔹 Sensitivity Analysis Function
-def sensitivity_analysis(
-    baseline_params: dict,
-    variables: list[str],
-    delta: float = 0.01
-) -> dict[str, float]:
-    """
-    Perform one-at-a-time sensitivity analysis on the final assets output.
-
-    baseline_params: dict of parameters passed to run_retirement_projection
-    variables: list of parameter names in baseline_params to perturb
-    delta: fractional change to apply (e.g., 0.01 = 1%)
-
-    Returns a dict mapping variable name to sensitivity coefficient:
-      (% change in final assets) / (% change in input)
-    """
-    # Compute baseline output
-    base_output = run_retirement_projection(**baseline_params)
-    base_assets = base_output["final_assets"]
-
-    sensitivities = {}
-    for var in variables:
-        if var not in baseline_params:
-            continue
-        orig_val = baseline_params[var]
-        # Only perturb numeric inputs
-        if isinstance(orig_val, (int, float)):
-            # Create a perturbed parameter set
-            perturbed = baseline_params.copy()
-            perturbed[var] = orig_val * (1 + delta)
-
-            # Re-run projection
-            new_assets = run_retirement_projection(**perturbed)["final_assets"]
-
-            # Compute sensitivity: (Δoutput / output) / (Δinput / input)
-            if base_assets != 0:
-                sens = ((new_assets - base_assets) / base_assets) / delta
-            else:
-                sens = None
-            sensitivities[var] = sens
-
-    return sensitivities
-
-
 # 🔹 Monte Carlo Simulation (unchanged)
 def run_monte_carlo_simulation_locked_inputs(
     *,
