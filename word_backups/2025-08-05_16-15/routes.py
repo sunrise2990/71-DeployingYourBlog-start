@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 import numpy as np
 from models.retirement.retirement_calc import (
     run_retirement_projection,
-    run_monte_carlo_simulation_locked_inputs, sensitivity_analysis
+    run_monte_carlo_simulation_locked_inputs,
 )
 from models import db
 from models.retirement.retirement_scenario import RetirementScenario # adjust import path as needed
@@ -34,9 +34,6 @@ def retirement():
 
     form_inputs = {}
 
-    sensitivities = {}
-    baseline_params = {}
-
     table_headers = [
         "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Income Tax Payment", "Living Exp. – Ret.",
         "Asset Liquidation", "Savings – Before Retire", "Asset",
@@ -44,8 +41,6 @@ def retirement():
     ]
 
     if request.method == "POST":
-        sensitivities = sensitivity_analysis(baseline_params, [])
-
         action = request.form.get("action")
         if action == "reset":
             reset = True
@@ -207,8 +202,7 @@ def retirement():
         return_std=request.form.get("return_std") or "8",
         inflation_std=request.form.get("inflation_std") or "0.5",
         selected_scenario_id=selected_scenario_id,
-        saved_scenarios = saved_scenarios,
-        sensitivities=sensitivities
+        saved_scenarios = saved_scenarios
     )
 
 

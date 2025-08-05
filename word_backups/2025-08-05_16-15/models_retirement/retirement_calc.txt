@@ -92,17 +92,6 @@ def run_retirement_projection(
         "table": table
     }
 
-
-# 🔹 Sensitivity Analysis Stub (you can replace with real logic later)
-def sensitivity_analysis(baseline_params: dict, variables: list[str], delta: float = 0.01) -> dict[str, float]:
-    """
-    STUB: returns a fixed result so you can confirm it flows through.
-    """
-    # ignore inputs for now, just return something you’ll see in the UI
-    return {"TEST_PARAM": 123.45}
-
-
-
 # 🔹 Monte Carlo Simulation (unchanged)
 def run_monte_carlo_simulation_locked_inputs(
     *,

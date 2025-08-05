@@ -309,18 +309,6 @@
     </div>
     {% endif %}
 
-    {% if sensitivities %}
-      <div class="mt-4 border p-3">
-        <h5>🔍 Sensitivity Analysis (STUB)</h5>
-        <ul>
-          {% for var, coef in sensitivities.items() %}
-            <li><strong>{{ var }}</strong>: {{ coef }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-
-
     {% if table %}
     <div class="table-responsive mt-5">
         <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
