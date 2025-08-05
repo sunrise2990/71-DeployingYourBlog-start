@@ -179,6 +179,8 @@ def retirement():
                 monte_carlo_data = {}
                 depletion_stats = {}
 
+    selected_scenario_id = request.form.get("load_scenario_select", "")
+
     return render_template(
         "retirement.html",
         result=result,
@@ -190,7 +192,9 @@ def retirement():
         monte_carlo_data=monte_carlo_data,
         depletion_stats=depletion_stats,
         return_std=request.form.get("return_std") or "8",
-        inflation_std=request.form.get("inflation_std") or "0.5"
+        inflation_std=request.form.get("inflation_std") or "0.5",
+        selected_scenario_id=selected_scenario_id,
+        saved_scenarios = RetirementScenario.query.filter_by(user_id=current_user.id).all()
     )
 
 
