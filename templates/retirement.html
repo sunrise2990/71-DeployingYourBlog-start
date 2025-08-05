@@ -141,7 +141,7 @@
           <select id="load_scenario_select" name="load_scenario_select" class="form-select">
             <option value="">-- Select Scenario --</option>
             {% for scenario in saved_scenarios %}
-              <option value="{{ scenario.id }}" {% if selected_scenario_id == scenario.id|string %}selected{% endif %}>
+              <option value="{{ scenario.id }}" {% if selected_scenario_id|string == scenario.id|string %}selected{% endif %}>
                 {{ scenario.scenario_name }}
               </option>
             {% endfor %}
