@@ -1,0 +1,529 @@
+{% extends 'base.html' %}
+
+{% block title %}Retirement Planner{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="text-center mb-4">🧼 Retirement Planner</h2>
+
+    <form method="POST" action="{{ url_for('projects.retirement') }}">
+        <div class="row g-3">
+            {% set inputs = [
+                ("Current Age", "current_age", "Your current age."),
+                ("Retirement Age", "retirement_age", "The age at which you plan to retire."),
+                ("Monthly Savings ($)", "annual_saving", "Your monthly savings amount before retirement."),
+                ("Annual Saving Increase Rate (%)", "saving_increase_rate", "The expected yearly percentage increase in your monthly savings, accounting for raises or increased capacity."),
+                ("Pre-Retire Return Rate (%)", "return_rate", "Expected average annual return on your investments before retirement. Influences how your assets grow during working years."),
+                ("Post-Retire Return Rate (%)", "return_rate_after", "Expected average annual return on your investments after retirement. Usually lower due to conservative investment strategies."),
+                ("Expected Lifespan (Age)", "lifespan", "Your estimated age until which you expect to live. Important for planning how long your assets must last."),
+                ("Monthly Living Expense ($)", "monthly_living_expense", "Average monthly spending expected during retirement for living costs."),
+                ("Income Tax Rate (%)", "income_tax_rate", "Your effective income tax rate applied to income."),
+                ("Inflation Rate (%)", "inflation_rate", "Annual inflation rate used to adjust expenses and asset growth for future purchasing power."),
+                ("Current Assets ($)", "current_assets", "Total value of your current investment and savings assets."),
+                ("Living Expense Support / CPP (Monthly $)", "cpp_support", "Monthly income expected from CPP or other support reducing your living expenses during retirement."),
+                ("Extended Year From (Age)", "cpp_from_age", "The age when you start receiving extended support such as CPP."),
+                ("Extended Year To (Age)", "cpp_to_age", "The age until which extended support such as CPP will be received.")
+            ] %}
+
+            {% for label, name, tooltip in inputs %}
+            <div class="col-md-3">
+                <label class="form-label">
+                  {{ label }}
+                  {% if tooltip %}
+                  <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ tooltip }}" style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
+                  {% endif %}
+                </label>
+                <input type="number" name="{{ name }}"
+                       class="form-control"
+                       step="{% if 'rate' in name or 'inflation' in name or 'return' in name %}0.1{% else %}1{% endif %}"
+                       {% if 'cpp' in name or 'liquidation' in name %}min="-9999999"{% endif %}
+                       value="{{ '0' if reset else request.form.get(name, '0') }}">
+            </div>
+            {% endfor %}
+
+            <!-- Asset Liquidation Amounts and Ages with tooltip -->
+            {% set asset_tooltips = {
+                "asset_liquidation_1": "Amounts you expect to liquidate (sell or withdraw) from your asset 1 at specific ages.",
+                "asset_liquidation_age_1": "Estimated age when you plan to liquidate asset 1.",
+                "asset_liquidation_2": "Amounts you expect to liquidate (sell or withdraw) from your asset 2 at specific ages.",
+                "asset_liquidation_age_2": "Estimated age when you plan to liquidate asset 2.",
+                "asset_liquidation_3": "Amounts you expect to liquidate (sell or withdraw) from your asset 3 at specific ages.",
+                "asset_liquidation_age_3": "Estimated age when you plan to liquidate asset 3."
+            } %}
+            {% for name, tooltip in asset_tooltips.items() %}
+            <div class="col-md-3">
+                <label class="form-label">
+                    {{ name.replace('_', ' ').title() }}
+                    <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ tooltip }}" style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
+                </label>
+                <input type="number" name="{{ name }}"
+                       class="form-control"
+                       step="1"
+                       value="{{ '0' if reset else request.form.get(name, '0') }}">
+            </div>
+            {% endfor %}
+
+            <!-- Return Std Dev Dropdown with tooltip -->
+            <div class="col-md-3">
+                <label class="form-label">
+                  Return Std Dev (%)
+                  <span
+                    tabindex="0"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-html="true"
+                    title="Standard deviation measures the variability of your investment returns, representing the level of risk or volatility.<br>
+                - Conservative (8%): Lower volatility, steadier returns, less chance of large losses or gains. Suitable if you prefer stability.<br>
+                - Balanced (12%): Moderate volatility, a balance between risk and reward. Suitable for typical investors aiming for growth with manageable risk.<br>
+                - Aggressive (18%): Higher volatility, higher chance of large gains or losses. Suitable if you are willing to take more risk for potentially higher returns.<br>
+                It impacts the Monte Carlo simulation results by affecting the range and likelihood of possible future outcomes."
+                    style="cursor: pointer; color: #0d6efd; font-weight: bold;"
+                  >&#9432;</span>
+                </label>
+                <select class="form-select" name="return_std">
+                    {% set std_options = [("Conservative (8%)", "8"), ("Balanced (12%)", "12"), ("Aggressive (18%)", "18")] %}
+                    {% for label, value in std_options %}
+                    <option value="{{ value }}" {% if return_std == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Inflation Std Dev Dropdown -->
+            <div class="col-md-3">
+                <label class="form-label">
+                  Inflation Std Dev (%)
+                  <span
+                    tabindex="0"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-html="true"
+                    title="Represents variability in inflation. Higher values indicate more unpredictable inflation affecting your expenses."
+                    style="cursor: pointer; color: #0d6efd; font-weight: bold;"
+                  >&#9432;</span>
+                </label>
+                <select class="form-select" name="inflation_std">
+                    {% set inf_options = [("Stable (0.5%)", "0.5"), ("Typical (1%)", "1.0"), ("Volatile (2%)", "2.0")] %}
+                    {% for label, value in inf_options %}
+                    <option value="{{ value }}" {% if inflation_std == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+
+            <div class="col-md-6 mt-3">
+          <label for="scenario_name_input" class="form-label">
+            Scenario Name
+            <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Name your retirement scenario to save it for future use." style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
+          </label>
+          <input type="text" id="scenario_name_input" name="scenario_name" class="form-control" placeholder="Enter scenario name to save" />
+        </div>
+
+        <div class="text-center mt-4">
+            <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
+            <button type="submit" name="action" value="reset" class="btn btn-secondary px-4 ms-2">Reset</button>
+            <button type="button" class="btn btn-success px-4 ms-2" onclick="triggerSaveScenario()">
+              Save Scenario
+            </button>
+        </div>
+
+
+        <div class="col-md-6 mt-3">
+          <label for="load_scenario_select" class="form-label">
+            Load Saved Scenario
+            <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top"
+                  title="Select a saved scenario to load."
+                  style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
+          </label>
+          <select id="load_scenario_select" name="load_scenario_select" class="form-select">
+            <option value="">-- Select Scenario --</option>
+            {% for scenario in saved_scenarios %}
+              <option value="{{ scenario.id }}" {% if selected_scenario_id|string == scenario.id|string %}selected{% endif %}>
+                {{ scenario.scenario_name }}
+              </option>
+            {% endfor %}
+          </select>
+
+          <div class="mt-2">
+            <button type="button" class="btn btn-info me-2" onclick="loadSelectedScenario()">Load Scenario</button>
+            <button type="button" class="btn btn-danger" onclick="deleteSelectedScenario()">Delete Scenario</button>
+          </div>
+        </div>
+
+
+
+
+    <!-- Initialize Bootstrap Tooltips -->
+    <script>
+      var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+      var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+      })
+    </script>
+</div>
+
+
+
+
+    {% if result %}
+    <div class="alert alert-success mt-5 text-center">
+        <h4>📈 Estimated Final Asset Balance: <strong>${{ "{:,.0f}".format(result) }}</strong></h4>
+        <p>assuming retirement at age {{ retirement_age }}</p>
+    </div>
+    {% endif %}
+
+    {% if chart_data %}
+    <div class="mt-5">
+        <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
+        <div id="retirement-chart" style="height: 400px;"></div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script>
+            const age = {{ chart_data["Age"] | tojson }};
+            const assetRetirement = {{ chart_data["Asset_Retirement"] | tojson }};
+            const expense = {{ chart_data["Living_Exp_Retirement"] | tojson }};
+            const withdrawalRate = {{ chart_data["Withdrawal_Rate"] | tojson }};
+
+            const chart1 = [
+                {
+                    x: age,
+                    y: assetRetirement,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Asset – Retirement',
+                    line: { color: 'green' },
+                    yaxis: 'y1'
+                },
+                {
+                    x: age,
+                    y: expense,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Living Exp. – Retirement',
+                    line: { color: 'red' },
+                    yaxis: 'y1'
+                },
+                {
+                    x: age,
+                    y: withdrawalRate,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Withdrawal Rate',
+                    line: { color: 'gray', dash: 'dot' },
+                    yaxis: 'y2'
+                }
+            ];
+
+            const layout1 = {
+                margin: { t: 30 },
+                xaxis: { title: "Age" },
+                yaxis: {
+                    title: "Amount ($)",
+                    tickprefix: "$",
+                    separatethousands: true,
+                    side: 'left',
+                    showgrid: true
+                },
+                yaxis2: {
+                    title: "Withdrawal Rate (%)",
+                    overlaying: 'y',
+                    side: 'right',
+                    tickformat: '.1%',
+                    showgrid: false
+                },
+                legend: { orientation: "h", x: 0.1, y: -0.2 }
+            };
+
+            Plotly.newPlot("retirement-chart", chart1, layout1, { responsive: true });
+        </script>
+    </div>
+    {% endif %}
+
+    {% if monte_carlo_data %}
+    <div class="mt-5">
+        <h5 class="text-center mb-3">🎲 Monte Carlo Simulation: Retirement Asset Range</h5>
+        <div id="monte-carlo-chart" style="height: 400px;"></div>
+        <script>
+            const mc_age = {{ monte_carlo_data["Age"] | tojson }};
+            const mc_p10 = {{ monte_carlo_data["Percentile_10"] | tojson }};
+            const mc_p50 = {{ monte_carlo_data["Percentile_50"] | tojson }};
+            const mc_p90 = {{ monte_carlo_data["Percentile_90"] | tojson }};
+
+            const chart2 = [
+                {
+                    x: mc_age,
+                    y: mc_p10,
+                    fill: 'none',
+                    line: { color: 'rgba(0,100,200,0.2)', width: 0 },
+                    name: '10th Percentile',
+                    showlegend: false
+                },
+                {
+                    x: mc_age,
+                    y: mc_p90,
+                    fill: 'tonexty',
+                    fillcolor: 'rgba(0,100,200,0.2)',
+                    line: { color: 'rgba(0,100,200,0.2)', width: 0 },
+                    name: '90th Percentile',
+                    showlegend: false
+                },
+                {
+                    x: mc_age,
+                    y: mc_p50,
+                    mode: 'lines+markers',
+                    name: 'Median',
+                    line: { color: 'blue' }
+                }
+            ];
+
+            const layout2 = {
+                margin: { t: 30 },
+                xaxis: { title: "Age" },
+                yaxis: {
+                    title: "Projected Assets ($)",
+                    tickprefix: "$",
+                    separatethousands: true
+                },
+                legend: { orientation: "h", x: 0.1, y: -0.2 }
+            };
+
+            Plotly.newPlot("monte-carlo-chart", chart2, layout2, { responsive: true });
+        </script>
+    </div>
+    {% endif %}
+
+    {% if depletion_stats %}
+    <div class="mt-4">
+        <h6>⚠️ Depletion Risk Summary (Based on 1,000 Monte Carlo Simulations)</h6>
+        <ul class="mb-1">
+            <li><strong>{{ (depletion_stats.age_75 * 100) | round(1) }}%</strong> chance of running out of money by <strong>age 75</strong></li>
+            <li><strong>{{ (depletion_stats.age_85 * 100) | round(1) }}%</strong> chance by <strong>age 85</strong></li>
+            <li><strong>{{ (depletion_stats.age_90 * 100) | round(1) }}%</strong> chance by <strong>age 90</strong></li>
+        </ul>
+        <p class="text-muted small">
+            Assumes current savings, asset, CPP, expenses, and retirement age remain fixed.
+            Market returns and inflation are randomly varied in each simulation.
+        </p>
+    </div>
+    {% endif %}
+
+{% if sensitivities %}
+      <div class="mt-4">
+        <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered text-center">
+            <thead class="table-light">
+              <tr>
+                <th>Parameter</th>
+                <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for var, coef in sensitivities.items() %}
+                <tr>
+                  <td>{{ var.replace('_', ' ').title() }}</td>
+                  <td>{{ coef | round(2) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+
+
+
+    {% if table %}
+    <div class="table-responsive mt-5">
+        <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
+        <table class="table table-bordered table-sm text-center align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Age</th>
+                    <th>Year</th>
+                    <th>Retire?</th>
+                    <th>Living Exp.</th>
+                    <th>CPP / Extra Income</th>
+                    <th>Income Tax Payment</th>  <!-- New header -->
+                    <th>Living Exp. – Ret.</th>
+                    <th>Asset Liquidation</th>
+                    <th>Savings – Before Retire</th>
+                    <th>Asset</th>
+                    <th>Asset – Retirement</th>
+                    <th>Investment Return</th>
+                    <th>Return Rate</th>
+                    <th>Withdrawal Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+{% for row in table %}
+        <tr>
+            {% for cell in row %}
+            <td>
+                {% if cell is number %}
+        {% if loop.index0 in [11, 12] %}
+          {{ "{:.1f}%".format(cell) }}
+        {% else %}
+          {{ "{:,.0f}".format(cell) }}
+        {% endif %}
+                {% else %}
+                    {{ cell }}
+                {% endif %}
+            </td>
+            {% endfor %}
+        </tr>
+{% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+
+<!-- 1) Expose login state from Flask -->
+<script type="text/javascript">
+  const isUserLoggedIn = {{ 'true' if current_user.is_authenticated else 'false' }};
+</script>
+
+<!-- 2) Initialize Bootstrap tooltips -->
+<script>
+  const tooltipTriggerList = Array.from(
+    document.querySelectorAll('[data-bs-toggle="tooltip"]')
+  );
+  tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+</script>
+
+<!-- 3) Collect inputs, call save endpoint, and guard by login -->
+<script>
+  // Gather all the form’s inputs into a JSON object
+  function collectFormInputs() {
+    const inputs = {};
+    document.querySelectorAll(
+      'form input[type="number"], form input[type="text"], form select'
+    ).forEach(el => {
+      inputs[el.name] = el.value;
+    });
+    return inputs;
+  }
+
+  // POST to your Flask /scenarios/save endpoint
+  function saveScenario(scenarioName, inputsJson) {
+    fetch('/scenarios/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scenario_name: scenarioName,
+        inputs_json: inputsJson
+      })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.message) {
+        alert('Scenario saved successfully!');
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(err => {
+      alert('Network error: ' + err);
+    });
+  }
+
+  // Entry point for Save Scenario button
+  function triggerSaveScenario() {
+    // 1) Redirect anonymous users
+    if (!isUserLoggedIn) {
+      alert('You need to register or log in to save a scenario.');
+      return;
+    }
+
+    // 2) Ensure they entered a name
+    const name = document.getElementById('scenario_name_input').value.trim();
+    if (!name) {
+      alert('Please enter a scenario name before saving.');
+      return;
+    }
+
+    // 3) Collect the inputs and send
+    const inputsJson = collectFormInputs();
+    saveScenario(name, inputsJson);
+  }
+</script>
+
+
+<script>
+  // Removed the fetch on page load to prevent duplicate options
+
+  function loadSelectedScenario() {
+    const select = document.getElementById('load_scenario_select');
+    const scenarioId = select.value;
+    if (!scenarioId) {
+      alert('Please select a scenario to load.');
+      return;
+    }
+
+    fetch(`/scenarios/load/${scenarioId}`)
+      .then(response => {
+        if (!response.ok) throw new Error('Scenario not found');
+        return response.json();
+      })
+      .then(data => {
+        const inputs = data.inputs_json;
+
+        // Iterate all keys in inputs JSON and set form values
+        Object.entries(inputs).forEach(([key, value]) => {
+          const el = document.querySelector(`[name="${key}"]`);
+          if (el) {
+            if (el.tagName.toLowerCase() === 'select') {
+              el.value = value.toString();
+            } else {
+              el.value = value;
+            }
+          }
+        });
+
+        // Set the dropdown selection explicitly to the loaded scenario
+        select.value = data.id || data.scenario_id || scenarioId;
+
+        alert(`Loaded scenario: ${data.scenario_name}`);
+      })
+      .catch(err => alert('Failed to load scenario: ' + err.message));
+  }
+
+  function deleteSelectedScenario() {
+    const select = document.getElementById('load_scenario_select');
+    const scenarioId = select.value;
+
+    if (!scenarioId) {
+      alert('Please select a scenario to delete.');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this scenario? This action cannot be undone.')) {
+      return;
+    }
+
+    fetch(`/scenarios/delete/${scenarioId}`, {
+      method: 'DELETE',
+    })
+    .then(response => {
+      if (!response.ok) throw new Error('Failed to delete scenario.');
+      return response.json();
+    })
+    .then(data => {
+      alert(data.message || 'Scenario deleted successfully.');
+      // Remove deleted option from select dropdown
+      const optionToRemove = select.querySelector(`option[value="${scenarioId}"]`);
+      if (optionToRemove) optionToRemove.remove();
+      select.value = ''; // reset selection
+    })
+    .catch(err => alert('Error deleting scenario: ' + err.message));
+  }
+</script>
+
+
+
+
+{% endblock %}

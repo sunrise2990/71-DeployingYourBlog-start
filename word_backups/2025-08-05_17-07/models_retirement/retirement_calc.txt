@@ -93,54 +93,13 @@ def run_retirement_projection(
     }
 
 
-# 🔹 Sensitivity Analysis Function
-def sensitivity_analysis(
-    baseline_params: dict,
-    variables: list[str],
-    delta: float = 0.01
-) -> dict[str, float]:
+# 🔹 Sensitivity Analysis Stub (you can replace with real logic later)
+def sensitivity_analysis(baseline_params: dict, variables: list[str], delta: float = 0.01) -> dict[str, float]:
     """
-    Perform one-at-a-time sensitivity analysis on the final assets output.
-
-    baseline_params: dict of parameters passed to run_retirement_projection
-    variables: list of parameter names in baseline_params to perturb
-    delta: fractional change to apply (e.g., 0.01 = 1%)
-
-    Returns a dict mapping variable name to sensitivity coefficient:
-      (% change in final assets) / (% change in input)
+    STUB: returns a fixed result so you can confirm it flows through.
     """
-    # 1) Compute the baseline projection
-    base_output = run_retirement_projection(**baseline_params)
-    base_assets = base_output["final_assets"]
-
-    sensitivities: dict[str, float] = {}
-    for var in variables:
-        # only consider parameters we actually passed
-        if var not in baseline_params:
-            continue
-
-        orig_val = baseline_params[var]
-        # only numeric inputs can be perturbed
-        if not isinstance(orig_val, (int, float)):
-            continue
-
-        # 2) Build a perturbed copy of the inputs
-        perturbed = baseline_params.copy()
-        perturbed[var] = orig_val * (1 + delta)
-
-        # 3) Re-run the projection
-        new_assets = run_retirement_projection(**perturbed)["final_assets"]
-
-        # 4) Compute elasticity: (Δoutput/output) ÷ (Δinput/input)
-        if base_assets != 0:
-            sens = ((new_assets - base_assets) / base_assets) / delta
-        else:
-            sens = None
-
-        sensitivities[var] = sens
-
-    return sensitivities
-
+    # ignore inputs for now, just return something you’ll see in the UI
+    return {"TEST_PARAM": 123.45}
 
 
 
