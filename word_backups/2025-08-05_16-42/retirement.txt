@@ -318,11 +318,7 @@
           {% endfor %}
         </ul>
       </div>
-        <div class="mt-4 border p-3">
-       <h5>🔍 Raw Sensitivities JSON</h5>
-       <pre>{{ sensitivities | tojson(indent=2) }}</pre>
-      </div>
-        {% endif %}
+    {% endif %}
 
 
     {% if table %}

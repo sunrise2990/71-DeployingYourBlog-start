@@ -44,6 +44,7 @@ def retirement():
     ]
 
     if request.method == "POST":
+        sensitivities = sensitivity_analysis(baseline_params, [])
 
         action = request.form.get("action")
         if action == "reset":
@@ -83,37 +84,6 @@ def retirement():
                     age = get_form_value(age_key, int)
                     if amount != 0 and age > 0:
                         asset_liquidation.append({"amount": amount, "age": age})
-
-                # ——— build the baseline_params dict **here** ———
-                baseline_params = {
-                    "current_age": current_age,
-                    "retirement_age": retirement_age,
-                    "annual_saving": monthly_saving * 12,
-                    "saving_increase_rate": saving_increase_rate,
-                    "current_assets": current_assets,
-                    "return_rate": return_rate,
-                    "return_rate_after": return_rate_after,
-                    "annual_expense": monthly_living_expense * 12,
-                    "cpp_monthly": cpp_monthly,
-                    "cpp_start_age": cpp_from,
-                    "cpp_end_age": cpp_to,
-                    "asset_liquidations": asset_liquidation,
-                    "inflation_rate": inflation_rate,
-                    "life_expectancy": lifespan,
-                    "income_tax_rate": income_tax_rate
-                }
-
-                variables = [
-                    "current_assets",
-                    "return_rate",
-                    "return_rate_after",
-                    "annual_saving",
-                    "annual_expense",
-                    "saving_increase_rate",
-                    "inflation_rate",
-                    "income_tax_rate"
-                ]
-                sensitivities = sensitivity_analysis(baseline_params, variables, delta=0.01)
 
                 output = run_retirement_projection(
                     current_age=current_age,
