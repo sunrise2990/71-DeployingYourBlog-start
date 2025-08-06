@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 import numpy as np
 from models.retirement.retirement_calc import (
     run_retirement_projection,
-    run_monte_carlo_simulation_locked_inputs,
+    run_monte_carlo_simulation_locked_inputs, sensitivity_analysis
 )
 from models import db
 from models.retirement.retirement_scenario import RetirementScenario # adjust import path as needed
@@ -34,13 +34,17 @@ def retirement():
 
     form_inputs = {}
 
+    sensitivities = {}
+    baseline_params = {}
+
     table_headers = [
-        "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Living Exp. – Ret.",
+        "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Income Tax Payment", "Living Exp. – Ret.",
         "Asset Liquidation", "Savings – Before Retire", "Asset",
         "Asset – Retirement", "Investment Return", "Return Rate", "Withdrawal Rate"
     ]
 
     if request.method == "POST":
+
         action = request.form.get("action")
         if action == "reset":
             reset = True
@@ -62,7 +66,6 @@ def retirement():
                 current_assets = get_form_value("current_assets", float)
                 saving_increase_rate = get_form_value("saving_increase_rate", float) / 100
 
-                # New variable: Income Tax Rate (%)
                 income_tax_rate = get_form_value("income_tax_rate", float) / 100
 
                 cpp_monthly = get_form_value("cpp_support", float)
@@ -81,6 +84,37 @@ def retirement():
                     if amount != 0 and age > 0:
                         asset_liquidation.append({"amount": amount, "age": age})
 
+                # ——— build the baseline_params dict **here** ———
+                baseline_params = {
+                    "current_age": current_age,
+                    "retirement_age": retirement_age,
+                    "annual_saving": monthly_saving * 12,
+                    "saving_increase_rate": saving_increase_rate,
+                    "current_assets": current_assets,
+                    "return_rate": return_rate,
+                    "return_rate_after": return_rate_after,
+                    "annual_expense": monthly_living_expense * 12,
+                    "cpp_monthly": cpp_monthly,
+                    "cpp_start_age": cpp_from,
+                    "cpp_end_age": cpp_to,
+                    "asset_liquidations": asset_liquidation,
+                    "inflation_rate": inflation_rate,
+                    "life_expectancy": lifespan,
+                    "income_tax_rate": income_tax_rate
+                }
+
+                variables = [
+                    "current_assets",
+                    "return_rate",
+                    "return_rate_after",
+                    "annual_saving",
+                    "annual_expense",
+                    "saving_increase_rate",
+                    "inflation_rate",
+                    "income_tax_rate"
+                ]
+                sensitivities = sensitivity_analysis(baseline_params, variables, delta=0.01)
+
                 output = run_retirement_projection(
                     current_age=current_age,
                     retirement_age=retirement_age,
@@ -95,8 +129,8 @@ def retirement():
                     cpp_end_age=cpp_to,
                     asset_liquidations=asset_liquidation,
                     inflation_rate=inflation_rate,
-                    life_expectancy=lifespan
-                    # income_tax_rate not used yet
+                    life_expectancy=lifespan,
+                    income_tax_rate = income_tax_rate
                 )
 
                 result = output["final_assets"]
@@ -111,6 +145,7 @@ def retirement():
                     row.get("Retire"),
                     f"${row.get('Living_Exp', 0):,.0f}",
                     f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
+                    f"${row.get('Income_Tax_Payment', 0):,.0f}",  # New column added here
                     f"${row.get('Living_Exp_Retirement', 0):,.0f}",
                     f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
                     f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
@@ -153,6 +188,7 @@ def retirement():
                     cpp_end_age=cpp_to,
                     asset_liquidations=asset_liquidation,
                     life_expectancy=lifespan,
+                    income_tax_rate=income_tax_rate,
                     num_simulations=1000
                 )
 
@@ -178,6 +214,16 @@ def retirement():
                 monte_carlo_data = {}
                 depletion_stats = {}
 
+    selected_scenario_id = request.form.get("load_scenario_select", "")
+
+    # Only query DB if user is logged in
+    if current_user.is_authenticated:
+        saved_scenarios = RetirementScenario.query.filter_by(
+            user_id=current_user.id
+        ).all()
+    else:
+        saved_scenarios = []
+
     return render_template(
         "retirement.html",
         result=result,
@@ -189,7 +235,10 @@ def retirement():
         monte_carlo_data=monte_carlo_data,
         depletion_stats=depletion_stats,
         return_std=request.form.get("return_std") or "8",
-        inflation_std=request.form.get("inflation_std") or "0.5"
+        inflation_std=request.form.get("inflation_std") or "0.5",
+        selected_scenario_id=selected_scenario_id,
+        saved_scenarios = saved_scenarios,
+        sensitivities=sensitivities
     )
 
 
@@ -257,3 +306,18 @@ def load_scenario(scenario_id):
     ), 200
 
 
+# === New DELETE route to delete a scenario ===
+@scenarios_bp.route("/delete/<int:scenario_id>", methods=["DELETE"])
+@login_required
+def delete_scenario(scenario_id):
+    scenario = RetirementScenario.query.filter_by(id=scenario_id, user_id=current_user.id).first()
+    if not scenario:
+        return jsonify({"error": "Scenario not found"}), 404
+
+    try:
+        db.session.delete(scenario)
+        db.session.commit()
+        return jsonify({"message": f"Scenario '{scenario.scenario_name}' deleted successfully."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
