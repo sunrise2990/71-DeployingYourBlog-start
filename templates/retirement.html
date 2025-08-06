@@ -309,9 +309,7 @@
     </div>
     {% endif %}
 
-
-
-    {% if sensitivities %}
+{% if sensitivities %}
       <div class="mt-4">
         <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
         <div class="table-responsive">
@@ -319,33 +317,22 @@
             <thead class="table-light">
               <tr>
                 <th>Parameter</th>
-                <th>Elasticity<br>(%Δ Final / %Δ Input)</th>
-                <th>$ Impact per 1% Δ Input</th>
+                <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
               </tr>
             </thead>
             <tbody>
               {% for var, coef in sensitivities.items() %}
                 <tr>
-                  <td>{{ var.replace('_',' ').title() }}</td>
-                  <td>{{ (coef*100)|round(1) }}%</td>
-                  <td>
-                    {% if dollar_impacts[var] is not none %}
-                      {{ ("${:,.2f}".format(dollar_impacts[var])) }}
-                    {% else %}
-                      &mdash;
-                    {% endif %}
-                  </td>
+                  <td>{{ var.replace('_', ' ').title() }}</td>
+                  <td>{{ coef | round(2) }}</td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
-        <p class="small text-muted mt-2">
-          <strong>Elasticity</strong> = percent change in final assets for a 1% change in the input.<br>
-          <strong>Impact per 1% Δ Input</strong> = actual dollar change in final assets when that input is increased by 1%.
-        </p>
       </div>
     {% endif %}
+
 
 
     {% if table %}
