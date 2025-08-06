@@ -34,7 +34,6 @@ def retirement():
 
     form_inputs: dict[str, any] = {}
 
-    # Will be populated below
     sensitivities: dict[str, float] = {}
     dollar_impacts: dict[str, float] = {}
     baseline_params: dict[str, any] = {}
@@ -52,12 +51,13 @@ def retirement():
 
         elif action == "calculate":
             try:
-                def get_form_value(name, cast_func, default=0):
+                # ─── helper to parse inputs ───
+                def get_form_value(name, cast, default=0):
                     v = request.form.get(name)
                     form_inputs[name] = v
-                    return cast_func(v) if v else default
+                    return cast(v) if v else default
 
-                # ─── parse inputs ───
+                # ─── parse form values ───
                 current_age            = get_form_value("current_age", int)
                 retirement_age         = get_form_value("retirement_age", int)
                 monthly_saving         = get_form_value("annual_saving", float)
@@ -102,24 +102,24 @@ def retirement():
                     "income_tax_rate": income_tax_rate
                 }
 
-                # ─── run deterministic projection ───
+                # ─── deterministic projection ───
                 output = run_retirement_projection(**baseline_params)
                 result = output["final_assets"]
 
-                # ─── build table ───
+                # ─── format table ───
                 for row in output["table"]:
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
                 table = [
                     [
-                        row.get("Age"),
-                        row.get("Year"),
-                        row.get("Retire"),
+                        row["Age"],
+                        row["Year"],
+                        row["Retire"],
                         f"${row.get('Living_Exp',0):,.0f}",
                         f"${row.get('CPP_Support',0):,.0f}" if row.get("CPP_Support") else "",
                         f"${row.get('Income_Tax_Payment',0):,.0f}",
-                        f"${row.get('Living_Exp_Retirement',0):,.0f}",
+                        f"${row['Living_Exp_Retirement']:,.0f}",
                         f"${row.get('Asset_Liquidation',0):,.0f}" if row.get("Asset_Liquidation") else "",
                         f"${row.get('Savings',0):,.0f}" if row.get("Savings") else "",
                         f"${row.get('Asset',0):,.0f}",
@@ -131,7 +131,7 @@ def retirement():
                     for row in output["table"]
                 ]
 
-                # ─── chart data ───
+                # ─── chart_data ───
                 chart_data = {
                     "Age": [r["Age"] for r in output["table"]],
                     "Living_Exp_Retirement": [r["Living_Exp_Retirement"] for r in output["table"]],
@@ -140,15 +140,15 @@ def retirement():
                 }
 
                 # ─── Monte Carlo ───
-                mc_output = run_monte_carlo_simulation_locked_inputs(**baseline_params, **{
-                    "return_mean": return_rate,
-                    "return_mean_after": return_rate_after,
-                    "return_std": return_std,
-                    "inflation_mean": inflation_rate,
-                    "inflation_std": inflation_std,
-                    "num_simulations": 1000
-                })
-
+                mc_output = run_monte_carlo_simulation_locked_inputs(
+                    **baseline_params,
+                    return_mean=return_rate,
+                    return_mean_after=return_rate_after,
+                    return_std=return_std,
+                    inflation_mean=inflation_rate,
+                    inflation_std=inflation_std,
+                    num_simulations=1000
+                )
                 monte_carlo_data = {
                     "Age": mc_output["ages"],
                     "Percentile_10": mc_output["percentiles"]["p10"],
@@ -162,46 +162,38 @@ def retirement():
                     "ever":   mc_output["depletion_probs"].get("ever",0.0)
                 }
 
-                # ─── Sensitivity (elasticity) ───
-                variables = [
-                    "current_assets","return_rate","return_rate_after",
-                    "annual_saving","annual_expense","saving_increase_rate",
-                    "inflation_rate","income_tax_rate"
-                ]
-                sensitivities = sensitivity_analysis(baseline_params, variables, delta=0.01)
+                # ─── Sensitivities (elasticities) ───
+                vars = ["current_assets","return_rate","return_rate_after",
+                        "annual_saving","annual_expense","saving_increase_rate",
+                        "inflation_rate","income_tax_rate"]
+                sensitivities = sensitivity_analysis(baseline_params, vars, delta=0.01)
 
-                # ─── Dollar-impact per 1% Δ input ───
-                base_assets = result
-                for var, coeff in sensitivities.items():
-                    orig = baseline_params.get(var, 0)
-                    if isinstance(orig,(int,float)) and orig != 0:
-                        pert = baseline_params.copy()
-                        pert[var] = orig * 1.01
-                        new_val = run_retirement_projection(**pert)["final_assets"]
-                        delta_input = orig * 0.01
-                        dollar_impacts[var] = (new_val - base_assets) / delta_input
+                # ─── Dollar‐impact per 1% Δ input ───
+                base_val = result or 0
+                for v,c in sensitivities.items():
+                    orig = baseline_params.get(v,0)
+                    if isinstance(orig,(int,float)) and orig!=0:
+                        p = baseline_params.copy()
+                        p[v] = orig*1.01
+                        new_f = run_retirement_projection(**p)["final_assets"]
+                        delta_in = orig*0.01
+                        dollar_impacts[v] = (new_f - base_val)/delta_in
                     else:
-                        dollar_impacts[var] = None
+                        dollar_impacts[v] = None
 
             except Exception as e:
-                print("❌ Error in retirement projection:", e)
-                # wipe out on error
-                result = None
-                table = []
-                chart_data = {}
-                monte_carlo_data = {}
-                depletion_stats = {}
-                sensitivities = {}
-                dollar_impacts = {}
+                print("❌ Error in retirement projection:",e)
+                # wipe on error
+                result=table=chart_data=monte_carlo_data=depletion_stats={}
+                sensitivities=dollar_impacts={}
 
-    # ─── Load Saved Scenarios ───
+    # ─── whether GET or POST, now **always** render ───
     selected_scenario_id = request.form.get("load_scenario_select","")
     if current_user.is_authenticated:
         saved_scenarios = RetirementScenario.query.filter_by(user_id=current_user.id).all()
     else:
         saved_scenarios = []
 
-    # ─── Render ───
     return render_template(
         "retirement.html",
         result=result,
@@ -219,7 +211,6 @@ def retirement():
         sensitivities=sensitivities,
         dollar_impacts=dollar_impacts
     )
-
 
 
 # ===== New Scenario Blueprint and Routes =====
