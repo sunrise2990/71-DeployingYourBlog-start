@@ -98,7 +98,7 @@ def sensitivity_analysis(
     baseline_params: dict,
     variables: list[str],
     delta: float = 0.01
-) -> dict[str, float]:
+) -> dict[str, dict[str, float]]:
     """
     Perform one-at-a-time sensitivity analysis on the final assets output.
 
@@ -106,38 +106,41 @@ def sensitivity_analysis(
     variables: list of parameter names in baseline_params to perturb
     delta: fractional change to apply (e.g., 0.01 = 1%)
 
-    Returns a dict mapping variable name to sensitivity coefficient:
-      (% change in final assets) / (% change in input)
+    Returns a dict mapping each variable name to:
+      {
+        "sensitivity_pct": % change in final assets from a +1% bump,
+        "dollar_impact": absolute $ change in final assets from a +1% bump
+      }
     """
     # 1) Compute the baseline projection
     base_output = run_retirement_projection(**baseline_params)
     base_assets = base_output["final_assets"]
 
-    sensitivities: dict[str, float] = {}
+    sensitivities: dict[str, dict[str, float]] = {}
+
     for var in variables:
-        # only consider parameters we actually passed
-        if var not in baseline_params:
+        # skip if not present or not numeric
+        if var not in baseline_params or not isinstance(baseline_params[var], (int, float)):
             continue
 
         orig_val = baseline_params[var]
-        # only numeric inputs can be perturbed
-        if not isinstance(orig_val, (int, float)):
-            continue
-
-        # 2) Build a perturbed copy of the inputs
+        # 2) Build a perturbed copy of the inputs (+1% bump)
         perturbed = baseline_params.copy()
         perturbed[var] = orig_val * (1 + delta)
 
         # 3) Re-run the projection
         new_assets = run_retirement_projection(**perturbed)["final_assets"]
 
-        # 4) Compute elasticity: (Δoutput/output) ÷ (Δinput/input)
-        if base_assets != 0:
-            sens = ((new_assets - base_assets) / base_assets) / delta
-        else:
-            sens = None
+        # 4a) Percentage sensitivity: ((ΔF / F) * 100)
+        sensitivity_pct = ((new_assets - base_assets) / base_assets) * 100 if base_assets else 0.0
 
-        sensitivities[var] = sens
+        # 4b) Dollar impact: absolute change in final assets
+        dollar_impact = new_assets - base_assets
+
+        sensitivities[var] = {
+            "sensitivity_pct": sensitivity_pct,
+            "dollar_impact": dollar_impact
+        }
 
     return sensitivities
 
