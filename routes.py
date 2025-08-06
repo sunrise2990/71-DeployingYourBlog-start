@@ -220,12 +220,17 @@ def retirement():
 
     # ——— Compute dollar‐impact per $1 of each input ———
     dollar_impacts: dict[str, float] = {}
+    base_assets = run_retirement_projection(**baseline_params)["final_assets"]
     for var, coef in sensitivities.items():
         orig = baseline_params.get(var, 0)
-        # only if we have a non‐zero original and a valid result
-        if orig and result is not None:
-            # coef = (%ΔF / %ΔA), so per‐$1 impact = coef * (F0 / A0)
-            dollar_impacts[var] = coef * result / orig
+        if isinstance(orig, (int, float)) and orig != 0:
+            # re-run the one‐at‐a‐time bump to get new_assets
+            perturbed = baseline_params.copy()
+            perturbed[var] = orig * 1.01  # same 1% bump
+            new_assets = run_retirement_projection(**perturbed)["final_assets"]
+
+            deltaA = orig * 0.01  # the actual $ (or unit) change we applied
+            dollar_impacts[var] = (new_assets - base_assets) / deltaA
         else:
             dollar_impacts[var] = None
 

@@ -317,18 +317,18 @@
         <thead class="table-light">
           <tr>
             <th>Parameter</th>
-            <th>Elasticity<br>(%Δ Final / %Δ Input)</th>
-            <th>$ Impact per $1</th>
+            <th>Elasticity<br>(% Δ Final / % Δ Input)</th>
+            <th>$ Δ Final / Δ Input</th>
           </tr>
         </thead>
         <tbody>
           {% for var, coef in sensitivities.items() %}
             <tr>
               <td>{{ var.replace('_',' ').title() }}</td>
-              <td>{{ (coef * 100) | round(1) }}%</td>
+              <td>{{ (coef*100)|round(1) }}&#37;</td>
               <td>
                 {% if dollar_impacts[var] is not none %}
-                  ${{ dollar_impacts[var] | round(2) }}
+                  {{ "$" + "{:,.2f}".format(dollar_impacts[var]) }}
                 {% else %}
                   —
                 {% endif %}
@@ -340,6 +340,7 @@
     </div>
   </div>
 {% endif %}
+
 
 
 
