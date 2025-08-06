@@ -317,19 +317,19 @@
         <thead class="table-light">
           <tr>
             <th>Parameter</th>
-            <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
-            <th>Dollar Impact<br>(Δ Output per 1 % Δ Input)</th>
+            <th>Elasticity<br>(%Δ Final / %Δ Input)</th>
+            <th>$ Impact per 1 % Δ Input</th>
           </tr>
         </thead>
         <tbody>
           {% for var, coef in sensitivities.items() %}
             <tr>
-              <td>{{ var.replace('_', ' ').title() }}</td>
-              <td>{{ coef | round(2) }}</td>
+              <td>{{ var.replace('_',' ').title() }}</td>
+              <td>{{ coef|round(2) }}</td>
               <td>
                 {% set impact = dollar_impacts.get(var) %}
                 {% if impact is not none %}
-                  ${{ impact | round(2) }}
+                  ${{ impact|round(2) }}
                 {% else %}
                   &mdash;
                 {% endif %}
@@ -340,13 +340,11 @@
       </table>
     </div>
     <p class="mt-2 small text-muted">
-      <strong>Elasticity</strong> shows the percentage change in final assets resulting from a 1 % change in the input.<br>
-      <strong>Dollar Impact</strong> shows the absolute dollar change in final assets when the input is increased by 1 %.
+      <strong>Elasticity</strong> shows the % change in final assets for a 1 % change in each input.<br>
+      <strong>$ Impact</strong> shows the actual dollar change in final assets when that input is increased by 1 %.
     </p>
   </div>
 {% endif %}
-
-
 
 
     {% if table %}
