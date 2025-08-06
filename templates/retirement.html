@@ -310,28 +310,42 @@
     {% endif %}
 
 {% if sensitivities %}
-      <div class="mt-4">
-        <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered text-center">
-            <thead class="table-light">
-              <tr>
-                <th>Parameter</th>
-                <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for var, coef in sensitivities.items() %}
-                <tr>
-                  <td>{{ var.replace('_', ' ').title() }}</td>
-                  <td>{{ coef | round(2) }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {% endif %}
+  <div class="mt-4">
+    <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered text-center">
+        <thead class="table-light">
+          <tr>
+            <th>Parameter</th>
+            <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
+            <th>Dollar Impact<br>(Δ Output per 1 % Δ Input)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for var, coef in sensitivities.items() %}
+            <tr>
+              <td>{{ var.replace('_', ' ').title() }}</td>
+              <td>{{ coef | round(2) }}</td>
+              <td>
+                {% set impact = dollar_impacts.get(var) %}
+                {% if impact is not none %}
+                  ${{ impact | round(2) }}
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-2 small text-muted">
+      <strong>Elasticity</strong> shows the percentage change in final assets resulting from a 1 % change in the input.<br>
+      <strong>Dollar Impact</strong> shows the absolute dollar change in final assets when the input is increased by 1 %.
+    </p>
+  </div>
+{% endif %}
+
 
 
 
