@@ -310,37 +310,28 @@
     {% endif %}
 
 {% if sensitivities %}
-  <div class="mt-4">
-    <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
-    <div class="table-responsive">
-      <table class="table table-sm table-bordered text-center">
-        <thead class="table-light">
-          <tr>
-            <th>Parameter</th>
-            <th>Elasticity<br>(%Δ Final / %Δ Input)</th>
-            <th>$ Impact per $1</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for var, coef in sensitivities.items() %}
-            <tr>
-              <td>{{ var.replace('_',' ').title() }}</td>
-              <td>{{ (coef * 100) | round(1) }}%</td>
-              <td>
-                {% if dollar_impacts[var] is not none %}
-                  ${{ dollar_impacts[var] | round(2) }}
-                {% else %}
-                  —
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-{% endif %}
-
+      <div class="mt-4">
+        <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered text-center">
+            <thead class="table-light">
+              <tr>
+                <th>Parameter</th>
+                <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for var, coef in sensitivities.items() %}
+                <tr>
+                  <td>{{ var.replace('_', ' ').title() }}</td>
+                  <td>{{ coef | round(2) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
 
 
 

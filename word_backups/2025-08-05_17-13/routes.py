@@ -113,9 +113,7 @@ def retirement():
                     "inflation_rate",
                     "income_tax_rate"
                 ]
-
                 sensitivities = sensitivity_analysis(baseline_params, variables, delta=0.01)
-
 
                 output = run_retirement_projection(
                     current_age=current_age,
@@ -218,17 +216,6 @@ def retirement():
 
     selected_scenario_id = request.form.get("load_scenario_select", "")
 
-    # ——— Compute dollar‐impact per $1 of each input ———
-    dollar_impacts: dict[str, float] = {}
-    for var, coef in sensitivities.items():
-        orig = baseline_params.get(var, 0)
-        # only if we have a non‐zero original and a valid result
-        if orig and result is not None:
-            # coef = (%ΔF / %ΔA), so per‐$1 impact = coef * (F0 / A0)
-            dollar_impacts[var] = coef * result / orig
-        else:
-            dollar_impacts[var] = None
-
     # Only query DB if user is logged in
     if current_user.is_authenticated:
         saved_scenarios = RetirementScenario.query.filter_by(
@@ -251,8 +238,7 @@ def retirement():
         inflation_std=request.form.get("inflation_std") or "0.5",
         selected_scenario_id=selected_scenario_id,
         saved_scenarios = saved_scenarios,
-        sensitivities=sensitivities,
-        dollar_impacts=dollar_impacts
+        sensitivities=sensitivities
     )
 
 
