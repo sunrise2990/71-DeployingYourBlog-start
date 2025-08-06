@@ -218,23 +218,27 @@ def retirement():
 
     selected_scenario_id = request.form.get("load_scenario_select", "")
 
-    # ——— Compute dollar‐impact per $1 of each input ———
+
+    # ——— 4) Compute dollar‐impact per $1 (or per 1 pp) of each input ———
     dollar_impacts: dict[str, float] = {}
     base_assets = run_retirement_projection(**baseline_params)["final_assets"]
+
     for var, coef in sensitivities.items():
         orig = baseline_params.get(var, 0)
+        # only numeric, non-zero inputs
         if isinstance(orig, (int, float)) and orig != 0:
-            # re-run the one‐at‐a‐time bump to get new_assets
+            # bump by +1% (same as elasticity)
             perturbed = baseline_params.copy()
-            perturbed[var] = orig * 1.01  # same 1% bump
+            perturbed[var] = orig * 1.01
             new_assets = run_retirement_projection(**perturbed)["final_assets"]
 
-            deltaA = orig * 0.01  # the actual $ (or unit) change we applied
-            dollar_impacts[var] = (new_assets - base_assets) / deltaA
+            # Δinput in actual units
+            delta_input = orig * 0.01
+            dollar_impacts[var] = (new_assets - base_assets) / delta_input
         else:
             dollar_impacts[var] = None
 
-    # Only query DB if user is logged in
+    # ——— 5) Saved scenarios only if logged in ———
     if current_user.is_authenticated:
         saved_scenarios = RetirementScenario.query.filter_by(
             user_id=current_user.id
@@ -242,6 +246,7 @@ def retirement():
     else:
         saved_scenarios = []
 
+    # ——— 6) Render everything to the template ———
     return render_template(
         "retirement.html",
         result=result,
@@ -255,10 +260,11 @@ def retirement():
         return_std=request.form.get("return_std") or "8",
         inflation_std=request.form.get("inflation_std") or "0.5",
         selected_scenario_id=selected_scenario_id,
-        saved_scenarios = saved_scenarios,
+        saved_scenarios=saved_scenarios,
         sensitivities=sensitivities,
         dollar_impacts=dollar_impacts
     )
+
 
 
 

@@ -318,28 +318,35 @@
           <tr>
             <th>Parameter</th>
             <th>Elasticity<br>(% Δ Final / % Δ Input)</th>
-            <th>$ Δ Final / Δ Input</th>
+            <th>
+              Δ Final<br/>
+              <small>
+                per $1 (money) / per 1 pp (rates)
+              </small>
+            </th>
           </tr>
         </thead>
         <tbody>
           {% for var, coef in sensitivities.items() %}
-            <tr>
-              <td>{{ var.replace('_',' ').title() }}</td>
-              <td>{{ (coef*100)|round(1) }}&#37;</td>
-              <td>
-                {% if dollar_impacts[var] is not none %}
-                  {{ "$" + "{:,.2f}".format(dollar_impacts[var]) }}
-                {% else %}
-                  —
-                {% endif %}
-              </td>
-            </tr>
+          <tr>
+            <td>{{ var.replace('_',' ').title() }}</td>
+            <td>{{ (coef*100)|round(1) }}&#37;</td>
+            <td>
+              {% set impact = dollar_impacts[var] %}
+              {% if impact is not none %}
+                {{ "$" + "{:,.2f}".format(impact) }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
 {% endif %}
+
 
 
 
