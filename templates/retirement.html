@@ -309,20 +309,30 @@
     </div>
     {% endif %}
 
-    {% if sensitivities %}
-      <div class="mt-4 border p-3">
-        <h5>🔍 Sensitivity Analysis (STUB)</h5>
-        <ul>
-          {% for var, coef in sensitivities.items() %}
-            <li><strong>{{ var }}</strong>: {{ coef }}</li>
-          {% endfor %}
-        </ul>
+{% if sensitivities %}
+      <div class="mt-4">
+        <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered text-center">
+            <thead class="table-light">
+              <tr>
+                <th>Parameter</th>
+                <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for var, coef in sensitivities.items() %}
+                <tr>
+                  <td>{{ var.replace('_', ' ').title() }}</td>
+                  <td>{{ coef | round(2) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
-        <div class="mt-4 border p-3">
-       <h5>🔍 Raw Sensitivities JSON</h5>
-       <pre>{{ sensitivities | tojson(indent=2) }}</pre>
-      </div>
-        {% endif %}
+    {% endif %}
+
 
 
     {% if table %}
