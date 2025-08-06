@@ -32,12 +32,12 @@ def retirement():
     reset = False
     retirement_age = None
 
-    form_inputs: dict[str, Any] = {}
+    form_inputs: dict[str, any] = {}
 
     # Will be populated below
     sensitivities: dict[str, float] = {}
     dollar_impacts: dict[str, float] = {}
-    baseline_params: dict[str, Any] = {}
+    baseline_params: dict[str, any] = {}
 
     table_headers = [
         "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Income Tax Payment",
@@ -52,13 +52,12 @@ def retirement():
 
         elif action == "calculate":
             try:
-                # helper to parse and remember inputs
                 def get_form_value(name, cast_func, default=0):
                     v = request.form.get(name)
                     form_inputs[name] = v
                     return cast_func(v) if v else default
 
-                # ─── parse your form ───
+                # ─── parse inputs ───
                 current_age            = get_form_value("current_age", int)
                 retirement_age         = get_form_value("retirement_age", int)
                 monthly_saving         = get_form_value("annual_saving", float)
@@ -76,9 +75,9 @@ def retirement():
                 return_std             = get_form_value("return_std", float) / 100
                 inflation_std          = get_form_value("inflation_std", float) / 100
 
-                # collect liquidations
+                # ─── collect liquidations ───
                 asset_liquidation = []
-                for i in range(1,4):
+                for i in range(1, 4):
                     amt = get_form_value(f"asset_liquidation_{i}", float)
                     age = get_form_value(f"asset_liquidation_age_{i}", int)
                     if amt and age:
@@ -103,11 +102,11 @@ def retirement():
                     "income_tax_rate": income_tax_rate
                 }
 
-                # ─── run your deterministic projection ───
+                # ─── run deterministic projection ───
                 output = run_retirement_projection(**baseline_params)
                 result = output["final_assets"]
 
-                # format the table rows
+                # ─── build table ───
                 for row in output["table"]:
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
@@ -132,7 +131,7 @@ def retirement():
                     for row in output["table"]
                 ]
 
-                # build chart_data
+                # ─── chart data ───
                 chart_data = {
                     "Age": [r["Age"] for r in output["table"]],
                     "Living_Exp_Retirement": [r["Living_Exp_Retirement"] for r in output["table"]],
@@ -140,27 +139,15 @@ def retirement():
                     "Withdrawal_Rate": [round(r["Withdrawal_Rate"]/100,4) for r in output["table"]]
                 }
 
-                # ─── run Monte Carlo ───
-                mc_output = run_monte_carlo_simulation_locked_inputs(
-                    current_age=current_age,
-                    retirement_age=retirement_age,
-                    annual_saving=monthly_saving * 12,
-                    saving_increase_rate=saving_increase_rate,
-                    current_assets=current_assets,
-                    return_mean=return_rate,
-                    return_mean_after=return_rate_after,
-                    return_std=return_std,
-                    annual_expense=monthly_living_expense * 12,
-                    inflation_mean=inflation_rate,
-                    inflation_std=inflation_std,
-                    cpp_monthly=cpp_monthly,
-                    cpp_start_age=cpp_from,
-                    cpp_end_age=cpp_to,
-                    asset_liquidations=asset_liquidation,
-                    life_expectancy=lifespan,
-                    income_tax_rate=income_tax_rate,
-                    num_simulations=1000
-                )
+                # ─── Monte Carlo ───
+                mc_output = run_monte_carlo_simulation_locked_inputs(**baseline_params, **{
+                    "return_mean": return_rate,
+                    "return_mean_after": return_rate_after,
+                    "return_std": return_std,
+                    "inflation_mean": inflation_rate,
+                    "inflation_std": inflation_std,
+                    "num_simulations": 1000
+                })
 
                 monte_carlo_data = {
                     "Age": mc_output["ages"],
@@ -175,15 +162,15 @@ def retirement():
                     "ever":   mc_output["depletion_probs"].get("ever",0.0)
                 }
 
-                # ─── Sensitivity = elasticity ───
+                # ─── Sensitivity (elasticity) ───
                 variables = [
-                    "current_assets", "return_rate", "return_rate_after",
-                    "annual_saving", "annual_expense", "saving_increase_rate",
-                    "inflation_rate", "income_tax_rate"
+                    "current_assets","return_rate","return_rate_after",
+                    "annual_saving","annual_expense","saving_increase_rate",
+                    "inflation_rate","income_tax_rate"
                 ]
                 sensitivities = sensitivity_analysis(baseline_params, variables, delta=0.01)
 
-                # ─── Dollar‐impact per 1% for each var ───
+                # ─── Dollar-impact per 1% Δ input ───
                 base_assets = result
                 for var, coeff in sensitivities.items():
                     orig = baseline_params.get(var, 0)
@@ -198,7 +185,7 @@ def retirement():
 
             except Exception as e:
                 print("❌ Error in retirement projection:", e)
-                # reset everything on error
+                # wipe out on error
                 result = None
                 table = []
                 chart_data = {}
@@ -207,13 +194,14 @@ def retirement():
                 sensitivities = {}
                 dollar_impacts = {}
 
-    # load saved scenarios
+    # ─── Load Saved Scenarios ───
     selected_scenario_id = request.form.get("load_scenario_select","")
     if current_user.is_authenticated:
         saved_scenarios = RetirementScenario.query.filter_by(user_id=current_user.id).all()
     else:
         saved_scenarios = []
 
+    # ─── Render ───
     return render_template(
         "retirement.html",
         result=result,
