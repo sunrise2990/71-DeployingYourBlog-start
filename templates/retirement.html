@@ -313,6 +313,15 @@
 {% if sensitivities %}
   <div class="mt-4">
     <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
+
+    <!-- Explanations -->
+    <div class="mb-4">
+      <p><strong>Elasticity</strong> shows the percentage change in your <em>Final Assets</em> resulting from a 1% increase in the input parameter.
+      <br>For example, an elasticity of <code>8.09%</code> for <em>Current Assets</em> means that boosting your starting assets by 1% yields an 8.09% higher projected balance.</p>
+      <p><strong>Dollar Impact</strong> shows the absolute dollar change in your <em>Final Assets</em> for that same 1% increase.
+      <br>For example, a dollar impact of <code>$153,394</code> for <em>Current Assets</em> means a 1% bump in starting assets adds \$153,394 to your projection.</p>
+    </div>
+
     <div class="table-responsive">
       <table class="table table-sm table-bordered text-center">
         <thead class="table-light">
@@ -325,7 +334,15 @@
         <tbody>
           {% for var, vals in sensitivities.items() %}
             <tr>
-              <td>{{ var.replace('_', ' ').title() }}</td>
+              <td>
+                {% if var == 'return_rate' %}
+                  Pre-Retire Return Rate
+                {% elif var == 'return_rate_after' %}
+                  Post-Retire Return Rate
+                {% else %}
+                  {{ var.replace('_', ' ').title() }}
+                {% endif %}
+              </td>
               <td>{{ "{:.2f}".format(vals.sensitivity_pct) }}%</td>
               <td>${{ "{:,.0f}".format(vals.dollar_impact) }}</td>
             </tr>
@@ -335,6 +352,7 @@
     </div>
   </div>
 {% endif %}
+
 
 
     {% if table %}
