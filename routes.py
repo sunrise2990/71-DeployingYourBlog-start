@@ -24,6 +24,7 @@ def leasing_pipeline():
 # Retirement Planner route
 @projects_bp.route("/retirement", methods=["GET", "POST"])
 def retirement():
+    # ─── init all outputs ───
     result = None
     table = []
     chart_data = {}
@@ -33,7 +34,6 @@ def retirement():
     retirement_age = None
 
     form_inputs: dict[str, any] = {}
-
     sensitivities: dict[str, float] = {}
     dollar_impacts: dict[str, float] = {}
     baseline_params: dict[str, any] = {}
@@ -45,45 +45,45 @@ def retirement():
     ]
 
     if request.method == "POST":
-        action = request.form.get("action")
+        action = request.form.get("action", "")
         if action == "reset":
             reset = True
 
         elif action == "calculate":
             try:
-                # ─── helper to parse inputs ───
-                def get_form_value(name, cast, default=0):
+                # — helper to pull & remember inputs —
+                def get_val(name, cast, default=0):
                     v = request.form.get(name)
                     form_inputs[name] = v
                     return cast(v) if v else default
 
-                # ─── parse form values ───
-                current_age            = get_form_value("current_age", int)
-                retirement_age         = get_form_value("retirement_age", int)
-                monthly_saving         = get_form_value("annual_saving", float)
-                return_rate            = get_form_value("return_rate", float) / 100
-                return_rate_after      = get_form_value("return_rate_after", float) / 100
-                lifespan               = get_form_value("lifespan", int)
-                monthly_living_expense = get_form_value("monthly_living_expense", float)
-                inflation_rate         = get_form_value("inflation_rate", float) / 100
-                current_assets         = get_form_value("current_assets", float)
-                saving_increase_rate   = get_form_value("saving_increase_rate", float) / 100
-                income_tax_rate        = get_form_value("income_tax_rate", float) / 100
-                cpp_monthly            = get_form_value("cpp_support", float)
-                cpp_from               = get_form_value("cpp_from_age", int)
-                cpp_to                 = get_form_value("cpp_to_age", int)
-                return_std             = get_form_value("return_std", float) / 100
-                inflation_std          = get_form_value("inflation_std", float) / 100
+                # ─── 1) parse form ───
+                current_age            = get_val("current_age", int)
+                retirement_age         = get_val("retirement_age", int)
+                monthly_saving         = get_val("annual_saving", float)
+                return_rate            = get_val("return_rate", float) / 100
+                return_rate_after      = get_val("return_rate_after", float) / 100
+                lifespan               = get_val("lifespan", int)
+                monthly_living_expense = get_val("monthly_living_expense", float)
+                inflation_rate         = get_val("inflation_rate", float) / 100
+                current_assets         = get_val("current_assets", float)
+                saving_increase_rate   = get_val("saving_increase_rate", float) / 100
+                income_tax_rate        = get_val("income_tax_rate", float) / 100
+                cpp_monthly            = get_val("cpp_support", float)
+                cpp_from               = get_val("cpp_from_age", int)
+                cpp_to                 = get_val("cpp_to_age", int)
+                return_std             = get_val("return_std", float) / 100
+                inflation_std          = get_val("inflation_std", float) / 100
 
-                # ─── collect liquidations ───
+                # ─── collect any asset liquidations ───
                 asset_liquidation = []
                 for i in range(1, 4):
-                    amt = get_form_value(f"asset_liquidation_{i}", float)
-                    age = get_form_value(f"asset_liquidation_age_{i}", int)
+                    amt = get_val(f"asset_liquidation_{i}", float)
+                    age = get_val(f"asset_liquidation_age_{i}", int)
                     if amt and age:
                         asset_liquidation.append({"amount": amt, "age": age})
 
-                # ─── build baseline_params ───
+                # ─── 2) build baseline_params ───
                 baseline_params = {
                     "current_age": current_age,
                     "retirement_age": retirement_age,
@@ -102,11 +102,11 @@ def retirement():
                     "income_tax_rate": income_tax_rate
                 }
 
-                # ─── deterministic projection ───
+                # ─── 3) deterministic projection ───
                 output = run_retirement_projection(**baseline_params)
                 result = output["final_assets"]
 
-                # ─── format table ───
+                # ─── format the table rows ───
                 for row in output["table"]:
                     if not row.get("Living_Exp_Retirement"):
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
@@ -139,7 +139,7 @@ def retirement():
                     "Withdrawal_Rate": [round(r["Withdrawal_Rate"]/100,4) for r in output["table"]]
                 }
 
-                # ─── Monte Carlo ───
+                # ─── 4) Monte Carlo ───
                 mc_output = run_monte_carlo_simulation_locked_inputs(
                     **baseline_params,
                     return_mean=return_rate,
@@ -162,32 +162,38 @@ def retirement():
                     "ever":   mc_output["depletion_probs"].get("ever",0.0)
                 }
 
-                # ─── Sensitivities (elasticities) ───
-                vars = ["current_assets","return_rate","return_rate_after",
-                        "annual_saving","annual_expense","saving_increase_rate",
-                        "inflation_rate","income_tax_rate"]
-                sensitivities = sensitivity_analysis(baseline_params, vars, delta=0.01)
+                # ─── 5) sensitivities (elasticity) ───
+                vars_to_test = [
+                    "current_assets","return_rate","return_rate_after",
+                    "annual_saving","annual_expense","saving_increase_rate",
+                    "inflation_rate","income_tax_rate"
+                ]
+                sensitivities = sensitivity_analysis(baseline_params, vars_to_test, delta=0.01)
 
-                # ─── Dollar‐impact per 1% Δ input ───
+                # ─── 6) dollar‐impact per 1% Δ input ───
                 base_val = result or 0
-                for v,c in sensitivities.items():
+                for v, coeff in sensitivities.items():
                     orig = baseline_params.get(v,0)
-                    if isinstance(orig,(int,float)) and orig!=0:
+                    if isinstance(orig,(int,float)) and orig != 0:
                         p = baseline_params.copy()
-                        p[v] = orig*1.01
-                        new_f = run_retirement_projection(**p)["final_assets"]
-                        delta_in = orig*0.01
-                        dollar_impacts[v] = (new_f - base_val)/delta_in
+                        p[v] = orig * 1.01
+                        new_final = run_retirement_projection(**p)["final_assets"]
+                        delta_input = orig * 0.01
+                        dollar_impacts[v] = (new_final - base_val) / delta_input
                     else:
                         dollar_impacts[v] = None
 
             except Exception as e:
-                print("❌ Error in retirement projection:",e)
-                # wipe on error
-                result=table=chart_data=monte_carlo_data=depletion_stats={}
-                sensitivities=dollar_impacts={}
+                print("❌ Error in retirement projection:", e)
+                result = None
+                table = []
+                chart_data = {}
+                monte_carlo_data = {}
+                depletion_stats = {}
+                sensitivities = {}
+                dollar_impacts = {}
 
-    # ─── whether GET or POST, now **always** render ───
+    # ─── 7) saved scenarios + final render ───
     selected_scenario_id = request.form.get("load_scenario_select","")
     if current_user.is_authenticated:
         saved_scenarios = RetirementScenario.query.filter_by(user_id=current_user.id).all()
