@@ -310,48 +310,117 @@
     {% endif %}
 
 
+
 {% if sensitivities %}
   <div class="mt-4">
     <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
 
-    <!-- Explanations -->
-    <div class="mb-4">
-      <p><strong>Elasticity</strong> shows the percentage change in your <em>Final Assets</em> resulting from a 1% increase in the input parameter.
-      <br>For example, an elasticity of <code>8.09%</code> for <em>Current Assets</em> means that boosting your starting assets by 1% yields an 8.09% higher projected balance.</p>
-      <p><strong>Dollar Impact</strong> shows the absolute dollar change in your <em>Final Assets</em> for that same 1% increase.
-      <br>For example, a dollar impact of <code>$153,394</code> for <em>Current Assets</em> means a 1% bump in starting assets adds \$153,394 to your projection.</p>
+    <div class="row">
+      <!-- Table -->
+      <div class="col-md-6">
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered text-center">
+            <thead class="table-light">
+              <tr>
+                <th>Parameter</th>
+                <th>Dollar Impact ($)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for var, vals in sensitivities.items() %}
+                <tr>
+                  <td>
+                    {% if var == 'return_rate' %}
+                      Pre-Retire Return Rate
+                    {% elif var == 'return_rate_after' %}
+                      Post-Retire Return Rate
+                    {% else %}
+                      {{ var.replace('_', ' ').title() }}
+                    {% endif %}
+                  </td>
+                  <td>
+                    ${{ "{:,.0f}".format(vals.dollar_impact) }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Horizontal bar chart -->
+      <div class="col-md-6">
+        <canvas id="dollarImpactChart" height="300"></canvas>
+      </div>
     </div>
 
-    <div class="table-responsive">
-      <table class="table table-sm table-bordered text-center">
-        <thead class="table-light">
-          <tr>
-            <th>Parameter</th>
-            <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
-            <th>Dollar Impact ($)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for var, vals in sensitivities.items() %}
-            <tr>
-              <td>
-                {% if var == 'return_rate' %}
-                  Pre-Retire Return Rate
-                {% elif var == 'return_rate_after' %}
-                  Post-Retire Return Rate
-                {% else %}
-                  {{ var.replace('_', ' ').title() }}
-                {% endif %}
-              </td>
-              <td>{{ "{:.2f}".format(vals.sensitivity_pct) }}%</td>
-              <td>${{ "{:,.0f}".format(vals.dollar_impact) }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <!-- Explanations below -->
+    <div class="mt-3">
+      <p><strong>Dollar Impact</strong> shows the absolute change in your <em>Final Assets</em> for a 1% increase in each input.
+      Positive bars extend to the right; negative bars extend to the left of zero.</p>
     </div>
   </div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // Build labels and data arrays
+    const labels = [
+      {% for var, vals in sensitivities.items() %}
+        {% if var == 'return_rate' %}'Pre-Retire Return Rate',{% endif %}
+        {% if var == 'return_rate_after' %}'Post-Retire Return Rate',{% endif %}
+        {% if var == 'current_assets' %}'Current Assets',{% endif %}
+        {% if var == 'annual_saving' %}'Annual Saving',{% endif %}
+        {% if var == 'annual_expense' %}'Annual Expense',{% endif %}
+        {% if var == 'saving_increase_rate' %}'Saving Increase Rate',{% endif %}
+        {% if var == 'inflation_rate' %}'Inflation Rate',{% endif %}
+        {% if var == 'income_tax_rate' %}'Income Tax Rate',{% endif %}
+      {% endfor %}
+    ];
+
+    const data = [
+      {% for var, vals in sensitivities.items() %}
+        {{ vals.dollar_impact }}{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ];
+
+    // Determine symmetric X axis range
+    const maxImpact = Math.max(...data.map(v => Math.abs(v)));
+    const chart = new Chart(document.getElementById('dollarImpactChart'), {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Dollar Impact',
+          data: data,
+          // Chart.js will auto-color; negative values get the same style
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        scales: {
+          x: {
+            beginAtZero: true,
+            min: -maxImpact,
+            max: maxImpact,
+            ticks: {
+              callback: value => '$' + value.toLocaleString()
+            }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => '$' + ctx.parsed.x.toLocaleString()
+            }
+          }
+        }
+      }
+    });
+  </script>
 {% endif %}
+
 
 
 
