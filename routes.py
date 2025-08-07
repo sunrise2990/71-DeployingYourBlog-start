@@ -337,7 +337,7 @@ logger = logging.getLogger(__name__)
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
-    Handles exactly the Compare Scenarios action.
+    Handles the Compare Scenarios action.
     Expects form fields 'scenario_a' and 'scenario_b'.
     """
     try:
@@ -351,34 +351,39 @@ def compare_retirement():
         # 2) Load from DB
         scen_a = RetirementScenario.query.get(a_id)
         scen_b = RetirementScenario.query.get(b_id)
-
-        # Guard against missing DB records
-        if scen_a is None or scen_b is None:
-            flash("Could not find one of the selected scenarios.", "danger")
+        if not scen_a or not scen_b:
+            flash("One of the selected scenarios wasn't found.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        # 3) Deserialize saved params
-        params_a = json.loads(scen_a.params_json)
-        params_b = json.loads(scen_b.params_json)
+        # 3) Rebuild the exact same baseline_params dict you use in retirement()
+        param_keys = [
+            "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
+            "current_assets", "return_rate", "return_rate_after", "annual_expense",
+            "cpp_monthly", "cpp_start_age", "cpp_end_age",
+            "inflation_rate", "life_expectancy", "income_tax_rate"
+        ]
+        params_a = {k: getattr(scen_a, k) for k in param_keys}
+        params_b = {k: getattr(scen_b, k) for k in param_keys}
 
-        # 4) Run projections
+        # 4) Asset liquidations is stored as JSON or native list on the model
+        #    Adjust the attribute name if yours is different
+        params_a["asset_liquidations"] = scen_a.asset_liquidations
+        params_b["asset_liquidations"] = scen_b.asset_liquidations
+
+        # 5) Run projections
         out_a = run_retirement_projection(**params_a)
         out_b = run_retirement_projection(**params_b)
 
-        # 5) Monte Carlo
+        # 6) Monte Carlo
         mc_a = run_monte_carlo_simulation_locked_inputs(**params_a, num_simulations=1000)
         mc_b = run_monte_carlo_simulation_locked_inputs(**params_b, num_simulations=1000)
 
-        # 6) Sensitivity
-        variables = [
-            "current_assets", "return_rate", "return_rate_after",
-            "annual_saving", "annual_expense", "saving_increase_rate",
-            "inflation_rate", "income_tax_rate"
-        ]
+        # 7) Sensitivity
+        variables = param_keys  # same list
         sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
         sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
 
-        # 7) Build compare_data payload (use MC ages, not projection ages)
+        # 8) Build compare_data
         compare_data = {
             "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
             "mc": {
@@ -394,14 +399,18 @@ def compare_retirement():
             }
         }
 
-        # 8) Render comparison template
+        # 9) Render comparison template
         return render_template(
             "retirement_compare.html",
             compare_data=compare_data,
-            saved_scenarios=RetirementScenario.query.filter_by(
-                user_id=current_user.id
-            ).all()
+            saved_scenarios=RetirementScenario.query.filter_by(user_id=current_user.id).all()
         )
+
+    except Exception as e:
+        # Log and flash the real error
+        print("🔥 compare_retirement error:", e)
+        flash(f"Error comparing scenarios: {e}", "danger")
+        return redirect(url_for("projects.retirement"))
 
     except Exception as e:
         # Log full traceback to your server logs
