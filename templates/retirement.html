@@ -166,30 +166,6 @@
 </div>
 
 
-        <div class="form-row align-items-end mt-3">
-  <div class="form-group col-md-3">
-    <label for="compare_scenario_a">Compare Scenario A</label>
-    <select id="compare_scenario_a" name="scenario_a" class="form-control">
-      <option value="">— Select A —</option>
-      {% for scen in saved_scenarios %}
-        <option value="{{ scen.id }}">{{ scen.name }} ({{ scen.created_at.strftime('%Y-%m-%d') }})</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="form-group col-md-3">
-    <label for="compare_scenario_b">Compare Scenario B</label>
-    <select id="compare_scenario_b" name="scenario_b" class="form-control">
-      <option value="">— Select B —</option>
-      {% for scen in saved_scenarios %}
-        <option value="{{ scen.id }}">{{ scen.name }} ({{ scen.created_at.strftime('%Y-%m-%d') }})</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="form-group col-md-2">
-    <button type="submit" name="action" value="compare" class="btn btn-primary mt-4">Compare</button>
-  </div>
-</div>
-
 
 
     {% if result %}
@@ -388,6 +364,40 @@
       For example, a dollar impact of <code>$153,394</code> for <em>Current Assets</em> means a 1% bump adds \$153,394 to your projection.</p>
     </div>
   </div>
+
+
+
+<!-- ==== Move Compare UI to here ==== -->
+<div class="mt-5">
+  <h5 class="text-center mb-3">🔄 Compare Scenarios</h5>
+  <div class="row align-items-end">
+    <div class="col-md-3">
+      <label for="compare_scenario_a">Scenario A</label>
+      <select id="compare_scenario_a" name="scenario_a" class="form-control">
+        <option value="">— Select A —</option>
+        {% for scen in saved_scenarios %}
+          <option value="{{ scen.id }}">{{ scen.name }} ({{ scen.created_at.strftime('%Y-%m-%d') }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label for="compare_scenario_b">Scenario B</label>
+      <select id="compare_scenario_b" name="scenario_b" class="form-control">
+        <option value="">— Select B —</option>
+        {% for scen in saved_scenarios %}
+          <option value="{{ scen.id }}">{{ scen.name }} ({{ scen.created_at.strftime('%Y-%m-%d') }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button type="submit" name="action" value="compare" class="btn btn-primary mt-4">Compare</button>
+    </div>
+  </div>
+</div>
+<!-- ==== End Compare UI ==== -->
+
+
+
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
