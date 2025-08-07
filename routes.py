@@ -328,24 +328,23 @@ def delete_scenario(scenario_id):
 
 
 # === Compare Two Scenarios ===
-import traceback
 import logging
+import traceback
 
-# configure a module-level logger
 logger = logging.getLogger(__name__)
 
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
     Handles the Compare Scenarios action.
-    Expects form fields 'scenario_a' and 'scenario_b'.
+    Expects POST fields 'scenario_a' and 'scenario_b' (IDs from retirement_scenarios).
     """
     try:
         # 1) Grab the two selected scenario IDs
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
         if not a_id or not b_id:
-            flash("Please pick both Scenario A and Scenario B", "warning")
+            flash("Please pick both Scenario A and Scenario B.", "warning")
             return redirect(url_for("projects.retirement"))
 
         # 2) Load each scenario from the database
@@ -355,27 +354,46 @@ def compare_retirement():
             flash("One of the selected scenarios wasn't found.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        # 3) Deserialize the full input dicts from the JSON column
-        params_a = scen_a.inputs_json
-        params_b = scen_b.inputs_json
+        # (optional) ensure both belong to the current user
+        if current_user.is_authenticated:
+            if scen_a.user_id != current_user.id or scen_b.user_id != current_user.id:
+                flash("You can only compare your own saved scenarios.", "danger")
+                return redirect(url_for("projects.retirement"))
 
-        # 4) Run the deterministic projection for each
+        # 3) Pull the full input dicts from our JSON column
+        params_a = dict(scen_a.inputs_json or {})
+        params_b = dict(scen_b.inputs_json or {})
+
+        # 4) Deterministic projection for each
         out_a = run_retirement_projection(**params_a)
         out_b = run_retirement_projection(**params_b)
 
-        # 5) Run Monte Carlo on each
+        # 5) Monte Carlo for each
         mc_a = run_monte_carlo_simulation_locked_inputs(**params_a, num_simulations=1000)
         mc_b = run_monte_carlo_simulation_locked_inputs(**params_b, num_simulations=1000)
 
-        # 6) Perform sensitivity analysis on the same set of keys
-        variables = list(params_a.keys())
+        # 6) Sensitivity analysis on a stable, supported set of variables
+        allowed_vars = [
+            "current_assets",
+            "return_rate",
+            "return_rate_after",
+            "annual_saving",
+            "annual_expense",
+            "saving_increase_rate",
+            "inflation_rate",
+            "income_tax_rate",
+        ]
+        # Only include vars present in both scenarios to avoid KeyErrors
+        variables = [v for v in allowed_vars if v in params_a and v in params_b]
+
         sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
         sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
 
-        # 7) Build the payload for the template
+        # 7) Build payload for template
         compare_data = {
             "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
             "mc": {
+                # use MC ages so the line charts align to the simulation horizon
                 "ages": mc_a["ages"],
                 "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
                 "p50": {"A": mc_a["percentiles"]["p50"], "B": mc_b["percentiles"]["p50"]},
@@ -385,21 +403,19 @@ def compare_retirement():
                 "vars": variables,
                 "A": [sens_a[v]["dollar_impact"] for v in variables],
                 "B": [sens_b[v]["dollar_impact"] for v in variables],
-            }
+            },
         }
 
-        # 8) Render the dedicated compare template
+        # 8) Render comparison template
         return render_template(
             "retirement_compare.html",
             compare_data=compare_data,
             saved_scenarios=RetirementScenario.query.filter_by(
                 user_id=current_user.id
-            ).all()
+            ).all() if current_user.is_authenticated else [],
         )
 
     except Exception as e:
-        # Log the full traceback for debugging
         logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
-        # Give the user a friendly flash
         flash(f"Error comparing scenarios: {e}", "danger")
         return redirect(url_for("projects.retirement"))

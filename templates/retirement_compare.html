@@ -36,7 +36,7 @@
   </div>
 </div>
 
-<!-- Chart.js – make sure this matches your base.html inclusion policy -->
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   // Data from Flask
@@ -52,6 +52,7 @@
   const impactA = {{ compare_data.sens.A    | tojson }};
   const impactB = {{ compare_data.sens.B    | tojson }};
   const maxImp  = Math.max(...impactA.map(Math.abs), ...impactB.map(Math.abs));
+  const safeMaxImp = maxImp === 0 ? 1 : maxImp;
 
   // Monte Carlo Comparison Chart
   new Chart(document.getElementById('mcCompareChart'), {
@@ -103,6 +104,7 @@
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       scales: {
         x: {
           title: { display: true, text: 'Age' }
@@ -110,7 +112,7 @@
         y: {
           title: { display: true, text: 'Projected Assets ($)' },
           ticks: {
-            callback: val => '$' + val.toLocaleString()
+            callback: val => '$' + Number(val).toLocaleString()
           }
         }
       },
@@ -118,14 +120,14 @@
         legend: { position: 'bottom' },
         tooltip: {
           callbacks: {
-            label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}`
+            label: ctx => `${ctx.dataset.label}: $${Number(ctx.parsed.y).toLocaleString()}`
           }
         }
       }
     }
   });
 
-  // Sensitivity Comparison Chart
+  // Sensitivity Comparison Chart (horizontal, zero-centered)
   new Chart(document.getElementById('sensCompareChart'), {
     type: 'bar',
     data: {
@@ -146,18 +148,33 @@
     options: {
       indexAxis: 'y',
       responsive: true,
+      maintainAspectRatio: false,
       scales: {
         x: {
-          min: -maxImp,
-          max: maxImp,
+          min: -safeMaxImp,
+          max:  safeMaxImp,
           title: { display: true, text: 'Dollar Impact ($)' },
+          grid: { zeroLineColor: 'rgba(0,0,0,0.2)' },
           ticks: {
-            callback: val => '$' + val.toLocaleString()
+            callback: val => '$' + Number(val).toLocaleString()
           }
         }
       },
       plugins: {
         legend: { position: 'bottom' },
-        tooltip
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v = Number(ctx.parsed.x);
+              return `${ctx.dataset.label}: $${v.toLocaleString()}`;
+            }
+          }
+        }
+      }
+    }
+  });
+</script>
+{% endblock %}
+
 
 
