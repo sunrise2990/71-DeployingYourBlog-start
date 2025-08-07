@@ -328,8 +328,18 @@ def delete_scenario(scenario_id):
 
 
 # === Compare Two Scenarios ===
+import traceback
+import logging
+
+# at top of file, configure a logger if you don’t already have one
+logger = logging.getLogger(__name__)
+
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
+    """
+    Handles exactly the Compare Scenarios action.
+    Expects form fields 'scenario_a' and 'scenario_b'.
+    """
     try:
         # 1) Grab IDs
         a_id = request.form.get("scenario_a")
@@ -341,6 +351,11 @@ def compare_retirement():
         # 2) Load from DB
         scen_a = RetirementScenario.query.get(a_id)
         scen_b = RetirementScenario.query.get(b_id)
+
+        # Guard against missing DB records
+        if scen_a is None or scen_b is None:
+            flash("Could not find one of the selected scenarios.", "danger")
+            return redirect(url_for("projects.retirement"))
 
         # 3) Deserialize saved params
         params_a = json.loads(scen_a.params_json)
@@ -363,11 +378,11 @@ def compare_retirement():
         sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
         sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
 
-        # 7) Build compare_data
+        # 7) Build compare_data payload (use MC ages, not projection ages)
         compare_data = {
             "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
             "mc": {
-                "ages": mc_a["ages"],    # <— must use MC ages!
+                "ages": mc_a["ages"],
                 "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
                 "p50": {"A": mc_a["percentiles"]["p50"], "B": mc_b["percentiles"]["p50"]},
                 "p90": {"A": mc_a["percentiles"]["p90"], "B": mc_b["percentiles"]["p90"]},
@@ -379,7 +394,7 @@ def compare_retirement():
             }
         }
 
-        # 8) Render the comparison template
+        # 8) Render comparison template
         return render_template(
             "retirement_compare.html",
             compare_data=compare_data,
@@ -389,7 +404,9 @@ def compare_retirement():
         )
 
     except Exception as e:
-        # Log it and send user back
-        print("🔥 Error in compare_retirement:", e)
-        flash("Sorry, something went wrong while comparing.", "danger")
+        # Log full traceback to your server logs
+        logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
+
+        # Temporarily flash the real exception so you can see it in the UI
+        flash(f"Error comparing scenarios: {e}", "danger")
         return redirect(url_for("projects.retirement"))
