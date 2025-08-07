@@ -373,7 +373,7 @@ def compare_retirement():
             "B": scen_b.scenario_name
         },
         "mc": {
-            "ages": out_a["ages"],
+            "ages": mc_a["ages"],
             "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
             "p50": {"A": mc_a["percentiles"]["p50"], "B": mc_b["percentiles"]["p50"]},
             "p90": {"A": mc_a["percentiles"]["p90"], "B": mc_b["percentiles"]["p90"]},
