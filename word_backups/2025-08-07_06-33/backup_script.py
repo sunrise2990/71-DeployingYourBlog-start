@@ -34,7 +34,7 @@ top_level_files = [
 for filename in top_level_files:
     src = Path(filename)
     if src.exists():
-        dst_file = backup_dir / f"{src.stem}.txt"
+        dst_file = backup_dir / src.name  # preserve original filename (including dotfiles)
         shutil.copy2(src, dst_file)
         print(f"✅ Copied: {src} → {dst_file}")
     else:
@@ -52,17 +52,23 @@ if css_file.exists():
 else:
     print(f"⚠️ CSS file not found: {css_file}")
 
-# === STEP 5: Copy models/retirement/retirement_calc.py ===
-retirement_calc_path = Path("models/retirement/retirement_calc.py")
+# === STEP 5: Copy models/retirement/retirement_calc.py and retirement_scenario.py ===
 retirement_backup_dir = backup_dir / "models_retirement"
 retirement_backup_dir.mkdir(parents=True, exist_ok=True)
 
-if retirement_calc_path.exists():
-    dst_file = retirement_backup_dir / "retirement_cal.txt"
-    shutil.copy2(retirement_calc_path, dst_file)
-    print(f"📁 Copied: {retirement_calc_path} → {dst_file}")
-else:
-    print(f"⚠️ File not found: {retirement_calc_path}")
+retirement_files = [
+    "models/retirement/retirement_calc.py",
+    "models/retirement/retirement_scenario.py"
+]
+
+for filepath in retirement_files:
+    src_path = Path(filepath)
+    if src_path.exists():
+        dst_file = retirement_backup_dir / f"{src_path.stem}.txt"
+        shutil.copy2(src_path, dst_file)
+        print(f"📁 Copied: {src_path} → {dst_file}")
+    else:
+        print(f"⚠️ File not found: {src_path}")
 
 # === STEP 6: Copy entire migrations folder recursively ===
 migrations_src = Path("migrations")
@@ -93,5 +99,6 @@ for i, (folder, folder_time) in enumerate(valid_folders):
     if i >= 2 and folder_time < cutoff:
         shutil.rmtree(folder)
         print(f"🗑️ Deleted old backup: {folder}")
+
 
 

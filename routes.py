@@ -1,4 +1,5 @@
-from flask import Blueprint, request, render_template, jsonify
+from flask import Blueprint, request, render_template, jsonify, flash, redirect, url_for
+import json
 from flask_login import login_required, current_user
 import numpy as np
 from models.retirement.retirement_calc import (
@@ -324,3 +325,68 @@ def delete_scenario(scenario_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
+
+
+# === Compare Two Scenarios ===
+@projects_bp.route("/retirement/compare", methods=["POST"])
+def compare_retirement():
+    """
+    Handles exactly the Compare Scenarios action.
+    Expects form fields 'scenario_a' and 'scenario_b'.
+    """
+    # 1. Grab IDs
+    a_id = request.form.get("scenario_a")
+    b_id = request.form.get("scenario_b")
+    if not a_id or not b_id:
+        flash("Please pick both Scenario A and Scenario B", "warning")
+        return redirect(url_for("projects.retirement"))
+
+    # 2. Load from DB
+    scen_a = RetirementScenario.query.get(a_id)
+    scen_b = RetirementScenario.query.get(b_id)
+
+    # 3. Deserialize saved params (assuming you stored JSON)
+    params_a = json.loads(scen_a.params_json)
+    params_b = json.loads(scen_b.params_json)
+
+    # 4. Run projections, MC & sensitivity for each
+    out_a = run_retirement_projection(**params_a)
+    out_b = run_retirement_projection(**params_b)
+
+    mc_a = run_monte_carlo_simulation_locked_inputs(**params_a, num_simulations=1000)
+    mc_b = run_monte_carlo_simulation_locked_inputs(**params_b, num_simulations=1000)
+
+    vars = [  # same list you use in retirement()
+        "current_assets", "return_rate", "return_rate_after",
+        "annual_saving", "annual_expense", "saving_increase_rate",
+        "inflation_rate", "income_tax_rate"
+    ]
+    sens_a = sensitivity_analysis(params_a, vars, delta=0.01)
+    sens_b = sensitivity_analysis(params_b, vars, delta=0.01)
+
+    # 5. Build the compare_data payload
+    compare_data = {
+        "labels": {
+            "A": scen_a.scenario_name,
+            "B": scen_b.scenario_name
+        },
+        "mc": {
+            "ages": out_a["ages"],
+            "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
+            "p50": {"A": mc_a["percentiles"]["p50"], "B": mc_b["percentiles"]["p50"]},
+            "p90": {"A": mc_a["percentiles"]["p90"], "B": mc_b["percentiles"]["p90"]},
+        },
+        "sens": {
+            "vars": vars,
+            "A": [sens_a[v]["dollar_impact"] for v in vars],
+            "B": [sens_b[v]["dollar_impact"] for v in vars]
+        }
+    }
+
+    # 6. Render a template (you can reuse retirement.html or have a dedicated compare.html)
+    return render_template(
+        "retirement_compare.html",
+        compare_data=compare_data,
+        # also pass in anything from the single-scenario page you still want (e.g. saved_scenarios)
+        saved_scenarios=RetirementScenario.query.filter_by(user_id=current_user.id).all()
+    )
