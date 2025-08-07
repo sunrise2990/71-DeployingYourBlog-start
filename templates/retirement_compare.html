@@ -2,13 +2,13 @@
 
 {% block content %}
 <div class="container my-5">
-  <!-- Page Title -->
+  <!-- Comparison Header -->
   <h3 class="text-center mb-4">
     🔄 Compare: {{ compare_data.labels.A }} vs {{ compare_data.labels.B }}
   </h3>
 
   <div class="row">
-    <!-- Monte Carlo Comparison Chart -->
+    <!-- Monte Carlo Comparison -->
     <div class="col-md-6 mb-4">
       <div class="card h-100">
         <div class="card-header">Monte Carlo Simulation</div>
@@ -18,7 +18,7 @@
       </div>
     </div>
 
-    <!-- Sensitivity Comparison Chart -->
+    <!-- Sensitivity Comparison -->
     <div class="col-md-6 mb-4">
       <div class="card h-100">
         <div class="card-header">Sensitivity (Dollar Impact)</div>
@@ -32,7 +32,7 @@
   <!-- Back button -->
   <div class="text-center mt-4">
     <a href="{{ url_for('projects.retirement') }}" class="btn btn-secondary">
-      ← Back to Retirement Planner
+      ← Back to Planner
     </a>
   </div>
 </div>
@@ -40,19 +40,19 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // Data passed from Flask
-  const ages    = {{ compare_data.mc.ages  | tojson }};
-  const p10a    = {{ compare_data.mc.p10.A | tojson }};
-  const p10b    = {{ compare_data.mc.p10.B | tojson }};
-  const p50a    = {{ compare_data.mc.p50.A | tojson }};
-  const p50b    = {{ compare_data.mc.p50.B | tojson }};
-  const p90a    = {{ compare_data.mc.p90.A | tojson }};
-  const p90b    = {{ compare_data.mc.p90.B | tojson }};
+  // Pull in the data passed from Flask
+  const ages   = {{ compare_data.mc.ages | tojson }};
+  const p10a   = {{ compare_data.mc.p10.A | tojson }};
+  const p10b   = {{ compare_data.mc.p10.B | tojson }};
+  const p50a   = {{ compare_data.mc.p50.A | tojson }};
+  const p50b   = {{ compare_data.mc.p50.B | tojson }};
+  const p90a   = {{ compare_data.mc.p90.A | tojson }};
+  const p90b   = {{ compare_data.mc.p90.B | tojson }};
 
-  const vars     = {{ compare_data.sens.vars | tojson }};
-  const impactA  = {{ compare_data.sens.A    | tojson }};
-  const impactB  = {{ compare_data.sens.B    | tojson }};
-  const maxImp   = Math.max(...impactA.map(Math.abs), ...impactB.map(Math.abs));
+  const vars   = {{ compare_data.sens.vars  | tojson }};
+  const impactA= {{ compare_data.sens.A     | tojson }};
+  const impactB= {{ compare_data.sens.B     | tojson }};
+  const maxImp = Math.max(...impactA.map(Math.abs), ...impactB.map(Math.abs));
 
   // Monte Carlo Comparison Chart
   new Chart(document.getElementById('mcCompareChart'), {
@@ -61,42 +61,42 @@
       labels: ages,
       datasets: [
         {
-          label: '{{ compare_data.labels.A }} – 10th%',
+          label: '{{ compare_data.labels.A }} – 10th %ile',
           data: p10a,
-          borderColor: 'rgba(54,162,235,0.7)',
+          borderColor: 'rgba(54, 162, 235, 0.7)',
           borderDash: [5, 5],
           fill: false
         },
         {
-          label: '{{ compare_data.labels.B }} – 10th%',
+          label: '{{ compare_data.labels.B }} – 10th %ile',
           data: p10b,
-          borderColor: 'rgba(255,159,64,0.7)',
+          borderColor: 'rgba(255, 159, 64, 0.7)',
           borderDash: [5, 5],
           fill: false
         },
         {
-          label: '{{ compare_data.labels.A }} – 50th%',
+          label: '{{ compare_data.labels.A }} – 50th %ile',
           data: p50a,
-          borderColor: 'rgba(54,162,235,1)',
+          borderColor: 'rgba(54, 162, 235, 1)',
           fill: false
         },
         {
-          label: '{{ compare_data.labels.B }} – 50th%',
+          label: '{{ compare_data.labels.B }} – 50th %ile',
           data: p50b,
-          borderColor: 'rgba(255,159,64,1)',
+          borderColor: 'rgba(255, 159, 64, 1)',
           fill: false
         },
         {
-          label: '{{ compare_data.labels.A }} – 90th%',
+          label: '{{ compare_data.labels.A }} – 90th %ile',
           data: p90a,
-          borderColor: 'rgba(54,162,235,0.7)',
+          borderColor: 'rgba(54, 162, 235, 0.7)',
           borderDash: [2, 2],
           fill: false
         },
         {
-          label: '{{ compare_data.labels.B }} – 90th%',
+          label: '{{ compare_data.labels.B }} – 90th %ile',
           data: p90b,
-          borderColor: 'rgba(255,159,64,0.7)',
+          borderColor: 'rgba(255, 159, 64, 0.7)',
           borderDash: [2, 2],
           fill: false
         }
@@ -106,22 +106,30 @@
       responsive: true,
       scales: {
         x: {
-          title: { display: true, text: 'Age' }
+          title: {
+            display: true,
+            text: 'Age'
+          }
         },
         y: {
-          title: { display: true, text: 'Assets ($)' },
+          title: {
+            display: true,
+            text: 'Assets ($)'
+          },
           ticks: {
             callback: value => '$' + value.toLocaleString()
           }
         }
       },
       plugins: {
-        legend: { position: 'bottom' },
+        legend: {
+          position: 'bottom'
+        },
         tooltip: {
           callbacks: {
             label: ctx => {
-              const val = ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed.x;
-              return ctx.dataset.label + ': $' + val.toLocaleString();
+              let val = ctx.parsed.y;
+              return `${ctx.dataset.label}: $${val.toLocaleString()}`;
             }
           }
         }
@@ -133,17 +141,17 @@
   new Chart(document.getElementById('sensCompareChart'), {
     type: 'bar',
     data: {
-      labels: vars.map(v => v.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())),
+      labels: vars.map(v => v.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())),
       datasets: [
         {
           label: '{{ compare_data.labels.A }}',
           data: impactA,
-          backgroundColor: 'rgba(54,162,235,0.5)'
+          backgroundColor: 'rgba(54, 162, 235, 0.5)'
         },
         {
           label: '{{ compare_data.labels.B }}',
           data: impactB,
-          backgroundColor: 'rgba(255,159,64,0.5)'
+          backgroundColor: 'rgba(255, 159, 64, 0.5)'
         }
       ]
     },
@@ -154,14 +162,19 @@
         x: {
           min: -maxImp,
           max: maxImp,
-          ticks: {
-            callback: value => '$' + value.toLocaleString()
+          title: {
+            display: true,
+            text: 'Dollar Impact ($)'
           },
-          title: { display: true, text: 'Dollar Impact ($)' }
+          ticks: {
+            callback: v => '$' + v.toLocaleString()
+          }
         }
       },
       plugins: {
-        legend: { position: 'bottom' },
+        legend: {
+          position: 'bottom'
+        },
         tooltip: {
           callbacks: {
             label: ctx => '$' + ctx.parsed.x.toLocaleString()
@@ -172,3 +185,4 @@
   });
 </script>
 {% endblock %}
+

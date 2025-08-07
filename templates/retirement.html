@@ -368,23 +368,21 @@
 
 
 <!-- Compare Saved Scenarios -->
-
+<!-- … end of your main retirement <form> … -->
 </form>
 
-<!-- ==== New Compare form ==== -->
+<!-- ==== Compare Saved Scenarios ==== -->
 <form method="POST" action="{{ url_for('projects.compare_retirement') }}">
   <hr class="my-5">
-  <div class="text-center mb-4">
-    <h5 class="fw-bold">
-      🔄 Compare Saved Scenarios
-      <span …>ℹ️</span>
-    </h5>
-  </div>
-
+  <h5 class="text-center mb-4">
+    🔄 Compare Saved Scenarios
+    <span tabindex="0" data-bs-toggle="tooltip" title="Select two saved scenarios to compare.">
+      &#9432;
+    </span>
+  </h5>
   <div class="row align-items-end">
-    <!-- Scenario A -->
-    <div class="col-md-6">
-      <label for="compare_scenario_a">Scenario A</label>
+    <div class="col-md-6 mt-3">
+      <label for="compare_scenario_a" class="form-label">Scenario A</label>
       <select id="compare_scenario_a" name="scenario_a" class="form-select">
         <option value="">-- Select Scenario A --</option>
         {% for scenario in saved_scenarios %}
@@ -392,10 +390,8 @@
         {% endfor %}
       </select>
     </div>
-
-    <!-- Scenario B -->
-    <div class="col-md-6">
-      <label for="compare_scenario_b">Scenario B</label>
+    <div class="col-md-6 mt-3">
+      <label for="compare_scenario_b" class="form-label">Scenario B</label>
       <select id="compare_scenario_b" name="scenario_b" class="form-select">
         <option value="">-- Select Scenario B --</option>
         {% for scenario in saved_scenarios %}
@@ -403,8 +399,6 @@
         {% endfor %}
       </select>
     </div>
-
-    <!-- Compare button -->
     <div class="col-12 text-center mt-4">
       <button type="submit" class="btn btn-primary px-4">
         Compare Scenarios
@@ -412,7 +406,6 @@
     </div>
   </div>
 </form>
-
 
 <!-- ==== End Compare UI ==== -->
 

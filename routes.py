@@ -330,64 +330,66 @@ def delete_scenario(scenario_id):
 # === Compare Two Scenarios ===
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
-    """
-    Handles exactly the Compare Scenarios action.
-    Expects form fields 'scenario_a' and 'scenario_b'.
-    """
-    # 1. Grab the two scenario IDs from the form
-    a_id = request.form.get("scenario_a")
-    b_id = request.form.get("scenario_b")
-    if not a_id or not b_id:
-        flash("Please pick both Scenario A and Scenario B", "warning")
-        return redirect(url_for("projects.retirement"))
+    try:
+        # 1) Grab IDs
+        a_id = request.form.get("scenario_a")
+        b_id = request.form.get("scenario_b")
+        if not a_id or not b_id:
+            flash("Please pick both Scenario A and Scenario B", "warning")
+            return redirect(url_for("projects.retirement"))
 
-    # 2. Load each scenario from the database
-    scen_a = RetirementScenario.query.get(a_id)
-    scen_b = RetirementScenario.query.get(b_id)
+        # 2) Load from DB
+        scen_a = RetirementScenario.query.get(a_id)
+        scen_b = RetirementScenario.query.get(b_id)
 
-    # 3. Deserialize their saved parameters
-    params_a = json.loads(scen_a.params_json)
-    params_b = json.loads(scen_b.params_json)
+        # 3) Deserialize saved params
+        params_a = json.loads(scen_a.params_json)
+        params_b = json.loads(scen_b.params_json)
 
-    # 4. Re-run the retirement projections
-    out_a = run_retirement_projection(**params_a)
-    out_b = run_retirement_projection(**params_b)
+        # 4) Run projections
+        out_a = run_retirement_projection(**params_a)
+        out_b = run_retirement_projection(**params_b)
 
-    # 5. Run Monte Carlo simulations
-    mc_a = run_monte_carlo_simulation_locked_inputs(**params_a, num_simulations=1000)
-    mc_b = run_monte_carlo_simulation_locked_inputs(**params_b, num_simulations=1000)
+        # 5) Monte Carlo
+        mc_a = run_monte_carlo_simulation_locked_inputs(**params_a, num_simulations=1000)
+        mc_b = run_monte_carlo_simulation_locked_inputs(**params_b, num_simulations=1000)
 
-    # 6. Run sensitivity analysis on each
-    variables = [
-        "current_assets", "return_rate", "return_rate_after",
-        "annual_saving", "annual_expense", "saving_increase_rate",
-        "inflation_rate", "income_tax_rate"
-    ]
-    sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
-    sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
+        # 6) Sensitivity
+        variables = [
+            "current_assets", "return_rate", "return_rate_after",
+            "annual_saving", "annual_expense", "saving_increase_rate",
+            "inflation_rate", "income_tax_rate"
+        ]
+        sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
+        sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
 
-    # 7. Build the compare_data payload
-    compare_data = {
-        "labels": {
-            "A": scen_a.scenario_name,
-            "B": scen_b.scenario_name
-        },
-        "mc": {
-            "ages": mc_a["ages"],
-            "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
-            "p50": {"A": mc_a["percentiles"]["p50"], "B": mc_b["percentiles"]["p50"]},
-            "p90": {"A": mc_a["percentiles"]["p90"], "B": mc_b["percentiles"]["p90"]},
-        },
-        "sens": {
-            "vars": variables,
-            "A": [sens_a[v]["dollar_impact"] for v in variables],
-            "B": [sens_b[v]["dollar_impact"] for v in variables]
+        # 7) Build compare_data
+        compare_data = {
+            "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
+            "mc": {
+                "ages": mc_a["ages"],    # <— must use MC ages!
+                "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
+                "p50": {"A": mc_a["percentiles"]["p50"], "B": mc_b["percentiles"]["p50"]},
+                "p90": {"A": mc_a["percentiles"]["p90"], "B": mc_b["percentiles"]["p90"]},
+            },
+            "sens": {
+                "vars": variables,
+                "A": [sens_a[v]["dollar_impact"] for v in variables],
+                "B": [sens_b[v]["dollar_impact"] for v in variables],
+            }
         }
-    }
 
-    # 8. Render the comparison template
-    return render_template(
-        "retirement_compare.html",
-        compare_data=compare_data,
-        saved_scenarios=RetirementScenario.query.filter_by(user_id=current_user.id).all()
-    )
+        # 8) Render the comparison template
+        return render_template(
+            "retirement_compare.html",
+            compare_data=compare_data,
+            saved_scenarios=RetirementScenario.query.filter_by(
+                user_id=current_user.id
+            ).all()
+        )
+
+    except Exception as e:
+        # Log it and send user back
+        print("🔥 Error in compare_retirement:", e)
+        flash("Sorry, something went wrong while comparing.", "danger")
+        return redirect(url_for("projects.retirement"))
