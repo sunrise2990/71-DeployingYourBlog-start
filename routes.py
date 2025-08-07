@@ -331,7 +331,7 @@ def delete_scenario(scenario_id):
 import traceback
 import logging
 
-# at top of file, configure a logger if you don’t already have one
+# configure a module-level logger
 logger = logging.getLogger(__name__)
 
 @projects_bp.route("/retirement/compare", methods=["POST"])
@@ -341,49 +341,38 @@ def compare_retirement():
     Expects form fields 'scenario_a' and 'scenario_b'.
     """
     try:
-        # 1) Grab IDs
+        # 1) Grab the two selected scenario IDs
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
         if not a_id or not b_id:
             flash("Please pick both Scenario A and Scenario B", "warning")
             return redirect(url_for("projects.retirement"))
 
-        # 2) Load from DB
+        # 2) Load each scenario from the database
         scen_a = RetirementScenario.query.get(a_id)
         scen_b = RetirementScenario.query.get(b_id)
         if not scen_a or not scen_b:
             flash("One of the selected scenarios wasn't found.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        # 3) Rebuild the exact same baseline_params dict you use in retirement()
-        param_keys = [
-            "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
-            "current_assets", "return_rate", "return_rate_after", "annual_expense",
-            "cpp_monthly", "cpp_start_age", "cpp_end_age",
-            "inflation_rate", "life_expectancy", "income_tax_rate"
-        ]
-        params_a = {k: getattr(scen_a, k) for k in param_keys}
-        params_b = {k: getattr(scen_b, k) for k in param_keys}
+        # 3) Deserialize the full input dicts from the JSON column
+        params_a = scen_a.inputs_json
+        params_b = scen_b.inputs_json
 
-        # 4) Asset liquidations is stored as JSON or native list on the model
-        #    Adjust the attribute name if yours is different
-        params_a["asset_liquidations"] = scen_a.asset_liquidations
-        params_b["asset_liquidations"] = scen_b.asset_liquidations
-
-        # 5) Run projections
+        # 4) Run the deterministic projection for each
         out_a = run_retirement_projection(**params_a)
         out_b = run_retirement_projection(**params_b)
 
-        # 6) Monte Carlo
+        # 5) Run Monte Carlo on each
         mc_a = run_monte_carlo_simulation_locked_inputs(**params_a, num_simulations=1000)
         mc_b = run_monte_carlo_simulation_locked_inputs(**params_b, num_simulations=1000)
 
-        # 7) Sensitivity
-        variables = param_keys  # same list
+        # 6) Perform sensitivity analysis on the same set of keys
+        variables = list(params_a.keys())
         sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
         sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
 
-        # 8) Build compare_data
+        # 7) Build the payload for the template
         compare_data = {
             "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
             "mc": {
@@ -399,23 +388,18 @@ def compare_retirement():
             }
         }
 
-        # 9) Render comparison template
+        # 8) Render the dedicated compare template
         return render_template(
             "retirement_compare.html",
             compare_data=compare_data,
-            saved_scenarios=RetirementScenario.query.filter_by(user_id=current_user.id).all()
+            saved_scenarios=RetirementScenario.query.filter_by(
+                user_id=current_user.id
+            ).all()
         )
 
     except Exception as e:
-        # Log and flash the real error
-        print("🔥 compare_retirement error:", e)
-        flash(f"Error comparing scenarios: {e}", "danger")
-        return redirect(url_for("projects.retirement"))
-
-    except Exception as e:
-        # Log full traceback to your server logs
+        # Log the full traceback for debugging
         logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
-
-        # Temporarily flash the real exception so you can see it in the UI
+        # Give the user a friendly flash
         flash(f"Error comparing scenarios: {e}", "danger")
         return redirect(url_for("projects.retirement"))
