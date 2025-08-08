@@ -401,7 +401,7 @@ def delete_scenario(scenario_id):
         return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
 
 
-# === Compare Two Scenarios (normalized inputs; stds only for MC) ===
+# === Compare Two Scenarios (MC uses projection-normalized args + stds) ===
 import logging
 import traceback
 
@@ -453,12 +453,11 @@ def _normalize_inputs(raw: dict) -> dict:
     life_expectancy = _as_int(life_expectancy, 0)
 
     # ---- savings (monthly UI historically saved under "annual_saving") ----
-    # Prefer explicit "monthly_saving" if present; otherwise interpret "annual_saving".
     if "monthly_saving" in d:
         annual_saving = _as_float(d.get("monthly_saving", 0.0), 0.0) * 12.0
     else:
         raw_saving = _as_float(d.get("annual_saving", 0.0), 0.0)
-        # Heuristic: if it looks like a monthly value (< 25k), treat as monthly; else assume annual.
+        # Heuristic: treat <25k as monthly, else as annual
         annual_saving = raw_saving * 12.0 if 0 < raw_saving < 25000 else raw_saving
 
     # ---- expenses (monthly -> annual) ----
@@ -516,7 +515,7 @@ def _normalize_inputs(raw: dict) -> dict:
         "inflation_std":        inflation_std,
     }
 
-# Whitelists for each engine
+# Projection whitelist
 _PROJECTION_KEYS = {
     "current_age","retirement_age","annual_saving","saving_increase_rate",
     "current_assets","return_rate","return_rate_after","annual_expense",
@@ -527,34 +526,40 @@ _PROJECTION_KEYS = {
 def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
-def _mc_args_from_params(p):
-    """Map normalized params to MC engine names; include stds here only."""
+def _mc_args_from_proj_and_params(proj, params):
+    """
+    Build MC args from the already-normalized projection dict (so means,
+    savings, expenses, taxes, etc. exactly match projection),
+    plus stds from params.
+    """
+    # Extra safety: convert any % that slipped through as whole numbers
+    def pct(x):
+        x = _as_float(x, 0.0)
+        return x / 100.0 if x > 1.0 else x
+
     return {
-        "current_age":          p["current_age"],
-        "retirement_age":       p["retirement_age"],
-        "annual_saving":        p["annual_saving"],
-        "saving_increase_rate": p["saving_increase_rate"],
-        "current_assets":       p["current_assets"],
-        "return_mean":          p["return_rate"],
-        "return_mean_after":    p["return_rate_after"],
-        "return_std":           p.get("return_std", 0.08),
-        "annual_expense":       p["annual_expense"],
-        "inflation_mean":       p["inflation_rate"],
-        "inflation_std":        p.get("inflation_std", 0.005),
-        "cpp_monthly":          p["cpp_monthly"],
-        "cpp_start_age":        p["cpp_start_age"],
-        "cpp_end_age":          p["cpp_end_age"],
-        "asset_liquidations":   p.get("asset_liquidations", []),
-        "life_expectancy":      p["life_expectancy"],
-        "income_tax_rate":      p.get("income_tax_rate", 0.0),
+        "current_age":          proj["current_age"],
+        "retirement_age":       proj["retirement_age"],
+        "annual_saving":        proj["annual_saving"],
+        "saving_increase_rate": proj["saving_increase_rate"],
+        "current_assets":       proj["current_assets"],
+        "return_mean":          pct(proj["return_rate"]),
+        "return_mean_after":    pct(proj["return_rate_after"]),
+        "return_std":           pct(params.get("return_std", 0.08)),
+        "annual_expense":       proj["annual_expense"],
+        "inflation_mean":       pct(proj["inflation_rate"]),
+        "inflation_std":        pct(params.get("inflation_std", 0.005)),
+        "cpp_monthly":          proj["cpp_monthly"],
+        "cpp_start_age":        proj["cpp_start_age"],
+        "cpp_end_age":          proj["cpp_end_age"],
+        "asset_liquidations":   proj.get("asset_liquidations", []),
+        "life_expectancy":      proj["life_expectancy"],
+        "income_tax_rate":      proj.get("income_tax_rate", 0.0),
         "num_simulations":      1000,
     }
 
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
-    """
-    Compare two saved scenarios with normalized inputs.
-    """
     try:
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
@@ -578,7 +583,7 @@ def compare_retirement():
         params_a = _normalize_inputs(scen_a.inputs_json or {})
         params_b = _normalize_inputs(scen_b.inputs_json or {})
 
-        # --- projection-only dicts for deterministic tasks ---
+        # Projection-only dicts for deterministic tasks
         proj_a = _projection_args_from_params(params_a)
         proj_b = _projection_args_from_params(params_b)
 
@@ -586,13 +591,12 @@ def compare_retirement():
         out_a = run_retirement_projection(**proj_a)
         out_b = run_retirement_projection(**proj_b)
 
-        # Monte Carlo (uses means/stds)
-        mc_args_a = _mc_args_from_params(params_a)
-        mc_args_b = _mc_args_from_params(params_b)
+        # Monte Carlo (use projection args + stds only)
+        mc_args_a = _mc_args_from_proj_and_params(proj_a, params_a)
+        mc_args_b = _mc_args_from_proj_and_params(proj_b, params_b)
 
-        # Log exact inputs going to the MC engine (server logs)
-        logger.info("MC A args: %s", mc_args_a)
-        logger.info("MC B args: %s", mc_args_b)
+        logger.info("MC A args (final): %s", mc_args_a)
+        logger.info("MC B args (final): %s", mc_args_b)
 
         mc_a = run_monte_carlo_simulation_locked_inputs(**mc_args_a)
         mc_b = run_monte_carlo_simulation_locked_inputs(**mc_args_b)
@@ -633,4 +637,3 @@ def compare_retirement():
         logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
         flash(f"Error comparing scenarios: {e}", "danger")
         return redirect(url_for("projects.retirement"))
-
