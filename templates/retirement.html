@@ -447,7 +447,6 @@
   <div class="card mb-4">
     <div class="card-header">Monte Carlo Simulation</div>
     <div class="card-body">
-      <!-- Use Plotly like the main MC chart -->
       <div id="mcComparePlot" style="height:400px;"></div>
     </div>
   </div>
@@ -460,12 +459,25 @@
   </div>
 </div>
 
+<!-- Expose the MC shown above so compare can reuse it 1:1 -->
+<script>
+  window.CURRENT_SCENARIO_ID = "{{ current_scenario_id or '' }}";          // set this in your main route
+  window.CURRENT_SCENARIO_NAME = "{{ current_scenario_name or '' }}";      // optional
+  window.MC_MAIN = {
+    ages: {{ (monte_carlo_data and monte_carlo_data["Age"]) | tojson or '[]' }},
+    p10:  {{ (monte_carlo_data and monte_carlo_data["Percentile_10"]) | tojson or '[]' }},
+    p50:  {{ (monte_carlo_data and monte_carlo_data["Percentile_50"]) | tojson or '[]' }},
+    p90:  {{ (monte_carlo_data and monte_carlo_data["Percentile_90"]) | tojson or '[]' }},
+    label: "{{ current_scenario_name or 'Scenario' }}"
+  };
+</script>
+
 <!-- Plotly (same lib as main MC) + Chart.js (bars) -->
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 (function () {
-  const form = document.querySelector('#compare-form');
+  const form = document.getElementById('compare-form');
   if (!form) return;
 
   let sensChart = null;
@@ -473,43 +485,64 @@
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
+    const aId = document.getElementById('scenario_a').value || '';
+    const bId = document.getElementById('scenario_b').value || '';
+
+    // If user is just “comparing” the same scenario that’s already plotted above,
+    // render from the exact same arrays (no backend, no drift).
+    if (aId && !bId && window.CURRENT_SCENARIO_ID && aId === window.CURRENT_SCENARIO_ID && window.MC_MAIN) {
+      const local = {
+        labels: { A: window.CURRENT_SCENARIO_NAME || window.MC_MAIN.label },
+        mc: {
+          ages: window.MC_MAIN.ages,
+          p10: { A: window.MC_MAIN.p10 },
+          p50: { A: window.MC_MAIN.p50 },
+          p90: { A: window.MC_MAIN.p90 }
+        },
+        sens: { vars: [], A: [] } // leave empty unless you want to compute
+      };
+      renderCompare(local);
+      return;
+    }
+
+    // Otherwise, call backend to fetch A vs B
     const fd = new FormData(form);
+    let res;
     try {
-      const res = await fetch('{{ url_for("projects.compare_retirement") }}', {
+      res = await fetch('{{ url_for("projects.compare_retirement") }}', {
         method: 'POST',
         body: fd,
         credentials: 'same-origin'
       });
-
-      const ct = (res.headers.get('content-type') || '').toLowerCase();
-      if (!ct.includes('application/json')) {
-        const text = await res.text();
-        alert('Compare failed (non-JSON response). First 300 chars:\n\n' + text.slice(0,300));
-        return;
-      }
-
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Compare failed.');
-        return;
-      }
-      renderCompare(data);
     } catch (err) {
       alert('Network error during compare.');
+      return;
     }
+
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (!ct.includes('application/json')) {
+      const text = await res.text();
+      alert('Compare failed (non-JSON response). First 300 chars:\n\n' + text.slice(0,300));
+      return;
+    }
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Compare failed.');
+      return;
+    }
+    renderCompare(data);
   });
 
   function renderCompare(cd) {
-    // Show block & set title
-    const block = document.getElementById('compare-block');
-    block.classList.remove('d-none');
+    document.getElementById('compare-block').classList.remove('d-none');
 
     const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
     const labelB = (cd.labels && cd.labels.B) || '';
     document.getElementById('compare-title').textContent =
       labelB ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`;
 
-    // ===== Plotly MC (same look as main) =====
+    // Plotly MC (identical style to main)
     const ages = cd.mc.ages || [];
     const aP10 = (cd.mc.p10 && cd.mc.p10.A) || [];
     const aP90 = (cd.mc.p90 && cd.mc.p90.A) || [];
@@ -537,14 +570,14 @@
         title: 'Projected Assets ($)',
         tickprefix: '$',
         separatethousands: true,
-        exponentformat: 'none'  // avoid sci notation
+        exponentformat: 'none' // no scientific notation
       },
       legend: { orientation: 'h', x: 0.1, y: -0.2 }
     };
 
     Plotly.newPlot('mcComparePlot', traces, mcLayout, { responsive: true });
 
-    // ===== Chart.js Sensitivity =====
+    // Sensitivity (leave blank unless you compute it server-side)
     const vars = (cd.sens.vars || []).map(v =>
       v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
     );
@@ -559,9 +592,9 @@
     const ds = [{ label: labelA, data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' }];
     if (impactB) ds.push({ label: labelB, data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' });
 
-    const ctx = document.getElementById('sensCompareChart').getContext('2d');
-    if (sensChart) sensChart.destroy();
-    sensChart = new Chart(ctx, {
+    const canvas = document.getElementById('sensCompareChart').getContext('2d');
+    if (window._sensChart) window._sensChart.destroy();
+    window._sensChart = new Chart(canvas, {
       type: 'bar',
       data: { labels: vars, datasets: ds },
       options: {
@@ -570,19 +603,14 @@
         maintainAspectRatio: false,
         scales: {
           x: {
-            min: -maxImp,
-            max:  maxImp,
+            min: -maxImp, max: maxImp,
             title: { display: true, text: 'Dollar Impact ($)' },
             ticks: { callback: v => '$' + Number(v).toLocaleString() }
           }
         },
         plugins: {
           legend: { position: 'bottom' },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => `${ctx.dataset.label}: $${Number(ctx.parsed.x).toLocaleString()}`
-            }
-          }
+          tooltip: { callbacks: { label: c => `${c.dataset.label}: $${Number(c.parsed.x).toLocaleString()}` } }
         }
       }
     });
