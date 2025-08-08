@@ -442,21 +442,20 @@
     🔄 Compare Saved Scenarios
     <span tabindex="0"
           data-bs-toggle="tooltip"
-          title="Pick two saved scenarios and render Monte Carlo + sensitivity below.">
+          title="Pick Scenario A to plot; add Scenario B to overlay.">
       &#9432;
     </span>
   </h5>
 
-  {% set has_scenarios = saved_scenarios|length > 1 %}
-
+  {% set has_any = saved_scenarios|length > 0 %}
   <div class="row align-items-end">
-    <!-- Scenario A -->
+    <!-- Scenario A (required) -->
     <div class="col-md-6 mt-3">
-      <label for="compare_scenario_a" class="form-label">Scenario A</label>
+      <label for="compare_scenario_a" class="form-label">Scenario A (required)</label>
       <select id="compare_scenario_a"
               name="scenario_a"
               class="form-select"
-              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
+              {% if not has_any %}disabled{% else %}required{% endif %}>
         <option value="">-- Select Scenario A --</option>
         {% for scenario in saved_scenarios %}
           <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
@@ -464,14 +463,14 @@
       </select>
     </div>
 
-    <!-- Scenario B -->
+    <!-- Scenario B (optional) -->
     <div class="col-md-6 mt-3">
-      <label for="compare_scenario_b" class="form-label">Scenario B</label>
+      <label for="compare_scenario_b" class="form-label">Scenario B (optional)</label>
       <select id="compare_scenario_b"
               name="scenario_b"
               class="form-select"
-              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
-        <option value="">-- Select Scenario B --</option>
+              {% if not has_any %}disabled{% endif %}>
+        <option value="">-- (None) --</option>
         {% for scenario in saved_scenarios %}
           <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
         {% endfor %}
@@ -481,12 +480,12 @@
     <div class="col-12 text-center mt-4">
       <button type="submit"
               class="btn btn-primary px-4"
-              {% if not has_scenarios %}disabled{% endif %}>
-        Compare Scenarios
+              {% if not has_any %}disabled{% endif %}>
+        Compare / Show
       </button>
-      {% if not has_scenarios %}
+      {% if not has_any %}
         <p class="text-muted mt-2 mb-0">
-          Save at least two scenarios to enable comparison.
+          Save a scenario first to enable comparison.
         </p>
       {% endif %}
     </div>
@@ -495,9 +494,12 @@
 <!-- ==== End Compare UI ==== -->
 
 
+
 {% if compare_data %}
   <hr class="my-5">
-  <h5 class="text-center mb-4">🔄 Compare: {{ compare_data.labels.A }} vs {{ compare_data.labels.B }}</h5>
+  <h5 class="text-center mb-4">
+    🔄 Compare: {{ compare_data.labels.A }}{% if compare_data.labels.B %} vs {{ compare_data.labels.B }}{% endif %}
+  </h5>
 
   <!-- Monte Carlo (stacked, full width) -->
   <div class="mb-4">
@@ -519,38 +521,42 @@
     </div>
   </div>
 
-  <!-- Chart.js (safe if included twice) -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     // ----- Data from Flask -----
     const ages    = {{ compare_data.mc.ages  | tojson }};
     const p10a    = {{ compare_data.mc.p10.A | tojson }};
-    const p10b    = {{ compare_data.mc.p10.B | tojson }};
     const p50a    = {{ compare_data.mc.p50.A | tojson }};
-    const p50b    = {{ compare_data.mc.p50.B | tojson }};
     const p90a    = {{ compare_data.mc.p90.A | tojson }};
+    // For B, backend should send [] when not selected
+    const p10b    = {{ compare_data.mc.p10.B | tojson }};
+    const p50b    = {{ compare_data.mc.p50.B | tojson }};
     const p90b    = {{ compare_data.mc.p90.B | tojson }};
+
+    const labelA  = {{ compare_data.labels.A | tojson }};
+    const labelB  = {{ compare_data.labels.B | tojson }};
 
     const vars    = {{ compare_data.sens.vars | tojson }};
     const impactA = {{ compare_data.sens.A    | tojson }};
     const impactB = {{ compare_data.sens.B    | tojson }};
-    const maxImp  = Math.max(...impactA.map(Math.abs), ...impactB.map(Math.abs));
-    const safeMaxImp = maxImp === 0 ? 1 : maxImp;
+
+    // Helper: only add datasets that actually have data
+    function hasData(arr) { return Array.isArray(arr) && arr.length > 0; }
 
     // ----- Monte Carlo line chart -----
+    const mcDatasets = [];
+    if (hasData(p10a)) mcDatasets.push({ label: `${labelA} – 10th %ile`, data: p10a, borderColor: 'rgba(54,162,235,0.7)', borderDash: [5,5], fill: false });
+    if (hasData(p50a)) mcDatasets.push({ label: `${labelA} – 50th %ile`, data: p50a, borderColor: 'rgba(54,162,235,1)', fill: false });
+    if (hasData(p90a)) mcDatasets.push({ label: `${labelA} – 90th %ile`, data: p90a, borderColor: 'rgba(54,162,235,0.7)', borderDash: [2,2], fill: false });
+
+    if (hasData(p10b)) mcDatasets.push({ label: `${labelB} – 10th %ile`, data: p10b, borderColor: 'rgba(255,159,64,0.7)', borderDash: [5,5], fill: false });
+    if (hasData(p50b)) mcDatasets.push({ label: `${labelB} – 50th %ile`, data: p50b, borderColor: 'rgba(255,159,64,1)', fill: false });
+    if (hasData(p90b)) mcDatasets.push({ label: `${labelB} – 90th %ile`, data: p90b, borderColor: 'rgba(255,159,64,0.7)', borderDash: [2,2], fill: false });
+
     new Chart(document.getElementById('mcCompareChart'), {
       type: 'line',
-      data: {
-        labels: ages,
-        datasets: [
-          { label: '{{ compare_data.labels.A }} – 10th %ile', data: p10a, borderColor: 'rgba(54,162,235,0.7)', borderDash: [5,5], fill: false },
-          { label: '{{ compare_data.labels.B }} – 10th %ile', data: p10b, borderColor: 'rgba(255,159,64,0.7)', borderDash: [5,5], fill: false },
-          { label: '{{ compare_data.labels.A }} – 50th %ile', data: p50a, borderColor: 'rgba(54,162,235,1)', fill: false },
-          { label: '{{ compare_data.labels.B }} – 50th %ile', data: p50b, borderColor: 'rgba(255,159,64,1)', fill: false },
-          { label: '{{ compare_data.labels.A }} – 90th %ile', data: p90a, borderColor: 'rgba(54,162,235,0.7)', borderDash: [2,2], fill: false },
-          { label: '{{ compare_data.labels.B }} – 90th %ile', data: p90b, borderColor: 'rgba(255,159,64,0.7)', borderDash: [2,2], fill: false }
-        ]
-      },
+      data: { labels: ages, datasets: mcDatasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -567,14 +573,19 @@
     });
 
     // ----- Sensitivity horizontal bar chart -----
+    const sensDatasets = [];
+    if (hasData(impactA)) sensDatasets.push({ label: labelA, data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' });
+    if (hasData(impactB)) sensDatasets.push({ label: labelB, data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' });
+
+    const maxImp = Math.max(
+      ...((impactA || []).map(Math.abs).concat((impactB || []).map(Math.abs), [1]))
+    );
+
     new Chart(document.getElementById('sensCompareChart'), {
       type: 'bar',
       data: {
         labels: vars.map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())),
-        datasets: [
-          { label: '{{ compare_data.labels.A }}', data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' },
-          { label: '{{ compare_data.labels.B }}', data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' }
-        ]
+        datasets: sensDatasets
       },
       options: {
         indexAxis: 'y',
@@ -582,7 +593,7 @@
         maintainAspectRatio: false,
         scales: {
           x: {
-            min: -safeMaxImp, max: safeMaxImp,
+            min: -maxImp, max: maxImp,
             title: { display: true, text: 'Dollar Impact ($)' },
             ticks: { callback: v => '$' + Number(v).toLocaleString() }
           }
@@ -595,6 +606,7 @@
     });
   </script>
 {% endif %}
+
 
 
 
