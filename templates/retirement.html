@@ -409,7 +409,11 @@
 <hr class="my-4">
 <h5 class="text-center mb-3">🔄 Compare Saved Scenarios</h5>
 
-<form method="POST" action="{{ url_for('projects.compare_retirement') }}" class="row g-3 align-items-end justify-content-center">
+<form id="compare-form" method="POST" action="{{ url_for('projects.compare_retirement') }}" class="row g-3 align-items-end justify-content-center">
+  {% if csrf_token is defined %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% endif %}
+
   <div class="col-md-4">
     <label for="scenario_a" class="form-label">Scenario A</label>
     <select id="scenario_a" name="scenario_a" class="form-select" required>
@@ -434,6 +438,7 @@
     <button type="submit" class="btn btn-warning w-100">Compare</button>
   </div>
 </form>
+
 
 
 <!-- Compare graphs container (initially hidden) -->
