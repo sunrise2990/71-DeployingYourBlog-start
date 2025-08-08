@@ -438,59 +438,42 @@
   </div>
 </form>
 
-<!-- Compare block -->
+<!-- Compare MC -->
 <div id="compare-block" class="mt-5 d-none">
   <hr class="my-4">
   <h5 class="text-center mb-3" id="compare-title">🔄 Compare</h5>
-
-  <!-- MC (Plotly) -->
   <div class="card mb-4">
     <div class="card-header">Monte Carlo Simulation</div>
     <div class="card-body">
       <div id="mc-compare-plot" style="height:400px;"></div>
     </div>
   </div>
-
-  <!-- Sensitivity (Chart.js) -->
-  <div id="sens-card" class="card mb-4 d-none">
-    <div class="card-header">Sensitivity (Dollar Impact)</div>
-    <div class="card-body">
-      <canvas id="sens-compare-chart" style="height:400px;"></canvas>
-    </div>
-  </div>
 </div>
 
-<!-- libs -->
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <script>
 (function(){
   const form = document.getElementById('compare-form');
   if (!form) return;
-
-  let sensChart = null;
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const bId = document.getElementById('scenario_b').value || '';
 
-    // A-only: clone the existing MC chart; hide sensitivity block
+    // If no Scenario B → CLONE the main MC chart exactly
     if (!bId) {
       const src = document.getElementById('monte-carlo-chart');
       if (!src || !src.data) { alert('Main MC chart not found on page.'); return; }
       const traces = JSON.parse(JSON.stringify(src.data));
       const layout = JSON.parse(JSON.stringify(src.layout || {}));
       ensureLayout(layout);
-      showCompareBlock();
       showTitle(`🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`);
       Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
-      hideSensitivity();
       return;
     }
 
-    // A+B: call backend (returns mc + sens)
+    // With Scenario B → fetch A+B from backend (already normalized)
     const fd = new FormData(form);
     const res = await fetch('{{ url_for("projects.compare_retirement") }}', {
       method: 'POST',
@@ -509,105 +492,55 @@
     if (!res.ok) { alert(cd.error || 'Compare failed.'); return; }
 
     renderOverlay(cd);
-    renderSensitivity(cd); // modular sensitivity
   });
 
-  // ---------- MC overlay (Plotly) ----------
   function renderOverlay(cd){
     const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
     const labelB = (cd.labels && cd.labels.B) || 'Scenario B';
-    const ages  = (cd.mc.ages || []).map(Number);
+    const age  = (cd.mc.ages || []).map(Number);
+    const aP10 = (cd.mc.p10.A || []).map(Number);
+    const aP50 = (cd.mc.p50.A || []).map(Number);
+    const aP90 = (cd.mc.p90.A || []).map(Number);
+    const bP10 = (cd.mc.p10.B || []).map(Number);
+    const bP50 = (cd.mc.p50.B || []).map(Number);
+    const bP90 = (cd.mc.p90.B || []).map(Number);
 
-    const A = {
-      p10: (cd.mc.p10.A || []).map(Number),
-      p50: (cd.mc.p50.A || []).map(Number),
-      p90: (cd.mc.p90.A || []).map(Number)
-    };
-    const B = (cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B) ? {
-      p10: (cd.mc.p10.B || []).map(Number),
-      p50: (cd.mc.p50.B || []).map(Number),
-      p90: (cd.mc.p90.B || []).map(Number)
-    } : null;
+    // align lengths just in case
+    const n = Math.min(age.length, aP10.length, aP50.length, aP90.length);
+    const m = bP10.length && bP50.length && bP90.length
+      ? Math.min(age.length, bP10.length, bP50.length, bP90.length)
+      : 0;
+
+    const A = { p10: aP10.slice(0,n), p50: aP50.slice(0,n), p90: aP90.slice(0,n) };
+    const B = m ? { p10: bP10.slice(0,m), p50: bP50.slice(0,m), p90: bP90.slice(0,m) } : null;
+    const ages = age.slice(0, Math.max(n, m || n));
 
     const traces = [
       // A band + median (blue)
-      { x: ages, y: A.p10, fill: 'none', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: ages, y: A.p90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: ages, y: A.p50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } }
+      { x: ages, y: A.p10, fill: 'none',
+        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: A.p90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)',
+        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: A.p50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } },
     ];
 
     if (B) {
       traces.push(
-        { x: ages, y: B.p10, fill: 'none', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-        { x: ages, y: B.p90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        // B band + median (orange)
+        { x: ages, y: B.p10, fill: 'none',
+          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: ages, y: B.p90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)',
+          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
         { x: ages, y: B.p50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
       );
     }
 
     const layout = {};
     ensureLayout(layout);
-    showCompareBlock();
     showTitle(B ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`);
     Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
   }
 
-  // ---------- Sensitivity (Chart.js) ----------
-  function renderSensitivity(cd){
-    // Only show when backend provided sensitivity arrays
-    if (!cd.sens || !Array.isArray(cd.sens.vars)) {
-      hideSensitivity();
-      return;
-    }
-
-    const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
-    const labelB = (cd.labels && cd.labels.B) || null;
-
-    const vars = cd.sens.vars.map(v =>
-      v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
-    );
-    const impactA = cd.sens.A || [];
-    const impactB = cd.sens.B || null;
-
-    const maxImp = Math.max(
-      ...(impactA.map(x => Math.abs(x))),
-      ...(impactB ? impactB.map(x => Math.abs(x)) : [0])
-    ) || 1;
-
-    const ds = [{ label: labelA, data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' }];
-    if (impactB) ds.push({ label: labelB, data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' });
-
-    const ctx = document.getElementById('sens-compare-chart').getContext('2d');
-    if (sensChart) sensChart.destroy();
-    sensChart = new Chart(ctx, {
-      type: 'bar',
-      data: { labels: vars, datasets: ds },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            min: -maxImp, max: maxImp,
-            title: { display: true, text: 'Dollar Impact ($)' },
-            ticks: { callback: v => '$' + Number(v).toLocaleString() }
-          }
-        },
-        plugins: {
-          legend: { position: 'bottom' },
-          tooltip: {
-            callbacks: {
-              label: (c) => `${c.dataset.label}: $${Number(c.parsed.x).toLocaleString()}`
-            }
-          }
-        }
-      }
-    });
-
-    // reveal sensitivity card
-    document.getElementById('sens-card').classList.remove('d-none');
-  }
-
-  // ---------- helpers ----------
   function ensureLayout(layout){
     layout.margin = { t: 30 };
     layout.xaxis = { title: 'Age' };
@@ -617,20 +550,11 @@
     layout.yaxis.separatethousands = true;
     layout.yaxis.exponentformat = 'none';
     layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
-  }
-
-  function showCompareBlock(){
     document.getElementById('compare-block').classList.remove('d-none');
   }
 
   function showTitle(txt){
     document.getElementById('compare-title').textContent = txt;
-  }
-
-  function hideSensitivity(){
-    const card = document.getElementById('sens-card');
-    if (!card.classList.contains('d-none')) card.classList.add('d-none');
-    if (sensChart) { sensChart.destroy(); sensChart = null; }
   }
 })();
 </script>

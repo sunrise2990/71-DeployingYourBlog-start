@@ -531,16 +531,10 @@ from flask import request, jsonify, current_app
 from flask_login import current_user
 import re
 
-# routes.py
-from flask import request, jsonify, current_app
-from flask_login import current_user
-import re
-
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
-    Adds Sensitivity Compare (dollar impact + elasticity) below MC.
     Robust normalization for BOTH scenarios; never 500s because of B.
     """
 
@@ -586,7 +580,7 @@ def compare_retirement():
             if isinstance(v, (int, float)):
                 return v
             try:
-                return float(str(v).replace(",", "").replace("%", "").strip())
+                return float(str(v).replace(",", "").strip())
             except Exception:
                 return v
 
@@ -684,72 +678,14 @@ def compare_retirement():
             maxB = max(B["p50"][:m] or [0])
             if maxB > 1e9 or (maxA > 0 and maxB > 20 * maxA):
                 warning = "Scenario B may be using different units (rates/years). Overlay shown; please review inputs."
-                current_app.logger.warning(
-                    "Compare soft warning: maxA=%s maxB=%s | A_args=%s | B_args=%s",
-                    maxA, maxB, A.get("_args"), B.get("_args")
-                )
+                current_app.logger.warning("Compare soft warning: maxA=%s maxB=%s | A_args=%s | B_args=%s",
+                                           maxA, maxB, A.get("_args"), B.get("_args"))
 
-        # ---------- Sensitivity Compare (modular block) ----------
-        # Variables must match what you chart on the main page
-        SENS_VARS = [
-            "current_assets", "return_rate", "return_rate_after",
-            "annual_saving", "annual_expense", "saving_increase_rate",
-            "inflation_rate", "income_tax_rate",
-        ]
-
-        def _proj_args_for(scn):
-            """
-            Build deterministic projection args for sensitivity using the
-            same numeric normalization rules as MC.
-            """
-            params = to_canonical_inputs(scn.inputs_json or {})
-            cleaned = _normalize_args(params)
-            return _projection_args_from_params(cleaned)
-
-        def _run_sensitivity_for(proj_args):
-            """
-            Returns aligned arrays for dollar impact and elasticity (%).
-            """
-            s = sensitivity_analysis(proj_args, SENS_VARS, delta=0.01)
-            dollar = [s[v]["dollar_impact"] if v in s else 0 for v in SENS_VARS]
-            pct    = [s[v]["sensitivity_pct"] if v in s else 0 for v in SENS_VARS]
-            return dollar, pct
-
-        # A sensitivity
-        sensA_dollar, sensA_pct = [], []
-        try:
-            proj_a = _proj_args_for(scen_a)
-            sensA_dollar, sensA_pct = _run_sensitivity_for(proj_a)
-        except Exception as e:
-            current_app.logger.exception("Sensitivity A failed: %s", e)
-
-        # B sensitivity (optional)
-        sensB_dollar, sensB_pct = None, None
-        if scen_b:
-            try:
-                proj_b = _proj_args_for(scen_b)
-                sensB_dollar, sensB_pct = _run_sensitivity_for(proj_b)
-            except Exception as e:
-                current_app.logger.exception("Sensitivity B failed: %s", e)
-
-        payload["sens"] = {
-            "vars": SENS_VARS,
-            "A": sensA_dollar,
-            "A_pct": sensA_pct,
-        }
-        if sensB_dollar is not None:
-            payload["sens"]["B"] = sensB_dollar
-            payload["sens"]["B_pct"] = sensB_pct
-
-        # ---------- warnings / debug ----------
         if warning:
             payload["warning"] = warning
 
         if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
-            dbg = {"A_args": A["_args"]}
-            if scen_b:
-                dbg["B_args"] = B.get("_args")
-            payload["_debug"] = dbg
+            payload["_debug"] = {"A_args": A["_args"], **({"B_args": B.get("_args")} if scen_b else {})}
 
         return jsonify(payload), 200
 
@@ -759,6 +695,5 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
-
 
 
