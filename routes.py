@@ -533,37 +533,44 @@ from flask_login import current_user
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
-    Return JSON for compare MC (A always; B optional).
-    Uses the same MC pipeline as the main page, with defensive normalization.
+    Return JSON for compare MC (A required, B optional).
+    Identical MC pipeline for both, defensive normalization, and rich errors.
     """
+    def jerr(msg, code=400, extra=None):
+        if extra:
+            current_app.logger.warning("compare_retirement: %s | extra=%s", msg, extra)
+        return jsonify({"error": msg, **({"_extra": extra} if (current_app.debug and extra) else {})}), code
+
     try:
         raw_a = (request.form.get("scenario_a") or "").strip()
         raw_b = (request.form.get("scenario_b") or "").strip()
 
-        def parse_id(s):
+        # --- parse ids
+        try:
+            a_id = int(raw_a)
+        except Exception:
+            return jerr("Invalid Scenario A id.", 400, {"scenario_a": raw_a})
+
+        b_id = None
+        if raw_b:
             try:
-                return int(s)
+                b_id = int(raw_b)
             except Exception:
-                return None
+                return jerr("Invalid Scenario B id.", 400, {"scenario_b": raw_b})
 
-        a_id = parse_id(raw_a)
-        b_id = parse_id(raw_b)
-
-        if not a_id:
-            return jsonify({"error": "Pick Scenario A first."}), 400
-
+        # --- fetch rows
         scen_a = RetirementScenario.query.get(a_id)
         if not scen_a:
-            return jsonify({"error": "Scenario A not found."}), 404
-
+            return jerr("Scenario A not found.", 404, {"a_id": a_id})
         scen_b = RetirementScenario.query.get(b_id) if b_id else None
 
-        # Ownership guard (keep if app is multi-user)
         if current_user.is_authenticated:
-            if scen_a.user_id != current_user.id or (scen_b and scen_b.user_id != current_user.id):
-                return jsonify({"error": "You can only compare your own scenarios."}), 403
+            if scen_a.user_id != current_user.id:
+                return jerr("You can only compare your own scenarios.", 403)
+            if scen_b and scen_b.user_id != current_user.id:
+                return jerr("You can only compare your own scenarios.", 403)
 
-        # -------- helpers --------
+        # ---------- helpers ----------
         def _to_num(v):
             try:
                 return float(v)
@@ -574,31 +581,34 @@ def compare_retirement():
             if not args:
                 return {}
             args = {k: _to_num(v) for k, v in args.items()}
-            # convert percent-like inputs to decimals once
-            for k in [
+            # Convert percent-like inputs (7 -> 0.07) just once
+            for k in (
                 "return_mean", "return_std",
                 "inflation_mean", "inflation_std",
                 "return_rate_before", "return_rate_after",
-            ]:
+            ):
                 if k in args and isinstance(args[k], (int, float)) and args[k] >= 2:
                     args[k] = args[k] / 100.0
             # ints
-            for k in ["iterations", "seed"]:
+            for k in ("iterations", "seed"):
                 if k in args:
                     try: args[k] = int(args[k])
                     except Exception: pass
             return args
 
-        def _run_mc_from_scenario(scn):
-            params = to_canonical_inputs((scn.inputs_json or {}))
+        def _run_mc_for(scn):
+            params = to_canonical_inputs(scn.inputs_json or {})
             mc_args = _normalize_args(_mc_args_from_params(params))
-            mc = run_monte_carlo_simulation_locked_inputs(**mc_args)
-            # flatten to plain python lists of numbers
+            try:
+                mc = run_monte_carlo_simulation_locked_inputs(**mc_args)
+            except Exception as e:
+                # bubble the exact reason up
+                raise RuntimeError(f"MC failed for scenario '{scn.scenario_name}': {e}") from e
+
             ages = [int(x) for x in mc["ages"]]
             p10  = [float(x) for x in mc["percentiles"]["p10"]]
             p50  = [float(x) for x in mc["percentiles"]["p50"]]
             p90  = [float(x) for x in mc["percentiles"]["p90"]]
-            # align lengths defensively
             n = min(len(ages), len(p10), len(p50), len(p90))
             return {
                 "label": scn.scenario_name,
@@ -606,11 +616,15 @@ def compare_retirement():
                 "p10":  p10[:n],
                 "p50":  p50[:n],
                 "p90":  p90[:n],
-                "_debug_args": mc_args
+                "_args": mc_args,
             }
 
-        # -------- A (required) --------
-        A = _run_mc_from_scenario(scen_a)
+        # ---------- A (required) ----------
+        try:
+            A = _run_mc_for(scen_a)
+        except Exception as e:
+            current_app.logger.exception("compare_retirement A failed")
+            return jerr(str(e), 400)
 
         payload = {
             "labels": {"A": A["label"]},
@@ -622,17 +636,15 @@ def compare_retirement():
             }
         }
 
-        # -------- B (optional) --------
+        # ---------- B (optional) ----------
         if scen_b:
-            B = _run_mc_from_scenario(scen_b)
+            try:
+                B = _run_mc_for(scen_b)
+            except Exception as e:
+                current_app.logger.exception("compare_retirement B failed")
+                return jerr(str(e), 400)
 
-            # sanity: if B is clearly in the wrong units, return a clear 400
-            max_b = max(B["p50"]) if B["p50"] else 0.0
-            if max_b > 1e8:  # $100M threshold; adjust to taste
-                current_app.logger.warning("Scenario B looks off (units): max p50=%s, args=%s", max_b, B["_debug_args"])
-                return jsonify({"error": "Scenario B looks invalid (rates/units). Please check inputs."}), 400
-
-            # align A/B lengths to same age vector
+            # align A/B to same length/age
             m = min(len(A["ages"]), len(B["ages"]))
             ages = A["ages"][:m]
             payload["mc"]["ages"] = ages
@@ -644,17 +656,23 @@ def compare_retirement():
             payload["mc"]["p90"]["B"] = B["p90"][:m]
             payload["labels"]["B"] = B["label"]
 
-        # optional debug
+            # quick sanity to catch unit explosions instead of plotting nonsense
+            if max(B["p50"][:m] or [0]) > 1e9:  # >$1B?
+                current_app.logger.warning("Scenario B suspicious: args=%s", B["_args"])
+                return jerr("Scenario B looks invalid (rates/units). Please check inputs.", 400)
+
+        # optional debug echo
         if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
-            payload["_debug"] = {
-                "A_args": A.get("_debug_args"),
-                **({"B_args": B.get("_debug_args")} if scen_b else {})
-            }
+            payload["_debug"] = {"A_args": A["_args"], **({"B_args": B["_args"]} if scen_b else {})}
 
         return jsonify(payload), 200
 
     except Exception as e:
-        current_app.logger.exception("compare_retirement failed: %s", e)
-        # surface a readable message instead of a vague 500
-        return jsonify({"error": "Server error during compare."}), 500
+        current_app.logger.exception("compare_retirement unexpected failure: %s", e)
+        # show specific message when debug on
+        msg = "Server error during compare."
+        if current_app.debug:
+            msg += f" ({e})"
+        return jsonify({"error": msg}), 500
+
 
