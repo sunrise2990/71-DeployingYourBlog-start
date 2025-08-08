@@ -528,49 +528,64 @@ def compare_retirement():
     try:
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
-        if not a_id or not b_id:
-            flash("Please pick both Scenario A and Scenario B.", "warning")
+
+        # Require at least one scenario (A)
+        if not a_id:
+            flash("Pick Scenario A (Scenario B is optional).", "warning")
             return redirect(url_for("projects.retirement"))
 
         scen_a = RetirementScenario.query.get(a_id)
-        scen_b = RetirementScenario.query.get(b_id)
-        if not scen_a or not scen_b:
-            flash("One of the selected scenarios wasn't found.", "danger")
+        scen_b = RetirementScenario.query.get(b_id) if b_id else None
+
+        if not scen_a:
+            flash("Scenario A wasn't found.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        if current_user.is_authenticated and (
-            scen_a.user_id != current_user.id or scen_b.user_id != current_user.id
-        ):
-            flash("You can only compare your own saved scenarios.", "danger")
-            return redirect(url_for("projects.retirement"))
+        # Security: only compare your own scenarios (if logged in)
+        if current_user.is_authenticated:
+            if scen_a.user_id != current_user.id or (scen_b and scen_b.user_id != current_user.id):
+                flash("You can only compare your own saved scenarios.", "danger")
+                return redirect(url_for("projects.retirement"))
 
-        # ✅ Normalize saved rows using the single canonical normalizer
+        # ---- normalize inputs
         params_a = to_canonical_inputs(scen_a.inputs_json or {})
-        params_b = to_canonical_inputs(scen_b.inputs_json or {})
+        proj_a   = _projection_args_from_params(params_a)
 
-        # --- use projection-only dicts for deterministic things ---
-        proj_a = _projection_args_from_params(params_a)
-        proj_b = _projection_args_from_params(params_b)
+        params_b = to_canonical_inputs(scen_b.inputs_json or {}) if scen_b else None
+        proj_b   = _projection_args_from_params(params_b) if params_b else None
 
-        # Deterministic projection
-        out_a = run_retirement_projection(**proj_a)
-        out_b = run_retirement_projection(**proj_b)
+        # Optional sanity run (ensures params are valid and raises early if broken)
+        _ = run_retirement_projection(**proj_a)
+        if proj_b:
+            _ = run_retirement_projection(**proj_b)
 
-        # Monte Carlo (means + stds)
+        # Monte Carlo
         mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
-        mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b))
+        if params_b:
+            mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b))
+        else:
+            mc_b = {
+                "ages": mc_a["ages"],   # keep same x-axis
+                "percentiles": {"p10": [], "p50": [], "p90": []},
+            }
 
-        # Sensitivity (projection-only params; no stds)
+        # Sensitivity (projection-only)
         variables = [
             "current_assets","return_rate","return_rate_after",
             "annual_saving","annual_expense","saving_increase_rate",
             "inflation_rate","income_tax_rate"
         ]
         sens_a = sensitivity_analysis(proj_a, variables, delta=0.01)
-        sens_b = sensitivity_analysis(proj_b, variables, delta=0.01)
+        if proj_b:
+            sens_b = sensitivity_analysis(proj_b, variables, delta=0.01)
+        else:
+            sens_b = {v: {"dollar_impact": 0.0} for v in variables}
 
         compare_data = {
-            "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
+            "labels": {
+                "A": scen_a.scenario_name,
+                "B": scen_b.scenario_name if scen_b else ""
+            },
             "mc": {
                 "ages": mc_a["ages"],
                 "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
@@ -584,16 +599,38 @@ def compare_retirement():
             }
         }
 
+        # Re-render main page with *only* compare_data populated.
+        saved_scenarios = (
+            RetirementScenario.query.filter_by(user_id=current_user.id).all()
+            if current_user.is_authenticated else []
+        )
+
         return render_template(
-            "retirement_compare.html",
+            "retirement.html",
+            # keep normal planner context empty (we're just showing compare charts)
+            result=None,
+            table=[],
+            table_headers=[
+                "Age","Year","Retire?","Living Exp.","CPP / Extra Income","Income Tax Payment",
+                "Living Exp. – Ret.","Asset Liquidation","Savings – Before Retire","Asset",
+                "Asset – Retirement","Investment Return","Return Rate","Withdrawal Rate"
+            ],
+            retirement_age=None,
+            reset=False,
+            chart_data={},             # don't touch your Plotly section
+            monte_carlo_data={},
+            depletion_stats={},
+            return_std=request.form.get("return_std", "8"),
+            inflation_std=request.form.get("inflation_std", "0.5"),
+            selected_scenario_id="",
+            saved_scenarios=saved_scenarios,
+            sensitivities={},
+            sensitivity_headers=[],
+            sensitivity_table=[],
             compare_data=compare_data,
-            saved_scenarios=RetirementScenario.query.filter_by(
-                user_id=current_user.id
-            ).all() if current_user.is_authenticated else [],
         )
 
     except Exception:
         logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
         flash("Error comparing scenarios.", "danger")
         return redirect(url_for("projects.retirement"))
-

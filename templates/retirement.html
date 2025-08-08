@@ -441,21 +441,20 @@
     🔄 Compare Saved Scenarios
     <span tabindex="0"
           data-bs-toggle="tooltip"
-          title="Pick two saved scenarios and render Monte Carlo + sensitivity below.">
+          title="Pick Scenario A to plot; add Scenario B to overlay.">
       &#9432;
     </span>
   </h5>
 
-  {% set has_scenarios = saved_scenarios|length > 1 %}
-
+  {% set has_any = saved_scenarios|length > 0 %}
   <div class="row align-items-end">
-    <!-- Scenario A -->
+    <!-- Scenario A (required) -->
     <div class="col-md-6 mt-3">
-      <label for="compare_scenario_a" class="form-label">Scenario A</label>
+      <label for="compare_scenario_a" class="form-label">Scenario A (required)</label>
       <select id="compare_scenario_a"
               name="scenario_a"
               class="form-select"
-              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
+              {% if not has_any %}disabled{% else %}required{% endif %}>
         <option value="">-- Select Scenario A --</option>
         {% for scenario in saved_scenarios %}
           <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
@@ -463,14 +462,14 @@
       </select>
     </div>
 
-    <!-- Scenario B -->
+    <!-- Scenario B (optional) -->
     <div class="col-md-6 mt-3">
-      <label for="compare_scenario_b" class="form-label">Scenario B</label>
+      <label for="compare_scenario_b" class="form-label">Scenario B (optional)</label>
       <select id="compare_scenario_b"
               name="scenario_b"
               class="form-select"
-              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
-        <option value="">-- Select Scenario B --</option>
+              {% if not has_any %}disabled{% endif %}>
+        <option value="">-- (None) --</option>
         {% for scenario in saved_scenarios %}
           <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
         {% endfor %}
@@ -480,18 +479,19 @@
     <div class="col-12 text-center mt-4">
       <button type="submit"
               class="btn btn-primary px-4"
-              {% if not has_scenarios %}disabled{% endif %}>
-        Compare Scenarios
+              {% if not has_any %}disabled{% endif %}>
+        Compare / Show
       </button>
-      {% if not has_scenarios %}
+      {% if not has_any %}
         <p class="text-muted mt-2 mb-0">
-          Save at least two scenarios to enable comparison.
+          Save a scenario first to enable comparison.
         </p>
       {% endif %}
     </div>
   </div>
 </form>
 <!-- ==== End Compare UI ==== -->
+
 
 {% if compare_data %}
   <hr class="my-5">
