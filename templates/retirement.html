@@ -404,37 +404,168 @@
         {% endif %}
 
 
-<!-- ==== Compare Scenarios Section ==== -->
-{% if saved_scenarios|length >= 2 %}
-<div class="mt-5">
-  <h5 class="text-center mb-3">🔄 Compare Saved Scenarios</h5>
-  <form method="POST" action="{{ url_for('projects.retirement') }}">
-    <div class="row justify-content-center">
-      <div class="col-md-4">
-        <label for="compare_scenario_a" class="form-label">Scenario A</label>
-        <select id="compare_scenario_a" name="compare_scenario_a" class="form-select">
-          {% for scenario in saved_scenarios %}
-          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-4">
-        <label for="compare_scenario_b" class="form-label">Scenario B</label>
-        <select id="compare_scenario_b" name="compare_scenario_b" class="form-select">
-          {% for scenario in saved_scenarios %}
-          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-    <div class="text-center mt-3">
-      <button type="submit" name="action" value="compare" class="btn btn-warning px-4">Compare</button>
-    </div>
-  </form>
-</div>
-{% endif %}
-<!-- ==== End Compare Scenarios Section ==== -->
 
+<!-- Compare Saved Scenarios -->
+<hr class="my-4">
+<h5 class="text-center mb-3">🔄 Compare Saved Scenarios</h5>
+
+<form method="POST" action="{{ url_for('projects.compare_retirement') }}" class="row g-3 align-items-end justify-content-center">
+  <div class="col-md-4">
+    <label for="scenario_a" class="form-label">Scenario A</label>
+    <select id="scenario_a" name="scenario_a" class="form-select" required>
+      <option value="">-- Select Scenario --</option>
+      {% for s in saved_scenarios %}
+        <option value="{{ s.id }}">{{ s.scenario_name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-4">
+    <label for="scenario_b" class="form-label">Scenario B (optional)</label>
+    <select id="scenario_b" name="scenario_b" class="form-select">
+      <option value="">-- Select Scenario --</option>
+      {% for s in saved_scenarios %}
+        <option value="{{ s.id }}">{{ s.scenario_name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-2 text-center">
+    <button type="submit" class="btn btn-warning w-100">Compare</button>
+  </div>
+</form>
+
+
+<!-- Compare graphs container (initially hidden) -->
+<div id="compare-block" class="mt-5 d-none">
+  <hr class="my-4">
+  <h5 class="text-center mb-3" id="compare-title">🔄 Compare</h5>
+
+  <div class="card mb-4">
+    <div class="card-header">Monte Carlo Simulation</div>
+    <div class="card-body">
+      <canvas id="mcCompareChart" style="height:400px;"></canvas>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header">Sensitivity (Dollar Impact)</div>
+    <div class="card-body">
+      <canvas id="sensCompareChart" style="height:400px;"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Chart.js (ok to load once if not already) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(function(){
+  const form = document.querySelector('#compare-form') || document.querySelector('form[action*="retirement/compare"]');
+  if (!form) return;
+
+  let mcChart = null;
+  let sensChart = null;
+
+  form.addEventListener('submit', async (e) => {
+    // prevent page reload -> keeps your Calculate results and inputs intact
+    e.preventDefault();
+
+    const fd = new FormData(form);
+    try {
+      const res = await fetch('{{ url_for("projects.compare_retirement") }}', {
+        method: 'POST',
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Compare failed.');
+        return;
+      }
+      renderCompareCharts(data);
+    } catch (err) {
+      alert('Network error during compare.');
+    }
+  });
+
+  function renderCompareCharts(cd) {
+    // show block + title
+    const block = document.getElementById('compare-block');
+    block.classList.remove('d-none');
+    const title = document.getElementById('compare-title');
+    const labelA = cd.labels?.A || 'Scenario A';
+    const labelB = (cd.labels?.B || '').trim();
+    title.textContent = labelB ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`;
+
+    // ----- build MC datasets -----
+    const ages = cd.mc.ages || [];
+    const ds = [
+      { label: `${labelA} – 10th %ile`, data: cd.mc.p10.A, borderColor: 'rgba(54,162,235,0.7)', borderDash: [5,5], fill: false },
+      { label: `${labelA} – 50th %ile`, data: cd.mc.p50.A, borderColor: 'rgba(54,162,235,1)', fill: false },
+      { label: `${labelA} – 90th %ile`, data: cd.mc.p90.A, borderColor: 'rgba(54,162,235,0.7)', borderDash: [2,2], fill: false },
+    ];
+    if (cd.mc.p10.B) {
+      ds.push(
+        { label: `${labelB} – 10th %ile`, data: cd.mc.p10.B, borderColor: 'rgba(255,159,64,0.7)', borderDash: [5,5], fill: false },
+        { label: `${labelB} – 50th %ile`, data: cd.mc.p50.B, borderColor: 'rgba(255,159,64,1)', fill: false },
+        { label: `${labelB} – 90th %ile`, data: cd.mc.p90.B, borderColor: 'rgba(255,159,64,0.7)', borderDash: [2,2], fill: false },
+      );
+    }
+
+    // create/replace MC chart
+    const mcCtx = document.getElementById('mcCompareChart').getContext('2d');
+    if (mcChart) mcChart.destroy();
+    mcChart = new Chart(mcCtx, {
+      type: 'line',
+      data: { labels: ages, datasets: ds },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { title: { display: true, text: 'Age' } },
+          y: { title: { display: true, text: 'Projected Assets ($)' },
+               ticks: { callback: v => '$' + Number(v).toLocaleString() } }
+        },
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: $${Number(ctx.parsed.y).toLocaleString()}` } }
+        }
+      }
+    });
+
+    // ----- Sensitivity -----
+    const vars = (cd.sens.vars || []).map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));
+    const impactA = cd.sens.A || [];
+    const impactB = cd.sens.B || null;
+    const maxImp = Math.max(...impactA.map(Math.abs), ...(impactB ? impactB.map(Math.abs) : [0])) || 1;
+
+    const sensDs = [{ label: labelA, data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' }];
+    if (impactB) sensDs.push({ label: labelB, data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' });
+
+    const sensCtx = document.getElementById('sensCompareChart').getContext('2d');
+    if (sensChart) sensChart.destroy();
+    sensChart = new Chart(sensCtx, {
+      type: 'bar',
+      data: { labels: vars, datasets: sensDs },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            min: -maxImp, max: maxImp,
+            title: { display: true, text: 'Dollar Impact ($)' },
+            ticks: { callback: v => '$' + Number(v).toLocaleString() }
+          }
+        },
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: $${Number(ctx.parsed.x).toLocaleString()}` } }
+        }
+      }
+    });
+  }
+})();
+</script>
 
 
 
