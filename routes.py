@@ -407,11 +407,105 @@ import traceback
 
 logger = logging.getLogger(__name__)
 
+# ---------- helpers: normalize & map for MC ----------
+
+def _as_int(x, default=0):
+    try:
+        return int(x)
+    except Exception:
+        try:
+            return int(float(x))
+        except Exception:
+            return default
+
+def _as_float(x, default=0.0):
+    try:
+        return float(x)
+    except Exception:
+        return default
+
+def _normalize_inputs(raw: dict) -> dict:
+    """
+    Convert whatever is stored in inputs_json (possibly legacy names)
+    into the canonical kwargs your projection expects.
+    """
+    d = dict(raw or {})
+
+    # legacy -> canonical key renames / transforms
+    life_expectancy = d.get("life_expectancy", d.get("lifespan"))
+    annual_expense  = d.get("annual_expense")
+    if annual_expense is None and "monthly_living_expense" in d:
+        annual_expense = _as_float(d["monthly_living_expense"]) * 12.0
+
+    cpp_monthly   = d.get("cpp_monthly", d.get("cpp_support"))
+    cpp_start_age = d.get("cpp_start_age", d.get("cpp_from_age"))
+    cpp_end_age   = d.get("cpp_end_age",   d.get("cpp_to_age"))
+
+    # asset liquidations – support legacy fixed slots
+    asset_liqs = d.get("asset_liquidations")
+    if asset_liqs is None:
+        asset_liqs = []
+        for i in (1, 2, 3):
+            amt = d.get(f"asset_liquidation_{i}")
+            age = d.get(f"asset_liquidation_age_{i}")
+            amt = _as_float(amt, 0.0)
+            age = _as_int(age, 0)
+            if amt and age > 0:
+                asset_liqs.append({"amount": amt, "age": age})
+
+    # build canonical dict with sane defaults
+    canon = {
+        "current_age":          _as_int(d.get("current_age", 0)),
+        "retirement_age":       _as_int(d.get("retirement_age", 0)),
+        "annual_saving":        _as_float(d.get("annual_saving", 0.0)),
+        "saving_increase_rate": _as_float(d.get("saving_increase_rate", 0.0)),
+        "current_assets":       _as_float(d.get("current_assets", 0.0)),
+        "return_rate":          _as_float(d.get("return_rate", 0.0)),
+        "return_rate_after":    _as_float(d.get("return_rate_after", 0.0)),
+        "annual_expense":       _as_float(annual_expense, 0.0),
+        "cpp_monthly":          _as_float(cpp_monthly, 0.0),
+        "cpp_start_age":        _as_int(cpp_start_age, 0),
+        "cpp_end_age":          _as_int(cpp_end_age, 0),
+        "asset_liquidations":   asset_liqs,
+        "inflation_rate":       _as_float(d.get("inflation_rate", 0.0)),
+        "life_expectancy":      _as_int(life_expectancy, 0),
+        "income_tax_rate":      _as_float(d.get("income_tax_rate", 0.0)),
+        # stds may or may not be present; give safe defaults
+        "return_std":           _as_float(d.get("return_std", 0.08)),
+        "inflation_std":        _as_float(d.get("inflation_std", 0.005)),
+    }
+    return canon
+
+def _mc_args_from_params(p: dict) -> dict:
+    """
+    Map canonical params -> run_monte_carlo_simulation_locked_inputs kwargs.
+    """
+    return {
+        "current_age":          p["current_age"],
+        "retirement_age":       p["retirement_age"],
+        "annual_saving":        p["annual_saving"],
+        "saving_increase_rate": p["saving_increase_rate"],
+        "current_assets":       p["current_assets"],
+        "return_mean":          p["return_rate"],
+        "return_mean_after":    p["return_rate_after"],
+        "return_std":           p.get("return_std", 0.08),
+        "annual_expense":       p["annual_expense"],
+        "inflation_mean":       p["inflation_rate"],
+        "inflation_std":        p.get("inflation_std", 0.005),
+        "cpp_monthly":          p["cpp_monthly"],
+        "cpp_start_age":        p["cpp_start_age"],
+        "cpp_end_age":          p["cpp_end_age"],
+        "asset_liquidations":   p.get("asset_liquidations", []),
+        "life_expectancy":      p["life_expectancy"],
+        "income_tax_rate":      p.get("income_tax_rate", 0.0),
+        "num_simulations":      1000,
+    }
+
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
     Compare two saved scenarios. Normalizes inputs to canonical kwargs
-    so legacy saves won't crash the engine.
+    so legacy saves won't crash the engine, and maps to MC arg names.
     """
     try:
         a_id = request.form.get("scenario_a")
@@ -431,21 +525,26 @@ def compare_retirement():
                 flash("You can only compare your own saved scenarios.", "danger")
                 return redirect(url_for("projects.retirement"))
 
-        # Normalize what we read from DB (handles any old rows)
+        # Normalize whatever is stored (handles old rows safely)
         params_a = _normalize_inputs(scen_a.inputs_json or {})
         params_b = _normalize_inputs(scen_b.inputs_json or {})
 
+        # Deterministic projections (use canonical kwargs directly)
         out_a = run_retirement_projection(**params_a)
         out_b = run_retirement_projection(**params_b)
 
-        mc_a = run_monte_carlo_simulation_locked_inputs(**params_a, num_simulations=1000)
-        mc_b = run_monte_carlo_simulation_locked_inputs(**params_b, num_simulations=1000)
+        # Monte Carlo (map to mean/std arg names)
+        mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
+        mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b))
 
-        variables = [
+        # Sensitivity (only include variables present in both)
+        allowed_vars = [
             "current_assets","return_rate","return_rate_after",
             "annual_saving","annual_expense","saving_increase_rate",
             "inflation_rate","income_tax_rate"
         ]
+        variables = [v for v in allowed_vars if v in params_a and v in params_b]
+
         sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
         sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
 
@@ -473,7 +572,6 @@ def compare_retirement():
         )
 
     except Exception as e:
-        import traceback, logging
-        logging.getLogger(__name__).error("Error in compare_retirement:\n%s", traceback.format_exc())
+        logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
         flash(f"Error comparing scenarios: {e}", "danger")
         return redirect(url_for("projects.retirement"))
