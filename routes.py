@@ -572,33 +572,59 @@ def compare_retirement():
 
         # ---------- helpers ----------
         def _to_num(v):
+            if isinstance(v, (int, float)):
+                return v
             try:
-                return float(v)
+                return float(str(v).strip())
             except Exception:
                 return v
 
         def _normalize_args(args: dict) -> dict:
+            """
+            Coerce numeric strings -> numbers, fix percent vs decimal,
+            and FORCE int for any field that should be integer.
+            """
             if not args:
                 return {}
+
+            # 1) numbers
             args = {k: _to_num(v) for k, v in args.items()}
-            # Convert percent-like inputs (7 -> 0.07) just once
-            for k in (
+
+            # 2) rates: percent-like -> decimals (7 -> 0.07) when obviously a percent
+            rate_keys = {
                 "return_mean", "return_std",
                 "inflation_mean", "inflation_std",
-                "return_rate_before", "return_rate_after",
-            ):
+                "return_rate_before", "return_rate_after"
+            }
+            for k in rate_keys:
                 if k in args and isinstance(args[k], (int, float)) and args[k] >= 2:
                     args[k] = args[k] / 100.0
-            # ints
-            for k in ("iterations", "seed"):
-                if k in args:
-                    try: args[k] = int(args[k])
-                    except Exception: pass
+
+            # 3) integers used by range()/sizes
+            int_keys = {
+                "current_age", "start_age", "end_age", "retirement_age", "cpp_start_age",
+                "years", "horizon_years", "planning_horizon", "projection_years",
+                "iterations", "seed", "steps_per_year", "n_years", "n_steps", "sim_years"
+            }
+            for k in int_keys:
+                if k in args and isinstance(args[k], (int, float)):
+                    args[k] = int(round(args[k]))
+
+            # 4) sanity on ages
+            if "start_age" in args and "end_age" in args:
+                if isinstance(args["start_age"], int) and isinstance(args["end_age"], int):
+                    if args["end_age"] < args["start_age"]:
+                        args["end_age"] = args["start_age"]
+
             return args
 
         def _run_mc_for(scn):
             params = to_canonical_inputs(scn.inputs_json or {})
             mc_args = _normalize_args(_mc_args_from_params(params))
+
+            if current_app.debug:
+                current_app.logger.info("COMPARE mc_args for %s: %s", scn.scenario_name, mc_args)
+
             try:
                 mc = run_monte_carlo_simulation_locked_inputs(**mc_args)
             except Exception as e:
@@ -669,10 +695,8 @@ def compare_retirement():
 
     except Exception as e:
         current_app.logger.exception("compare_retirement unexpected failure: %s", e)
-        # show specific message when debug on
         msg = "Server error during compare."
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
-
 
