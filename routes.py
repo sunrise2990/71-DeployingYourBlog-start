@@ -88,23 +88,31 @@ def to_canonical_inputs(raw: dict) -> dict:
     # keep only what engine accepts
     return {k: p[k] for k in _CANON_KEYS if k in p}
 
+
 def canonical_to_form_inputs(canon: dict) -> dict:
-    """
-    Map canonical keys/units -> the exact form field names/units the template expects.
-    Use this when loading scenarios to populate the form.
-    """
     d = dict(canon or {})
     out = {}
 
-    # Lifespan (form uses 'lifespan')
+    # Lifespan
     if "life_expectancy" in d:
         out["lifespan"] = _to_int(d["life_expectancy"])
 
-    # Monthly Living Expense (form uses 'monthly_living_expense'; canonical is annual)
+    # --- Living expense display: show MONTHLY in the form ---
     if "annual_expense" in d:
         out["monthly_living_expense"] = _to_float(d["annual_expense"]) / 12.0
+    elif "monthly_living_expense" in d:  # legacy rows
+        out["monthly_living_expense"] = _to_float(d["monthly_living_expense"])
 
-    # CPP fields (form uses legacy names)
+    # --- Savings display: show MONTHLY in the form ---
+    if "annual_saving" in d:
+        # If we have canonical fields (annual_expense present), treat as canonical annual and divide by 12.
+        if "annual_expense" in d:
+            out["annual_saving"] = _to_float(d["annual_saving"]) / 12.0
+        else:
+            # Legacy rows likely stored monthly; pass through.
+            out["annual_saving"] = _to_float(d["annual_saving"])
+
+    # CPP (legacy names in the form)
     if "cpp_monthly" in d:
         out["cpp_support"] = _to_float(d["cpp_monthly"])
     if "cpp_start_age" in d:
@@ -112,11 +120,7 @@ def canonical_to_form_inputs(canon: dict) -> dict:
     if "cpp_end_age" in d:
         out["cpp_to_age"] = _to_int(d["cpp_end_age"])
 
-    # Savings: backend expects annual_saving field name; form label may say monthly.
-    if "annual_saving" in d:
-        out["annual_saving"] = _to_float(d["annual_saving"])
-
-    # Direct pass-throughs (same names)
+    # Direct pass-throughs
     for k in [
         "current_age", "retirement_age", "saving_increase_rate", "current_assets",
         "return_rate", "return_rate_after", "inflation_rate", "income_tax_rate"
@@ -132,14 +136,13 @@ def canonical_to_form_inputs(canon: dict) -> dict:
         out[f"asset_liquidation_{i+1}"] = amt
         out[f"asset_liquidation_age_{i+1}"] = age
 
-    # Optional MC fields if your form includes them
+    # Optional MC fields
     if "return_std" in d:
         out["return_std"] = d["return_std"]
     if "inflation_std" in d:
         out["inflation_std"] = d["inflation_std"]
 
     return out
-
 
 # Define main projects blueprint (existing)
 projects_bp = Blueprint('projects', __name__, template_folder='templates')
