@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container my-5">
+  <!-- Comparison Header -->
   <h3 class="text-center mb-4">
     🔄 Compare: {{ compare_data.labels.A }} vs {{ compare_data.labels.B }}
   </h3>
@@ -27,6 +28,7 @@
     </div>
   </div>
 
+  <!-- Back button -->
   <div class="text-center mt-4">
     <a href="{{ url_for('projects.retirement') }}" class="btn btn-secondary">
       ← Back to Planner
@@ -34,106 +36,111 @@
   </div>
 </div>
 
+<!-- Chart.js – make sure this matches your base.html inclusion policy -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // ---- data from Flask ----
-  const ages  = {{ compare_data.mc.ages  | tojson }};
-  const p10a  = {{ compare_data.mc.p10.A | tojson }};
-  const p50a  = {{ compare_data.mc.p50.A | tojson }};
-  const p90a  = {{ compare_data.mc.p90.A | tojson }};
-  const p10b  = {{ compare_data.mc.p10.B | tojson }};
-  const p50b  = {{ compare_data.mc.p50.B | tojson }};
-  const p90b  = {{ compare_data.mc.p90.B | tojson }};
+  // Data from Flask
+  const ages    = {{ compare_data.mc.ages  | tojson }};
+  const p10a    = {{ compare_data.mc.p10.A | tojson }};
+  const p10b    = {{ compare_data.mc.p10.B | tojson }};
+  const p50a    = {{ compare_data.mc.p50.A | tojson }};
+  const p50b    = {{ compare_data.mc.p50.B | tojson }};
+  const p90a    = {{ compare_data.mc.p90.A | tojson }};
+  const p90b    = {{ compare_data.mc.p90.B | tojson }};
 
-  const vars  = {{ compare_data.sens.vars | tojson }};
-  const impA  = {{ compare_data.sens.A   | tojson }};
-  const impB  = {{ compare_data.sens.B   | tojson }};
+  const vars    = {{ compare_data.sens.vars | tojson }};
+  const impactA = {{ compare_data.sens.A    | tojson }};
+  const impactB = {{ compare_data.sens.B    | tojson }};
+  const maxImp  = Math.max(...impactA.map(Math.abs), ...impactB.map(Math.abs));
 
-  // Optional y-axis cap supplied by the route (based on overlapped p90 maxima)
-  const yMaxFromServer = {{ compare_data.mc.y_max | default('null') }};
-
-  // Colors
-  const cA = 'rgba(54,162,235,1)';     // blue (A)
-  const cAfill = 'rgba(54,162,235,0.16)';
-  const cB = 'rgba(255,159,64,1)';     // orange (B)
-  const cBfill = 'rgba(255,159,64,0.16)';
-
-  // Helpers
-  const fmtMoney = v => '$' + Number(v).toLocaleString();
-
-  // Compute a sane y max if server didn’t send one
-  const yMaxLocal = Math.max(
-    ...(p90a || []),
-    ...(p90b || [])
-  );
-  const yMax = yMaxFromServer ?? Math.round(yMaxLocal * 1.1);
-
-  // ---- Monte Carlo: shaded p10–p90 band + median line for each scenario ----
+  // Monte Carlo Comparison Chart
   new Chart(document.getElementById('mcCompareChart'), {
     type: 'line',
     data: {
       labels: ages,
       datasets: [
-        // A band (order matters: put 90th first, then 10th with fill:'-1')
-        { label: '{{ compare_data.labels.A }} – 90th %ile', data: p90a,
-          borderWidth: 0, pointRadius: 0, fill: false },
-        { label: '{{ compare_data.labels.A }} – 10th–90th band', data: p10a,
-          borderWidth: 0, pointRadius: 0, fill: '-1', backgroundColor: cAfill },
-
-        // A median
-        { label: '{{ compare_data.labels.A }} – median', data: p50a,
-          borderColor: cA, tension: 0.2, fill: false, pointRadius: 0, borderWidth: 2 },
-
-        // B band
-        { label: '{{ compare_data.labels.B }} – 90th %ile', data: p90b,
-          borderWidth: 0, pointRadius: 0, fill: false },
-        { label: '{{ compare_data.labels.B }} – 10th–90th band', data: p10b,
-          borderWidth: 0, pointRadius: 0, fill: '-1', backgroundColor: cBfill },
-
-        // B median
-        { label: '{{ compare_data.labels.B }} – median', data: p50b,
-          borderColor: cB, tension: 0.2, fill: false, pointRadius: 0, borderWidth: 2 },
+        {
+          label: '{{ compare_data.labels.A }} – 10th %ile',
+          data: p10a,
+          borderColor: 'rgba(54,162,235,0.7)',
+          borderDash: [5,5],
+          fill: false
+        },
+        {
+          label: '{{ compare_data.labels.B }} – 10th %ile',
+          data: p10b,
+          borderColor: 'rgba(255,159,64,0.7)',
+          borderDash: [5,5],
+          fill: false
+        },
+        {
+          label: '{{ compare_data.labels.A }} – 50th %ile',
+          data: p50a,
+          borderColor: 'rgba(54,162,235,1)',
+          fill: false
+        },
+        {
+          label: '{{ compare_data.labels.B }} – 50th %ile',
+          data: p50b,
+          borderColor: 'rgba(255,159,64,1)',
+          fill: false
+        },
+        {
+          label: '{{ compare_data.labels.A }} – 90th %ile',
+          data: p90a,
+          borderColor: 'rgba(54,162,235,0.7)',
+          borderDash: [2,2],
+          fill: false
+        },
+        {
+          label: '{{ compare_data.labels.B }} – 90th %ile',
+          data: p90b,
+          borderColor: 'rgba(255,159,64,0.7)',
+          borderDash: [2,2],
+          fill: false
+        }
       ]
     },
     options: {
       responsive: true,
-      interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { title: { display: true, text: 'Age' } },
+        x: {
+          title: { display: true, text: 'Age' }
+        },
         y: {
-          suggestedMin: 0,
-          suggestedMax: yMax,
           title: { display: true, text: 'Projected Assets ($)' },
-          ticks: { callback: v => fmtMoney(v) }
+          ticks: {
+            callback: val => '$' + val.toLocaleString()
+          }
         }
       },
       plugins: {
-        legend: {
-          position: 'bottom',
-          labels: {
-            // Show only the two median lines in the legend
-            filter: (item) => item.text?.includes('median')
-          }
-        },
+        legend: { position: 'bottom' },
         tooltip: {
           callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}`
+            label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}`
           }
         }
       }
     }
   });
 
-  // ---- Sensitivity ----
-  const maxImp = Math.max(...impA.map(Math.abs), ...impB.map(Math.abs));
-
+  // Sensitivity Comparison Chart
   new Chart(document.getElementById('sensCompareChart'), {
     type: 'bar',
     data: {
-      labels: vars.map(v => v.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())),
+      labels: vars.map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())),
       datasets: [
-        { label: '{{ compare_data.labels.A }}', data: impA, backgroundColor: cAfill, borderColor: cA, borderWidth: 1 },
-        { label: '{{ compare_data.labels.B }}', data: impB, backgroundColor: cBfill, borderColor: cB, borderWidth: 1 }
+        {
+          label: '{{ compare_data.labels.A }}',
+          data: impactA,
+          backgroundColor: 'rgba(54,162,235,0.5)'
+        },
+        {
+          label: '{{ compare_data.labels.B }}',
+          data: impactB,
+          backgroundColor: 'rgba(255,159,64,0.5)'
+        }
       ]
     },
     options: {
@@ -141,24 +148,16 @@
       responsive: true,
       scales: {
         x: {
-          min: -maxImp, max: maxImp,
+          min: -maxImp,
+          max: maxImp,
           title: { display: true, text: 'Dollar Impact ($)' },
-          ticks: { callback: v => fmtMoney(v) }
+          ticks: {
+            callback: val => '$' + val.toLocaleString()
+          }
         }
       },
       plugins: {
         legend: { position: 'bottom' },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.x)}`
-          }
-        }
-      }
-    }
-  });
-</script>
-{% endblock %}
-
-
+        tooltip
 
 
