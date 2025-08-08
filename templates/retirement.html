@@ -404,7 +404,7 @@
         {% endif %}
 
 
-<!-- ==== Compare Saved Scenarios ==== -->
+<!-- ==== Compare Saved Scenarios (plain POST) ==== -->
 <hr class="my-4">
 <h5 class="text-center mb-3">🔄 Compare Saved Scenarios</h5>
 
@@ -438,7 +438,7 @@
   </div>
 </form>
 
-<!-- Compare MC (same Plotly style as your working snippet) -->
+<!-- Compare MC -->
 <div id="compare-block" class="mt-5 d-none">
   <hr class="my-4">
   <h5 class="text-center mb-3" id="compare-title">🔄 Compare</h5>
@@ -459,6 +459,34 @@
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
+    const aId = document.getElementById('scenario_a').value || '';
+    const bId = document.getElementById('scenario_b').value || '';
+
+    // If no Scenario B -> CLONE the existing MC chart exactly.
+    if (!bId) {
+      const src = document.getElementById('monte-carlo-chart');
+      if (!src || !src.data) {
+        alert('Main MC chart not found on page.');
+        return;
+      }
+      const traces = JSON.parse(JSON.stringify(src.data));
+      const layout = JSON.parse(JSON.stringify(src.layout || {}));
+
+      // Make sure legend + axis formatting matches your “working” look
+      layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
+      if (!layout.yaxis) layout.yaxis = {};
+      layout.yaxis.tickprefix = '$';
+      layout.yaxis.separatethousands = true;
+      layout.yaxis.exponentformat = 'none'; // no sci notation
+
+      document.getElementById('compare-block').classList.remove('d-none');
+      document.getElementById('compare-title').textContent = `🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`;
+
+      Plotly.newPlot('mc-compare-plot', traces, layout, { responsive: true });
+      return;
+    }
+
+    // Otherwise: fetch A vs B from backend (expects same arrays shape)
     const fd = new FormData(form);
     let res;
     try {
@@ -478,97 +506,51 @@
       alert('Compare failed (non-JSON):\n' + t.slice(0,300));
       return;
     }
-
     const cd = await res.json();
     if (!res.ok) {
       alert(cd.error || 'Compare failed.');
       return;
     }
 
-    renderCompareMC(cd);
+    renderAB(cd);
   });
 
-  function renderCompareMC(cd){
-    // Show section + title
+  function renderAB(cd){
     document.getElementById('compare-block').classList.remove('d-none');
+
     const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
     const labelB = (cd.labels && cd.labels.B) || '';
     document.getElementById('compare-title').textContent =
       labelB ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`;
 
-    // === SAME STYLE AS YOUR WORKING SNIPPET ===
-    const mc_age = cd.mc.ages || [];
-    const a_p10  = (cd.mc.p10 && cd.mc.p10.A) || [];
-    const a_p50  = (cd.mc.p50 && cd.mc.p50.A) || [];
-    const a_p90  = (cd.mc.p90 && cd.mc.p90.A) || [];
+    const age = cd.mc.ages || [];
+    const aP10 = cd.mc.p10.A || [];
+    const aP50 = cd.mc.p50.A || [];
+    const aP90 = cd.mc.p90.A || [];
 
     const traces = [
-      {
-        x: mc_age, y: a_p10,
-        fill: 'none',
-        line: { color: 'rgba(0,100,200,0.2)', width: 0 },
-        name: `${labelA} – 10th Percentile`,
-        showlegend: false
-      },
-      {
-        x: mc_age, y: a_p90,
-        fill: 'tonexty',
-        fillcolor: 'rgba(0,100,200,0.2)',
-        line: { color: 'rgba(0,100,200,0.2)', width: 0 },
-        name: `${labelA} – 90th Percentile`,
-        showlegend: false
-      },
-      {
-        x: mc_age, y: a_p50,
-        mode: 'lines+markers',
-        name: `${labelA} – Median`,
-        line: { color: 'blue' }
-      }
+      { x: age, y: aP10, fill: 'none', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, name: `${labelA} – 10th`, showlegend: false },
+      { x: age, y: aP90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, name: `${labelA} – 90th`, showlegend: false },
+      { x: age, y: aP50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } }
     ];
 
-    // Optional B overlay (orange), same band+median style
-    if (cd.mc.p10 && cd.mc.p10.B && cd.mc.p50 && cd.mc.p50.B && cd.mc.p90 && cd.mc.p90.B) {
-      const b_p10 = cd.mc.p10.B;
-      const b_p50 = cd.mc.p50.B;
-      const b_p90 = cd.mc.p90.B;
-
+    if (cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B) {
+      const bP10 = cd.mc.p10.B, bP50 = cd.mc.p50.B, bP90 = cd.mc.p90.B;
       traces.push(
-        {
-          x: mc_age, y: b_p10,
-          fill: 'none',
-          line: { color: 'rgba(255,159,64,0.2)', width: 0 },
-          name: `${labelB} – 10th Percentile`,
-          showlegend: false
-        },
-        {
-          x: mc_age, y: b_p90,
-          fill: 'tonexty',
-          fillcolor: 'rgba(255,159,64,0.2)',
-          line: { color: 'rgba(255,159,64,0.2)', width: 0 },
-          name: `${labelB} – 90th Percentile`,
-          showlegend: false
-        },
-        {
-          x: mc_age, y: b_p50,
-          mode: 'lines+markers',
-          name: `${labelB} – Median`,
-          line: { color: 'orange' }
-        }
+        { x: age, y: bP10, fill: 'none', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, name: `${labelB} – 10th`, showlegend: false },
+        { x: age, y: bP90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, name: `${labelB} – 90th`, showlegend: false },
+        { x: age, y: bP50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
       );
     }
 
     const layout = {
       margin: { t: 30 },
-      xaxis: { title: "Age" },
-      yaxis: {
-        title: "Projected Assets ($)",
-        tickprefix: "$",
-        separatethousands: true
-      },
-      legend: { orientation: "h", x: 0.1, y: -0.2 }
+      xaxis: { title: 'Age' },
+      yaxis: { title: 'Projected Assets ($)', tickprefix: '$', separatethousands: true, exponentformat: 'none' },
+      legend: { orientation: 'h', x: 0.1, y: -0.2 }
     };
 
-    Plotly.newPlot("mc-compare-plot", traces, layout, { responsive: true });
+    Plotly.newPlot('mc-compare-plot', traces, layout, { responsive: true });
   }
 })();
 </script>
