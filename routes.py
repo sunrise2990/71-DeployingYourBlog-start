@@ -401,74 +401,34 @@ def delete_scenario(scenario_id):
         return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
 
 
-# === Compare Two Scenarios (normalized inputs; stds only for MC) ===
+# === Compare Two Scenarios (fix: don't pass stds to projection/sensitivity) ===
 import logging
 import traceback
 
 logger = logging.getLogger(__name__)
 
 def _as_int(x, default=0):
-    try:
-        return int(x)
+    try: return int(x)
     except Exception:
-        try:
-            return int(float(x))
-        except Exception:
-            return default
+        try: return int(float(x))
+        except Exception: return default
 
 def _as_float(x, default=0.0):
-    try:
-        return float(x)
-    except Exception:
-        return default
-
-def _pct_to_decimal(v):
-    """Accepts 8 or 0.08 and returns 0.08. Handles str/None safely."""
-    f = _as_float(v, 0.0)
-    return f / 100.0 if f > 1.0 else f
+    try: return float(x)
+    except Exception: return default
 
 def _normalize_inputs(raw: dict) -> dict:
-    """
-    Normalize raw saved form inputs into the canonical engine kwargs.
-    - Converts whole %s (e.g., 10) to decimals (0.10)
-    - Converts monthly -> annual where appropriate
-    - Maps old field names to new ones
-    """
     d = dict(raw or {})
 
-    # ---- rates (10 -> 0.10) ----
-    return_rate          = _pct_to_decimal(d.get("return_rate"))
-    return_rate_after    = _pct_to_decimal(d.get("return_rate_after"))
-    inflation_rate       = _pct_to_decimal(d.get("inflation_rate"))
-    saving_increase_rate = _pct_to_decimal(d.get("saving_increase_rate"))
-    income_tax_rate      = _pct_to_decimal(d.get("income_tax_rate"))
-
-    # stds for MC (8 -> 0.08, 0.5 -> 0.005)
-    return_std    = _pct_to_decimal(d.get("return_std"))
-    inflation_std = _pct_to_decimal(d.get("inflation_std"))
-
-    # ---- life expectancy ----
     life_expectancy = d.get("life_expectancy", d.get("lifespan"))
-    life_expectancy = _as_int(life_expectancy, 0)
+    annual_expense  = d.get("annual_expense")
+    if annual_expense is None and "monthly_living_expense" in d:
+        annual_expense = _as_float(d["monthly_living_expense"]) * 12.0
 
-    # ---- monthly -> annual conversions ----
-    # UI label is "Monthly Savings ($)" but stored historically as 'annual_saving'
-    monthly_saving = _as_float(d.get("annual_saving", 0.0), 0.0)
-    annual_saving  = monthly_saving * 12.0
+    cpp_monthly   = d.get("cpp_monthly", d.get("cpp_support"))
+    cpp_start_age = d.get("cpp_start_age", d.get("cpp_from_age"))
+    cpp_end_age   = d.get("cpp_end_age",   d.get("cpp_to_age"))
 
-    annual_expense = d.get("annual_expense")
-    if annual_expense is None:
-        monthly_living_expense = _as_float(d.get("monthly_living_expense", 0.0), 0.0)
-        annual_expense = monthly_living_expense * 12.0
-    else:
-        annual_expense = _as_float(annual_expense, 0.0)
-
-    # ---- CPP / extra monthly income ----
-    cpp_monthly   = _as_float(d.get("cpp_monthly", d.get("cpp_support", 0.0)), 0.0)
-    cpp_start_age = _as_int(d.get("cpp_start_age", d.get("cpp_from_age", 0)), 0)
-    cpp_end_age   = _as_int(d.get("cpp_end_age",   d.get("cpp_to_age",   0)), 0)
-
-    # ---- asset liquidations ----
     asset_liqs = d.get("asset_liquidations")
     if asset_liqs is None:
         asset_liqs = []
@@ -477,36 +437,26 @@ def _normalize_inputs(raw: dict) -> dict:
             age = _as_int(d.get(f"asset_liquidation_age_{i}", 0), 0)
             if amt and age > 0:
                 asset_liqs.append({"amount": amt, "age": age})
-    else:
-        # coerce numbers if list came back as strings
-        fixed = []
-        for ev in asset_liqs:
-            try:
-                fixed.append({"amount": _as_float(ev.get("amount", 0.0), 0.0),
-                              "age": _as_int(ev.get("age", 0), 0)})
-            except Exception:
-                pass
-        asset_liqs = fixed
 
     return {
         "current_age":          _as_int(d.get("current_age", 0)),
         "retirement_age":       _as_int(d.get("retirement_age", 0)),
-        "annual_saving":        annual_saving,                 # annualized
-        "saving_increase_rate": saving_increase_rate,          # decimal
-        "current_assets":       _as_float(d.get("current_assets", 0.0), 0.0),
-        "return_rate":          return_rate,                   # decimal
-        "return_rate_after":    return_rate_after,             # decimal
-        "annual_expense":       annual_expense,                # annualized
-        "cpp_monthly":          cpp_monthly,                   # monthly
-        "cpp_start_age":        cpp_start_age,
-        "cpp_end_age":          cpp_end_age,
+        "annual_saving":        _as_float(d.get("annual_saving", 0.0)),
+        "saving_increase_rate": _as_float(d.get("saving_increase_rate", 0.0)),
+        "current_assets":       _as_float(d.get("current_assets", 0.0)),
+        "return_rate":          _as_float(d.get("return_rate", 0.0)),
+        "return_rate_after":    _as_float(d.get("return_rate_after", 0.0)),
+        "annual_expense":       _as_float(annual_expense, 0.0),
+        "cpp_monthly":          _as_float(cpp_monthly, 0.0),
+        "cpp_start_age":        _as_int(cpp_start_age, 0),
+        "cpp_end_age":          _as_int(cpp_end_age, 0),
         "asset_liquidations":   asset_liqs,
-        "inflation_rate":       inflation_rate,                # decimal
-        "life_expectancy":      life_expectancy,
-        "income_tax_rate":      income_tax_rate,               # decimal
-        # MC-only fields (projection/sensitivity must NOT receive these)
-        "return_std":           return_std,
-        "inflation_std":        inflation_std,
+        "inflation_rate":       _as_float(d.get("inflation_rate", 0.0)),
+        "life_expectancy":      _as_int(life_expectancy, 0),
+        "income_tax_rate":      _as_float(d.get("income_tax_rate", 0.0)),
+        # MC-only fields (projection must NOT receive these)
+        "return_std":           _as_float(d.get("return_std", 0.08)),
+        "inflation_std":        _as_float(d.get("inflation_std", 0.005)),
     }
 
 # Whitelists for each engine
@@ -516,12 +466,10 @@ _PROJECTION_KEYS = {
     "cpp_monthly","cpp_start_age","cpp_end_age","asset_liquidations",
     "inflation_rate","life_expectancy","income_tax_rate"
 }
-
 def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
 def _mc_args_from_params(p):
-    """Map normalized params to MC engine names; include stds here only."""
     return {
         "current_age":          p["current_age"],
         "retirement_age":       p["retirement_age"],
@@ -545,9 +493,6 @@ def _mc_args_from_params(p):
 
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
-    """
-    Compare two saved scenarios with normalized inputs.
-    """
     try:
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
@@ -571,7 +516,7 @@ def compare_retirement():
         params_a = _normalize_inputs(scen_a.inputs_json or {})
         params_b = _normalize_inputs(scen_b.inputs_json or {})
 
-        # --- projection-only dicts for deterministic tasks ---
+        # --- use projection-only dicts for deterministic things ---
         proj_a = _projection_args_from_params(params_a)
         proj_b = _projection_args_from_params(params_b)
 
@@ -579,11 +524,11 @@ def compare_retirement():
         out_a = run_retirement_projection(**proj_a)
         out_b = run_retirement_projection(**proj_b)
 
-        # Monte Carlo (uses means/stds)
+        # Monte Carlo (full dict with stds mapped to mean/std names)
         mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
         mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b))
 
-        # Sensitivity (projection-only params; no stds)
+        # Sensitivity must also use projection-only params
         variables = [
             "current_assets","return_rate","return_rate_after",
             "annual_saving","annual_expense","saving_increase_rate",
@@ -619,4 +564,3 @@ def compare_retirement():
         logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
         flash(f"Error comparing scenarios: {e}", "danger")
         return redirect(url_for("projects.retirement"))
-
