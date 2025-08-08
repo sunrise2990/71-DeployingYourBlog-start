@@ -462,31 +462,26 @@
     const aId = document.getElementById('scenario_a').value || '';
     const bId = document.getElementById('scenario_b').value || '';
 
-    // If no Scenario B -> CLONE the existing MC chart exactly.
+    // If no Scenario B → CLONE the existing main MC chart exactly
     if (!bId) {
       const src = document.getElementById('monte-carlo-chart');
       if (!src || !src.data) {
-        alert('Main MC chart not found on page.');
+        alert('Main MC chart not found on the page.');
         return;
       }
       const traces = JSON.parse(JSON.stringify(src.data));
       const layout = JSON.parse(JSON.stringify(src.layout || {}));
-
-      // Make sure legend + axis formatting matches your “working” look
-      layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
-      if (!layout.yaxis) layout.yaxis = {};
-      layout.yaxis.tickprefix = '$';
-      layout.yaxis.separatethousands = true;
-      layout.yaxis.exponentformat = 'none'; // no sci notation
+      ensureLayout(layout);
 
       document.getElementById('compare-block').classList.remove('d-none');
-      document.getElementById('compare-title').textContent = `🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`;
+      document.getElementById('compare-title').textContent =
+        `🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`;
 
-      Plotly.newPlot('mc-compare-plot', traces, layout, { responsive: true });
+      Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
       return;
     }
 
-    // Otherwise: fetch A vs B from backend (expects same arrays shape)
+    // With Scenario B → fetch A+B JSON then overlay
     const fd = new FormData(form);
     let res;
     try {
@@ -506,6 +501,7 @@
       alert('Compare failed (non-JSON):\n' + t.slice(0,300));
       return;
     }
+
     const cd = await res.json();
     if (!res.ok) {
       alert(cd.error || 'Compare failed.');
@@ -515,49 +511,8 @@
     renderAB(cd);
   });
 
-  function renderAB(cd){
-    document.getElementById('compare-block').classList.remove('d-none');
+  function numArr(a){ return (Array.isArray(a) ? a : []).map(v => Number(v)); }
 
-    const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
-    const labelB = (cd.labels && cd.labels.B) || '';
-    document.getElementById('compare-title').textContent =
-      labelB ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`;
-
-    const age = cd.mc.ages || [];
-    const aP10 = cd.mc.p10.A || [];
-    const aP50 = cd.mc.p50.A || [];
-    const aP90 = cd.mc.p90.A || [];
-
-    const traces = [
-      { x: age, y: aP10, fill: 'none', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, name: `${labelA} – 10th`, showlegend: false },
-      { x: age, y: aP90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, name: `${labelA} – 90th`, showlegend: false },
-      { x: age, y: aP50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } }
-    ];
-
-    if (cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B) {
-      const bP10 = cd.mc.p10.B, bP50 = cd.mc.p50.B, bP90 = cd.mc.p90.B;
-      traces.push(
-        { x: age, y: bP10, fill: 'none', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, name: `${labelB} – 10th`, showlegend: false },
-        { x: age, y: bP90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, name: `${labelB} – 90th`, showlegend: false },
-        { x: age, y: bP50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
-      );
-    }
-
-    const layout = {
-      margin: { t: 30 },
-      xaxis: { title: 'Age' },
-      yaxis: { title: 'Projected Assets ($)', tickprefix: '$', separatethousands: true, exponentformat: 'none' },
-      legend: { orientation: 'h', x: 0.1, y: -0.2 }
-    };
-
-    Plotly.newPlot('mc-compare-plot', traces, layout, { responsive: true });
-  }
-})();
-</script>
-
-
-<script>
-  // call this after you fetch compare JSON from /retirement/compare
   function renderAB(cd){
     document.getElementById('compare-block').classList.remove('d-none');
 
@@ -566,43 +521,55 @@
     document.getElementById('compare-title').textContent =
       `🔄 Compare: ${labelA} vs ${labelB}`;
 
-    const age = cd.mc.ages || [];
-    const aP10 = cd.mc.p10.A || [], aP50 = cd.mc.p50.A || [], aP90 = cd.mc.p90.A || [];
-    const bP10 = (cd.mc.p10 && cd.mc.p10.B) || [], bP50 = (cd.mc.p50 && cd.mc.p50.B) || [], bP90 = (cd.mc.p90 && cd.mc.p90.B) || [];
+    const age = numArr(cd?.mc?.ages);
+    const aP10 = numArr(cd?.mc?.p10?.A);
+    const aP50 = numArr(cd?.mc?.p50?.A);
+    const aP90 = numArr(cd?.mc?.p90?.A);
 
     const traces = [
-      // A band
-      { x: age, y: aP10, fill: 'none', line: { color: 'rgba(0,100,200,0)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: age, y: aP90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)', line: { color: 'rgba(0,100,200,0)', width: 0 }, hoverinfo:'skip', name: `${labelA} band`, showlegend:false },
+      // A band (blue)
+      { x: age, y: aP10, fill: 'none',
+        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: age, y: aP90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)',
+        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
       // A median
-      { x: age, y: aP50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } },
+      { x: age, y: aP50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } }
     ];
 
-    // B overlay (only if present)
+    const bP10 = numArr(cd?.mc?.p10?.B);
+    const bP50 = numArr(cd?.mc?.p50?.B);
+    const bP90 = numArr(cd?.mc?.p90?.B);
+
     if (bP10.length && bP50.length && bP90.length){
       traces.push(
         // B band (orange)
-        { x: age, y: bP10, fill: 'none', line: { color: 'rgba(255,159,64,0)', width: 0 }, hoverinfo:'skip', showlegend:false },
-        { x: age, y: bP90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)', line: { color: 'rgba(255,159,64,0)', width: 0 }, hoverinfo:'skip', name: `${labelB} band`, showlegend:false },
+        { x: age, y: bP10, fill: 'none',
+          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: age, y: bP90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)',
+          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
         // B median
         { x: age, y: bP50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
       );
+    } else {
+      alert('Scenario B data is missing or invalid.');
     }
 
-    const layout = {
-      margin: { t: 30 },
-      xaxis: { title: 'Age' },
-      yaxis: {
-        title: 'Projected Assets ($)',
-        tickprefix: '$',
-        separatethousands: true,
-        exponentformat: 'none'
-      },
-      legend: { orientation: 'h', x: 0.1, y: -0.2 }
-    };
-
-    Plotly.newPlot('mc-compare-plot', traces, layout, { responsive: true });
+    const layout = {};
+    ensureLayout(layout);
+    Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
   }
+
+  function ensureLayout(layout){
+    layout.margin = { t: 30 };
+    layout.xaxis = { title: 'Age' };
+    layout.yaxis = layout.yaxis || {};
+    layout.yaxis.title = 'Projected Assets ($)';
+    layout.yaxis.tickprefix = '$';
+    layout.yaxis.separatethousands = true;
+    layout.yaxis.exponentformat = 'none'; // prevent sci notation
+    layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
+  }
+})();
 </script>
 
 
