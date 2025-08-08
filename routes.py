@@ -423,17 +423,16 @@ def _as_float(x, default=0.0):
         return default
 
 def _pct_to_decimal(v):
-    """Accepts 8 or 0.08 -> 0.08; handles str/None safely."""
+    """Accepts 8 or 0.08 and returns 0.08. Handles str/None safely."""
     f = _as_float(v, 0.0)
     return f / 100.0 if f > 1.0 else f
 
 def _normalize_inputs(raw: dict) -> dict:
     """
-    Normalize raw saved form inputs into canonical engine kwargs.
+    Normalize raw saved form inputs into the canonical engine kwargs.
     - Converts whole %s (e.g., 10) to decimals (0.10)
     - Converts monthly -> annual where appropriate
     - Maps old field names to new ones
-    - Coerces list-of-liquidations to numbers
     """
     d = dict(raw or {})
 
@@ -452,16 +451,11 @@ def _normalize_inputs(raw: dict) -> dict:
     life_expectancy = d.get("life_expectancy", d.get("lifespan"))
     life_expectancy = _as_int(life_expectancy, 0)
 
-    # ---- savings (monthly UI historically saved under "annual_saving") ----
-    # Prefer explicit "monthly_saving" if present; otherwise interpret "annual_saving".
-    if "monthly_saving" in d:
-        annual_saving = _as_float(d.get("monthly_saving", 0.0), 0.0) * 12.0
-    else:
-        raw_saving = _as_float(d.get("annual_saving", 0.0), 0.0)
-        # Heuristic: if it looks like a monthly value (< 25k), treat as monthly; else assume annual.
-        annual_saving = raw_saving * 12.0 if 0 < raw_saving < 25000 else raw_saving
+    # ---- monthly -> annual conversions ----
+    # UI label is "Monthly Savings ($)" but stored historically as 'annual_saving'
+    monthly_saving = _as_float(d.get("annual_saving", 0.0), 0.0)
+    annual_saving  = monthly_saving * 12.0
 
-    # ---- expenses (monthly -> annual) ----
     annual_expense = d.get("annual_expense")
     if annual_expense is None:
         monthly_living_expense = _as_float(d.get("monthly_living_expense", 0.0), 0.0)
@@ -484,13 +478,12 @@ def _normalize_inputs(raw: dict) -> dict:
             if amt and age > 0:
                 asset_liqs.append({"amount": amt, "age": age})
     else:
+        # coerce numbers if list came back as strings
         fixed = []
         for ev in asset_liqs:
             try:
-                fixed.append({
-                    "amount": _as_float(ev.get("amount", 0.0), 0.0),
-                    "age": _as_int(ev.get("age", 0), 0),
-                })
+                fixed.append({"amount": _as_float(ev.get("amount", 0.0), 0.0),
+                              "age": _as_int(ev.get("age", 0), 0)})
             except Exception:
                 pass
         asset_liqs = fixed
@@ -587,15 +580,8 @@ def compare_retirement():
         out_b = run_retirement_projection(**proj_b)
 
         # Monte Carlo (uses means/stds)
-        mc_args_a = _mc_args_from_params(params_a)
-        mc_args_b = _mc_args_from_params(params_b)
-
-        # Log exact inputs going to the MC engine (server logs)
-        logger.info("MC A args: %s", mc_args_a)
-        logger.info("MC B args: %s", mc_args_b)
-
-        mc_a = run_monte_carlo_simulation_locked_inputs(**mc_args_a)
-        mc_b = run_monte_carlo_simulation_locked_inputs(**mc_args_b)
+        mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
+        mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b))
 
         # Sensitivity (projection-only params; no stds)
         variables = [
