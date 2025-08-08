@@ -430,11 +430,76 @@
 
 
 
+<!-- ==== Compare Saved Scenarios ==== -->
+<form method="POST" action="{{ url_for('projects.compare_retirement') }}">
+  {% if csrf_token is defined %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% endif %}
+
+  <hr class="my-5">
+
+  <h5 class="text-center mb-4">
+    🔄 Compare Saved Scenarios
+    <span tabindex="0"
+          data-bs-toggle="tooltip"
+          title="Pick two saved scenarios and render Monte Carlo + sensitivity below.">
+      &#9432;
+    </span>
+  </h5>
+
+  {% set has_scenarios = saved_scenarios|length > 1 %}
+
+  <div class="row align-items-end">
+    <!-- Scenario A -->
+    <div class="col-md-6 mt-3">
+      <label for="compare_scenario_a" class="form-label">Scenario A</label>
+      <select id="compare_scenario_a"
+              name="scenario_a"
+              class="form-select"
+              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
+        <option value="">-- Select Scenario A --</option>
+        {% for scenario in saved_scenarios %}
+          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Scenario B -->
+    <div class="col-md-6 mt-3">
+      <label for="compare_scenario_b" class="form-label">Scenario B</label>
+      <select id="compare_scenario_b"
+              name="scenario_b"
+              class="form-select"
+              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
+        <option value="">-- Select Scenario B --</option>
+        {% for scenario in saved_scenarios %}
+          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 text-center mt-4">
+      <button type="submit"
+              class="btn btn-primary px-4"
+              {% if not has_scenarios %}disabled{% endif %}>
+        Compare Scenarios
+      </button>
+      {% if not has_scenarios %}
+        <p class="text-muted mt-2 mb-0">
+          Save at least two scenarios to enable comparison.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</form>
+<!-- ==== End Compare UI ==== -->
+
+
 {% if compare_data %}
   <hr class="my-5">
   <h5 class="text-center mb-4">🔄 Compare: {{ compare_data.labels.A }} vs {{ compare_data.labels.B }}</h5>
 
-  <!-- Monte Carlo (stacked) -->
+  <!-- Monte Carlo (stacked, full width) -->
   <div class="mb-4">
     <div class="card">
       <div class="card-header">Monte Carlo Simulation</div>
@@ -444,7 +509,7 @@
     </div>
   </div>
 
-  <!-- Sensitivity (stacked) -->
+  <!-- Sensitivity (stacked, full width) -->
   <div class="mb-4">
     <div class="card">
       <div class="card-header">Sensitivity (Dollar Impact)</div>
@@ -454,10 +519,10 @@
     </div>
   </div>
 
-  <!-- Chart.js (safe to include even if already loaded elsewhere) -->
+  <!-- Chart.js (safe if included twice) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
-    // Data from Flask
+    // ----- Data from Flask -----
     const ages    = {{ compare_data.mc.ages  | tojson }};
     const p10a    = {{ compare_data.mc.p10.A | tojson }};
     const p10b    = {{ compare_data.mc.p10.B | tojson }};
@@ -472,7 +537,7 @@
     const maxImp  = Math.max(...impactA.map(Math.abs), ...impactB.map(Math.abs));
     const safeMaxImp = maxImp === 0 ? 1 : maxImp;
 
-    // Monte Carlo Comparison Chart
+    // ----- Monte Carlo line chart -----
     new Chart(document.getElementById('mcCompareChart'), {
       type: 'line',
       data: {
@@ -501,7 +566,7 @@
       }
     });
 
-    // Sensitivity Comparison Chart (horizontal, zero-centered)
+    // ----- Sensitivity horizontal bar chart -----
     new Chart(document.getElementById('sensCompareChart'), {
       type: 'bar',
       data: {
