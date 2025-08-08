@@ -404,6 +404,38 @@
         {% endif %}
 
 
+<!-- ==== Compare Scenarios Section ==== -->
+{% if saved_scenarios|length >= 2 %}
+<div class="mt-5">
+  <h5 class="text-center mb-3">🔄 Compare Saved Scenarios</h5>
+  <form method="POST" action="{{ url_for('projects.retirement') }}">
+    <div class="row justify-content-center">
+      <div class="col-md-4">
+        <label for="compare_scenario_a" class="form-label">Scenario A</label>
+        <select id="compare_scenario_a" name="compare_scenario_a" class="form-select">
+          {% for scenario in saved_scenarios %}
+          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label for="compare_scenario_b" class="form-label">Scenario B</label>
+        <select id="compare_scenario_b" name="compare_scenario_b" class="form-select">
+          {% for scenario in saved_scenarios %}
+          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="text-center mt-3">
+      <button type="submit" name="action" value="compare" class="btn btn-warning px-4">Compare</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+<!-- ==== End Compare Scenarios Section ==== -->
+
+
 
 
         {% if table %}
