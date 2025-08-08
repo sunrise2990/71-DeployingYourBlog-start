@@ -423,7 +423,7 @@ def _as_float(x, default=0.0):
         return default
 
 def _pct_to_decimal(v):
-    """Accepts 8 or 0.08 and returns 0.08. Handles str/None safely."""
+    """Accepts 8 or 0.08 -> 0.08; handles str/None safely."""
     f = _as_float(v, 0.0)
     return f / 100.0 if f > 1.0 else f
 
@@ -589,7 +589,8 @@ def compare_retirement():
         # Monte Carlo (uses means/stds)
         mc_args_a = _mc_args_from_params(params_a)
         mc_args_b = _mc_args_from_params(params_b)
-        # DEBUG: log exact inputs going to the MC engine
+
+        # Log exact inputs going to the MC engine (server logs)
         logger.info("MC A args: %s", mc_args_a)
         logger.info("MC B args: %s", mc_args_b)
 
