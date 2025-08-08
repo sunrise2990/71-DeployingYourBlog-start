@@ -556,6 +556,54 @@
 </script>
 
 
+<script>
+  // call this after you fetch compare JSON from /retirement/compare
+  function renderAB(cd){
+    document.getElementById('compare-block').classList.remove('d-none');
+
+    const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
+    const labelB = (cd.labels && cd.labels.B) || 'Scenario B';
+    document.getElementById('compare-title').textContent =
+      `🔄 Compare: ${labelA} vs ${labelB}`;
+
+    const age = cd.mc.ages || [];
+    const aP10 = cd.mc.p10.A || [], aP50 = cd.mc.p50.A || [], aP90 = cd.mc.p90.A || [];
+    const bP10 = (cd.mc.p10 && cd.mc.p10.B) || [], bP50 = (cd.mc.p50 && cd.mc.p50.B) || [], bP90 = (cd.mc.p90 && cd.mc.p90.B) || [];
+
+    const traces = [
+      // A band
+      { x: age, y: aP10, fill: 'none', line: { color: 'rgba(0,100,200,0)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: age, y: aP90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)', line: { color: 'rgba(0,100,200,0)', width: 0 }, hoverinfo:'skip', name: `${labelA} band`, showlegend:false },
+      // A median
+      { x: age, y: aP50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } },
+    ];
+
+    // B overlay (only if present)
+    if (bP10.length && bP50.length && bP90.length){
+      traces.push(
+        // B band (orange)
+        { x: age, y: bP10, fill: 'none', line: { color: 'rgba(255,159,64,0)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: age, y: bP90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)', line: { color: 'rgba(255,159,64,0)', width: 0 }, hoverinfo:'skip', name: `${labelB} band`, showlegend:false },
+        // B median
+        { x: age, y: bP50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
+      );
+    }
+
+    const layout = {
+      margin: { t: 30 },
+      xaxis: { title: 'Age' },
+      yaxis: {
+        title: 'Projected Assets ($)',
+        tickprefix: '$',
+        separatethousands: true,
+        exponentformat: 'none'
+      },
+      legend: { orientation: 'h', x: 0.1, y: -0.2 }
+    };
+
+    Plotly.newPlot('mc-compare-plot', traces, layout, { responsive: true });
+  }
+</script>
 
 
 
