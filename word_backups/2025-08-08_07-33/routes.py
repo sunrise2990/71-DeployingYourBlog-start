@@ -523,7 +523,6 @@ def _mc_args_from_params(p):
         "num_simulations":      1000,
     }
 
-
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     try:
@@ -545,17 +544,17 @@ def compare_retirement():
             flash("You can only compare your own saved scenarios.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        # Normalize saved rows using the single canonical normalizer
+        # ✅ Normalize saved rows using the single canonical normalizer
         params_a = to_canonical_inputs(scen_a.inputs_json or {})
         params_b = to_canonical_inputs(scen_b.inputs_json or {})
 
-        # Projection-only dicts (deterministic)
+        # --- use projection-only dicts for deterministic things ---
         proj_a = _projection_args_from_params(params_a)
         proj_b = _projection_args_from_params(params_b)
 
-        # (Optional) run deterministic projections to ensure params are sane
-        _ = run_retirement_projection(**proj_a)
-        _ = run_retirement_projection(**proj_b)
+        # Deterministic projection
+        out_a = run_retirement_projection(**proj_a)
+        out_b = run_retirement_projection(**proj_b)
 
         # Monte Carlo (means + stds)
         mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
@@ -585,42 +584,16 @@ def compare_retirement():
             }
         }
 
-        # Re-render the main planner page with compare_data populated so the
-        # stacked charts appear above the projection table.
-        saved_scenarios = (
-            RetirementScenario.query.filter_by(user_id=current_user.id).all()
-            if current_user.is_authenticated else []
-        )
-
         return render_template(
-            "retirement.html",
-            # Normal planner context (blank so we don't show stale results)
-            result=None,
-            table=[],
-            table_headers=[
-                "Age","Year","Retire?","Living Exp.","CPP / Extra Income","Income Tax Payment",
-                "Living Exp. – Ret.","Asset Liquidation","Savings – Before Retire","Asset",
-                "Asset – Retirement","Investment Return","Return Rate","Withdrawal Rate"
-            ],
-            retirement_age=None,
-            reset=False,
-            chart_data={},
-            monte_carlo_data={},
-            depletion_stats={},
-            return_std=request.form.get("return_std", "8"),
-            inflation_std=request.form.get("inflation_std", "0.5"),
-            selected_scenario_id="",
-            saved_scenarios=saved_scenarios,
-            sensitivities={},
-            sensitivity_headers=[],
-            sensitivity_table=[],
-            # <<< NEW: payload used by the stacked compare charts in retirement.html
+            "retirement_compare.html",
             compare_data=compare_data,
+            saved_scenarios=RetirementScenario.query.filter_by(
+                user_id=current_user.id
+            ).all() if current_user.is_authenticated else [],
         )
 
     except Exception:
         logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
         flash("Error comparing scenarios.", "danger")
         return redirect(url_for("projects.retirement"))
-
 
