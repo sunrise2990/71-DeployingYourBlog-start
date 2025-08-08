@@ -9,6 +9,76 @@ from models.retirement.retirement_calc import (
 from models import db
 from models.retirement.retirement_scenario import RetirementScenario # adjust import path as needed
 
+from copy import deepcopy
+
+_CANON_KEYS = {
+    "current_age", "retirement_age",
+    "annual_saving", "saving_increase_rate",
+    "current_assets", "return_rate", "return_rate_after",
+    "annual_expense",
+    "cpp_monthly", "cpp_start_age", "cpp_end_age",
+    "asset_liquidations",
+    "inflation_rate", "life_expectancy", "income_tax_rate",
+}
+
+def _to_int(v, d=0):
+    try: return int(float(v))
+    except Exception: return d
+
+def _to_float(v, d=0.0):
+    try: return float(v)
+    except Exception: return d
+
+def _normalize_inputs(raw: dict) -> dict:
+    """
+    Accepts legacy or new shapes and returns canonical kwargs for the engine.
+    Idempotent: safe to run on already-canonical dicts.
+    """
+    p = deepcopy(raw) if raw else {}
+
+    # ---- legacy -> canonical field names / units ----
+    if "lifespan" in p and "life_expectancy" not in p:
+        p["life_expectancy"] = p.pop("lifespan")
+
+    if "monthly_living_expense" in p and "annual_expense" not in p:
+        p["annual_expense"] = _to_float(p.pop("monthly_living_expense")) * 12.0
+
+    if "cpp_support" in p and "cpp_monthly" not in p:
+        p["cpp_monthly"] = p.pop("cpp_support")
+
+    if "cpp_from_age" in p and "cpp_start_age" not in p:
+        p["cpp_start_age"] = p.pop("cpp_from_age")
+    if "cpp_to_age" in p and "cpp_end_age" not in p:
+        p["cpp_end_age"] = p.pop("cpp_to_age")
+
+    # Build list-style liquidations if only discrete slots exist
+    if "asset_liquidations" not in p:
+        alist = []
+        for i in (1, 2, 3):
+            amt = _to_float(p.pop(f"asset_liquidation_{i}", 0))
+            age = _to_int(p.pop(f"asset_liquidation_age_{i}", 0))
+            if amt and age:
+                alist.append({"amount": amt, "age": age})
+        if alist:
+            p["asset_liquidations"] = alist
+
+    # ---- light typing on canonical keys ----
+    ints   = {"current_age","retirement_age","cpp_start_age","cpp_end_age","life_expectancy"}
+    floats = {
+        "annual_saving","saving_increase_rate","current_assets",
+        "return_rate","return_rate_after","annual_expense",
+        "inflation_rate","income_tax_rate","cpp_monthly"
+    }
+    for k in list(p.keys()):
+        if k in ints:   p[k] = _to_int(p.get(k))
+        elif k in floats: p[k] = _to_float(p.get(k))
+
+    p.setdefault("asset_liquidations", [])
+
+    # keep only what engine accepts
+    return {k: p[k] for k in _CANON_KEYS if k in p}
+
+
 # Define main projects blueprint (existing)
 projects_bp = Blueprint('projects', __name__, template_folder='templates')
 
@@ -254,23 +324,27 @@ scenarios_bp = Blueprint("scenarios", __name__, url_prefix="/scenarios")
 @scenarios_bp.route("/save", methods=["POST"])
 @login_required
 def save_scenario():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     scenario_name = data.get("scenario_name")
-    inputs_json = data.get("inputs_json")
+    inputs_json   = data.get("inputs_json")  # may be legacy or canonical
 
-    if not scenario_name or not inputs_json:
+    if not scenario_name or inputs_json is None:
         return jsonify({"error": "Missing scenario_name or inputs_json"}), 400
 
-    # Check if scenario with same name exists for user
+    # Normalize BEFORE persisting so new rows are always canonical
+    canon = _normalize_inputs(inputs_json)
+
     existing = RetirementScenario.query.filter_by(
         user_id=current_user.id, scenario_name=scenario_name
     ).first()
 
     if existing:
-        existing.inputs_json = inputs_json
+        existing.inputs_json = canon
     else:
         new_scenario = RetirementScenario(
-            user_id=current_user.id, scenario_name=scenario_name, inputs_json=inputs_json
+            user_id=current_user.id,
+            scenario_name=scenario_name,
+            inputs_json=canon
         )
         db.session.add(new_scenario)
 
@@ -336,64 +410,48 @@ logger = logging.getLogger(__name__)
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
-    Handles the Compare Scenarios action.
-    Expects POST fields 'scenario_a' and 'scenario_b' (IDs from retirement_scenarios).
+    Compare two saved scenarios. Normalizes inputs to canonical kwargs
+    so legacy saves won't crash the engine.
     """
     try:
-        # 1) Grab the two selected scenario IDs
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
         if not a_id or not b_id:
             flash("Please pick both Scenario A and Scenario B.", "warning")
             return redirect(url_for("projects.retirement"))
 
-        # 2) Load each scenario from the database
         scen_a = RetirementScenario.query.get(a_id)
         scen_b = RetirementScenario.query.get(b_id)
         if not scen_a or not scen_b:
             flash("One of the selected scenarios wasn't found.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        # (optional) ensure both belong to the current user
         if current_user.is_authenticated:
             if scen_a.user_id != current_user.id or scen_b.user_id != current_user.id:
                 flash("You can only compare your own saved scenarios.", "danger")
                 return redirect(url_for("projects.retirement"))
 
-        # 3) Pull the full input dicts from our JSON column
-        params_a = dict(scen_a.inputs_json or {})
-        params_b = dict(scen_b.inputs_json or {})
+        # Normalize what we read from DB (handles any old rows)
+        params_a = _normalize_inputs(scen_a.inputs_json or {})
+        params_b = _normalize_inputs(scen_b.inputs_json or {})
 
-        # 4) Deterministic projection for each
         out_a = run_retirement_projection(**params_a)
         out_b = run_retirement_projection(**params_b)
 
-        # 5) Monte Carlo for each
         mc_a = run_monte_carlo_simulation_locked_inputs(**params_a, num_simulations=1000)
         mc_b = run_monte_carlo_simulation_locked_inputs(**params_b, num_simulations=1000)
 
-        # 6) Sensitivity analysis on a stable, supported set of variables
-        allowed_vars = [
-            "current_assets",
-            "return_rate",
-            "return_rate_after",
-            "annual_saving",
-            "annual_expense",
-            "saving_increase_rate",
-            "inflation_rate",
-            "income_tax_rate",
+        variables = [
+            "current_assets","return_rate","return_rate_after",
+            "annual_saving","annual_expense","saving_increase_rate",
+            "inflation_rate","income_tax_rate"
         ]
-        # Only include vars present in both scenarios to avoid KeyErrors
-        variables = [v for v in allowed_vars if v in params_a and v in params_b]
-
         sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
         sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
 
-        # 7) Build payload for template
         compare_data = {
             "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
             "mc": {
-                # use MC ages so the line charts align to the simulation horizon
                 "ages": mc_a["ages"],
                 "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
                 "p50": {"A": mc_a["percentiles"]["p50"], "B": mc_b["percentiles"]["p50"]},
@@ -403,10 +461,9 @@ def compare_retirement():
                 "vars": variables,
                 "A": [sens_a[v]["dollar_impact"] for v in variables],
                 "B": [sens_b[v]["dollar_impact"] for v in variables],
-            },
+            }
         }
 
-        # 8) Render comparison template
         return render_template(
             "retirement_compare.html",
             compare_data=compare_data,
@@ -416,6 +473,7 @@ def compare_retirement():
         )
 
     except Exception as e:
-        logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
+        import traceback, logging
+        logging.getLogger(__name__).error("Error in compare_retirement:\n%s", traceback.format_exc())
         flash(f"Error comparing scenarios: {e}", "danger")
         return redirect(url_for("projects.retirement"))
