@@ -456,102 +456,88 @@
   const form = document.getElementById('compare-form');
   if (!form) return;
 
-  form.addEventListener('submit', onCompare);
-
-  async function onCompare(e){
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const aId = document.getElementById('scenario_a').value || '';
+
     const bId = document.getElementById('scenario_b').value || '';
 
-    // No Scenario B → clone the main MC exactly
+    // If no Scenario B → CLONE the main MC chart exactly
     if (!bId) {
       const src = document.getElementById('monte-carlo-chart');
       if (!src || !src.data) { alert('Main MC chart not found on page.'); return; }
       const traces = JSON.parse(JSON.stringify(src.data));
       const layout = JSON.parse(JSON.stringify(src.layout || {}));
       ensureLayout(layout);
-      showCompareTitle(`🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`);
+      showTitle(`🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`);
       Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
       return;
     }
 
-    // A vs B → fetch JSON
+    // With Scenario B → fetch A+B from backend (already normalized)
     const fd = new FormData(form);
-    let res;
-    try {
-      res = await fetch('{{ url_for("projects.compare_retirement") }}', {
-        method: 'POST',
-        body: fd,
-        credentials: 'same-origin'
-      });
-    } catch (err) { alert('Network error during compare.'); return; }
+    const res = await fetch('{{ url_for("projects.compare_retirement") }}', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    });
 
     const ct = (res.headers.get('content-type') || '').toLowerCase();
     if (!ct.includes('application/json')) {
-      const t = await res.text();
-      alert('Compare failed (non-JSON):\n' + t.slice(0,300));
+      const txt = await res.text();
+      alert('Compare failed (non-JSON):\n' + txt.slice(0,300));
       return;
     }
+
     const cd = await res.json();
     if (!res.ok) { alert(cd.error || 'Compare failed.'); return; }
 
-    // Sanity & coercion
-    const age  = numArr(cd?.mc?.ages);
-    const aP10 = numArr(cd?.mc?.p10?.A), aP50 = numArr(cd?.mc?.p50?.A), aP90 = numArr(cd?.mc?.p90?.A);
-    const bP10 = numArr(cd?.mc?.p10?.B), bP50 = numArr(cd?.mc?.p50?.B), bP90 = numArr(cd?.mc?.p90?.B);
+    renderOverlay(cd);
+  });
 
-    const minLenA = Math.min(age.length, aP10.length, aP50.length, aP90.length);
-    const minLenB = (bP10.length && bP50.length && bP90.length)
-      ? Math.min(age.length, bP10.length, bP50.length, bP90.length) : 0;
+  function renderOverlay(cd){
+    const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
+    const labelB = (cd.labels && cd.labels.B) || 'Scenario B';
+    const age  = (cd.mc.ages || []).map(Number);
+    const aP10 = (cd.mc.p10.A || []).map(Number);
+    const aP50 = (cd.mc.p50.A || []).map(Number);
+    const aP90 = (cd.mc.p90.A || []).map(Number);
+    const bP10 = (cd.mc.p10.B || []).map(Number);
+    const bP50 = (cd.mc.p50.B || []).map(Number);
+    const bP90 = (cd.mc.p90.B || []).map(Number);
 
-    if (!minLenA) { alert('Scenario A data invalid.'); return; }
-    // **Hard fail** if B is ridiculous (prevents plotting bogus billions)
-    if (minLenB && isNuts(bP50)) {
-      console.warn('Scenario B looks wrong. Sample B50:', bP50.slice(0,6));
-      alert('Scenario B data is in the wrong units (exploding to billions). Fix backend inputs for B (rates/units).');
-      return;
-    }
+    // align lengths just in case
+    const n = Math.min(age.length, aP10.length, aP50.length, aP90.length);
+    const m = bP10.length && bP50.length && bP90.length
+      ? Math.min(age.length, bP10.length, bP50.length, bP90.length)
+      : 0;
 
-    renderOverlay(
-      cd.labels?.A || 'Scenario A',
-      cd.labels?.B || 'Scenario B',
-      age.slice(0, Math.max(minLenA, minLenB || minLenA)),
-      { p10: aP10.slice(0,minLenA), p50: aP50.slice(0,minLenA), p90: aP90.slice(0,minLenA) },
-      minLenB ? { p10: bP10.slice(0,minLenB), p50: bP50.slice(0,minLenB), p90: bP90.slice(0,minLenB) } : null
-    );
-  }
-
-  function numArr(a){ return (Array.isArray(a) ? a : []).map(v => Number(v)); }
-  function isNuts(arr){
-    if (!arr.length) return false;
-    const max = Math.max(...arr.filter(Number.isFinite));
-    // $100,000,000 threshold — adjust if you want.
-    return max > 1e8;
-  }
-
-  function renderOverlay(labelA, labelB, age, A, B){
-    document.getElementById('compare-block').classList.remove('d-none');
-    document.getElementById('compare-title').textContent =
-      B ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`;
+    const A = { p10: aP10.slice(0,n), p50: aP50.slice(0,n), p90: aP90.slice(0,n) };
+    const B = m ? { p10: bP10.slice(0,m), p50: bP50.slice(0,m), p90: bP90.slice(0,m) } : null;
+    const ages = age.slice(0, Math.max(n, m || n));
 
     const traces = [
       // A band + median (blue)
-      { x: age, y: A.p10, fill: 'none', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: age, y: A.p90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: age, y: A.p50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } },
+      { x: ages, y: A.p10, fill: 'none',
+        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: A.p90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)',
+        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: A.p50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } },
     ];
 
     if (B) {
-      // B band + median (orange)
       traces.push(
-        { x: age, y: B.p10, fill: 'none', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-        { x: age, y: B.p90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-        { x: age, y: B.p50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
+        // B band + median (orange)
+        { x: ages, y: B.p10, fill: 'none',
+          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: ages, y: B.p90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)',
+          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: ages, y: B.p50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
       );
     }
 
     const layout = {};
     ensureLayout(layout);
+    showTitle(B ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`);
     Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
   }
 
@@ -564,10 +550,14 @@
     layout.yaxis.separatethousands = true;
     layout.yaxis.exponentformat = 'none';
     layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
+    document.getElementById('compare-block').classList.remove('d-none');
+  }
+
+  function showTitle(txt){
+    document.getElementById('compare-title').textContent = txt;
   }
 })();
 </script>
-
 
 
 
