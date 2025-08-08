@@ -44,15 +44,29 @@
   const p10b  = {{ compare_data.mc.p10.B | tojson }};
   const p50b  = {{ compare_data.mc.p50.B | tojson }};
   const p90b  = {{ compare_data.mc.p90.B | tojson }};
+
   const vars  = {{ compare_data.sens.vars | tojson }};
   const impA  = {{ compare_data.sens.A   | tojson }};
   const impB  = {{ compare_data.sens.B   | tojson }};
+
+  // Optional y-axis cap supplied by the route (based on overlapped p90 maxima)
+  const yMaxFromServer = {{ compare_data.mc.y_max | default('null') }};
 
   // Colors
   const cA = 'rgba(54,162,235,1)';     // blue (A)
   const cAfill = 'rgba(54,162,235,0.16)';
   const cB = 'rgba(255,159,64,1)';     // orange (B)
   const cBfill = 'rgba(255,159,64,0.16)';
+
+  // Helpers
+  const fmtMoney = v => '$' + Number(v).toLocaleString();
+
+  // Compute a sane y max if server didn’t send one
+  const yMaxLocal = Math.max(
+    ...(p90a || []),
+    ...(p90b || [])
+  );
+  const yMax = yMaxFromServer ?? Math.round(yMaxLocal * 1.1);
 
   // ---- Monte Carlo: shaded p10–p90 band + median line for each scenario ----
   new Chart(document.getElementById('mcCompareChart'), {
@@ -68,7 +82,7 @@
 
         // A median
         { label: '{{ compare_data.labels.A }} – median', data: p50a,
-          borderColor: cA, tension: 0.2, fill: false, pointRadius: 0 },
+          borderColor: cA, tension: 0.2, fill: false, pointRadius: 0, borderWidth: 2 },
 
         // B band
         { label: '{{ compare_data.labels.B }} – 90th %ile', data: p90b,
@@ -78,7 +92,7 @@
 
         // B median
         { label: '{{ compare_data.labels.B }} – median', data: p50b,
-          borderColor: cB, tension: 0.2, fill: false, pointRadius: 0 },
+          borderColor: cB, tension: 0.2, fill: false, pointRadius: 0, borderWidth: 2 },
       ]
     },
     options: {
@@ -87,8 +101,10 @@
       scales: {
         x: { title: { display: true, text: 'Age' } },
         y: {
+          suggestedMin: 0,
+          suggestedMax: yMax,
           title: { display: true, text: 'Projected Assets ($)' },
-          ticks: { callback: v => '$' + Number(v).toLocaleString() }
+          ticks: { callback: v => fmtMoney(v) }
         }
       },
       plugins: {
@@ -101,18 +117,15 @@
         },
         tooltip: {
           callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: $${Number(ctx.parsed.y).toLocaleString()}`
+            label: (ctx) => `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}`
           }
         }
       }
     }
   });
 
-  // ---- Sensitivity (unchanged) ----
-  const maxImp = Math.max(
-    ...impA.map(Math.abs),
-    ...impB.map(Math.abs)
-  );
+  // ---- Sensitivity ----
+  const maxImp = Math.max(...impA.map(Math.abs), ...impB.map(Math.abs));
 
   new Chart(document.getElementById('sensCompareChart'), {
     type: 'bar',
@@ -130,14 +143,14 @@
         x: {
           min: -maxImp, max: maxImp,
           title: { display: true, text: 'Dollar Impact ($)' },
-          ticks: { callback: v => '$' + Number(v).toLocaleString() }
+          ticks: { callback: v => fmtMoney(v) }
         }
       },
       plugins: {
         legend: { position: 'bottom' },
         tooltip: {
           callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: $${Number(ctx.parsed.x).toLocaleString()}`
+            label: (ctx) => `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.x)}`
           }
         }
       }

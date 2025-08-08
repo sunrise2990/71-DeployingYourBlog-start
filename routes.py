@@ -401,7 +401,7 @@ def delete_scenario(scenario_id):
         return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
 
 
-# === Compare Two Scenarios (MC uses projection-normalized args + stds) ===
+# === Compare Two Scenarios (make MC chart match planner median) ===
 import logging
 import traceback
 
@@ -423,57 +423,51 @@ def _as_float(x, default=0.0):
         return default
 
 def _pct_to_decimal(v):
-    """Accepts 8 or 0.08 -> 0.08; handles str/None safely."""
+    """Accepts 8 or 0.08 and returns 0.08 (safe for str/None)."""
     f = _as_float(v, 0.0)
     return f / 100.0 if f > 1.0 else f
 
 def _normalize_inputs(raw: dict) -> dict:
     """
-    Normalize raw saved form inputs into canonical engine kwargs.
-    - Converts whole %s (e.g., 10) to decimals (0.10)
-    - Converts monthly -> annual where appropriate
-    - Maps old field names to new ones
-    - Coerces list-of-liquidations to numbers
+    Canonicalize saved inputs to the engine kwargs the same way the planner does.
     """
     d = dict(raw or {})
 
-    # ---- rates (10 -> 0.10) ----
+    # rates (% → decimal)
     return_rate          = _pct_to_decimal(d.get("return_rate"))
     return_rate_after    = _pct_to_decimal(d.get("return_rate_after"))
     inflation_rate       = _pct_to_decimal(d.get("inflation_rate"))
     saving_increase_rate = _pct_to_decimal(d.get("saving_increase_rate"))
     income_tax_rate      = _pct_to_decimal(d.get("income_tax_rate"))
 
-    # stds for MC (8 -> 0.08, 0.5 -> 0.005)
+    # stds for MC only
     return_std    = _pct_to_decimal(d.get("return_std"))
     inflation_std = _pct_to_decimal(d.get("inflation_std"))
 
-    # ---- life expectancy ----
-    life_expectancy = d.get("life_expectancy", d.get("lifespan"))
-    life_expectancy = _as_int(life_expectancy, 0)
+    # life
+    life_expectancy = _as_int(d.get("life_expectancy", d.get("lifespan")), 0)
 
-    # ---- savings (monthly UI historically saved under "annual_saving") ----
-    if "monthly_saving" in d:
-        annual_saving = _as_float(d.get("monthly_saving", 0.0), 0.0) * 12.0
+    # savings (planner stores annual_saving already; keep it annual)
+    monthly_saving = d.get("monthly_saving")
+    if monthly_saving is not None:
+        annual_saving = _as_float(monthly_saving, 0.0) * 12.0
     else:
-        raw_saving = _as_float(d.get("annual_saving", 0.0), 0.0)
-        # Heuristic: treat <25k as monthly, else as annual
-        annual_saving = raw_saving * 12.0 if 0 < raw_saving < 25000 else raw_saving
+        raw = _as_float(d.get("annual_saving", 0.0), 0.0)
+        # If it looks like monthly (<25k), treat as monthly * 12; else already annual
+        annual_saving = raw * 12.0 if 0 < raw < 25000 else raw
 
-    # ---- expenses (monthly -> annual) ----
-    annual_expense = d.get("annual_expense")
-    if annual_expense is None:
-        monthly_living_expense = _as_float(d.get("monthly_living_expense", 0.0), 0.0)
-        annual_expense = monthly_living_expense * 12.0
+    # expense (monthly → annual if needed)
+    if d.get("annual_expense") is None:
+        annual_expense = _as_float(d.get("monthly_living_expense", 0.0), 0.0) * 12.0
     else:
-        annual_expense = _as_float(annual_expense, 0.0)
+        annual_expense = _as_float(d.get("annual_expense", 0.0), 0.0)
 
-    # ---- CPP / extra monthly income ----
+    # CPP / extra income
     cpp_monthly   = _as_float(d.get("cpp_monthly", d.get("cpp_support", 0.0)), 0.0)
     cpp_start_age = _as_int(d.get("cpp_start_age", d.get("cpp_from_age", 0)), 0)
     cpp_end_age   = _as_int(d.get("cpp_end_age",   d.get("cpp_to_age",   0)), 0)
 
-    # ---- asset liquidations ----
+    # asset liquidations
     asset_liqs = d.get("asset_liquidations")
     if asset_liqs is None:
         asset_liqs = []
@@ -486,10 +480,8 @@ def _normalize_inputs(raw: dict) -> dict:
         fixed = []
         for ev in asset_liqs:
             try:
-                fixed.append({
-                    "amount": _as_float(ev.get("amount", 0.0), 0.0),
-                    "age": _as_int(ev.get("age", 0), 0),
-                })
+                fixed.append({"amount": _as_float(ev.get("amount", 0.0), 0.0),
+                              "age": _as_int(ev.get("age", 0), 0)})
             except Exception:
                 pass
         asset_liqs = fixed
@@ -497,69 +489,82 @@ def _normalize_inputs(raw: dict) -> dict:
     return {
         "current_age":          _as_int(d.get("current_age", 0)),
         "retirement_age":       _as_int(d.get("retirement_age", 0)),
-        "annual_saving":        annual_saving,                 # annualized
-        "saving_increase_rate": saving_increase_rate,          # decimal
+        "annual_saving":        annual_saving,
+        "saving_increase_rate": saving_increase_rate,
         "current_assets":       _as_float(d.get("current_assets", 0.0), 0.0),
-        "return_rate":          return_rate,                   # decimal
-        "return_rate_after":    return_rate_after,             # decimal
-        "annual_expense":       annual_expense,                # annualized
-        "cpp_monthly":          cpp_monthly,                   # monthly
+        "return_rate":          return_rate,
+        "return_rate_after":    return_rate_after,
+        "annual_expense":       annual_expense,
+        "cpp_monthly":          cpp_monthly,
         "cpp_start_age":        cpp_start_age,
         "cpp_end_age":          cpp_end_age,
         "asset_liquidations":   asset_liqs,
-        "inflation_rate":       inflation_rate,                # decimal
+        "inflation_rate":       inflation_rate,
         "life_expectancy":      life_expectancy,
-        "income_tax_rate":      income_tax_rate,               # decimal
-        # MC-only fields (projection/sensitivity must NOT receive these)
+        "income_tax_rate":      income_tax_rate,
+        # MC-only
         "return_std":           return_std,
         "inflation_std":        inflation_std,
     }
 
-# Projection whitelist
+# engine param maps
 _PROJECTION_KEYS = {
     "current_age","retirement_age","annual_saving","saving_increase_rate",
     "current_assets","return_rate","return_rate_after","annual_expense",
     "cpp_monthly","cpp_start_age","cpp_end_age","asset_liquidations",
-    "inflation_rate","life_expectancy","income_tax_rate"
+    "inflation_rate","life_expectancy","income_tax_rate",
 }
+def _projection_args(p): return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
-def _projection_args_from_params(p):
-    return {k: p[k] for k in _PROJECTION_KEYS if k in p}
-
-def _mc_args_from_proj_and_params(proj, params):
-    """
-    Build MC args from the already-normalized projection dict (so means,
-    savings, expenses, taxes, etc. exactly match projection),
-    plus stds from params.
-    """
-    # Extra safety: convert any % that slipped through as whole numbers
-    def pct(x):
-        x = _as_float(x, 0.0)
-        return x / 100.0 if x > 1.0 else x
-
+def _mc_args(p):
     return {
-        "current_age":          proj["current_age"],
-        "retirement_age":       proj["retirement_age"],
-        "annual_saving":        proj["annual_saving"],
-        "saving_increase_rate": proj["saving_increase_rate"],
-        "current_assets":       proj["current_assets"],
-        "return_mean":          pct(proj["return_rate"]),
-        "return_mean_after":    pct(proj["return_rate_after"]),
-        "return_std":           pct(params.get("return_std", 0.08)),
-        "annual_expense":       proj["annual_expense"],
-        "inflation_mean":       pct(proj["inflation_rate"]),
-        "inflation_std":        pct(params.get("inflation_std", 0.005)),
-        "cpp_monthly":          proj["cpp_monthly"],
-        "cpp_start_age":        proj["cpp_start_age"],
-        "cpp_end_age":          proj["cpp_end_age"],
-        "asset_liquidations":   proj.get("asset_liquidations", []),
-        "life_expectancy":      proj["life_expectancy"],
-        "income_tax_rate":      proj.get("income_tax_rate", 0.0),
+        "current_age":          p["current_age"],
+        "retirement_age":       p["retirement_age"],
+        "annual_saving":        p["annual_saving"],
+        "saving_increase_rate": p["saving_increase_rate"],
+        "current_assets":       p["current_assets"],
+        "return_mean":          p["return_rate"],
+        "return_mean_after":    p["return_rate_after"],
+        "return_std":           p.get("return_std", 0.08),
+        "annual_expense":       p["annual_expense"],
+        "inflation_mean":       p["inflation_rate"],
+        "inflation_std":        p.get("inflation_std", 0.005),
+        "cpp_monthly":          p["cpp_monthly"],
+        "cpp_start_age":        p["cpp_start_age"],
+        "cpp_end_age":          p["cpp_end_age"],
+        "asset_liquidations":   p.get("asset_liquidations", []),
+        "life_expectancy":      p["life_expectancy"],
+        "income_tax_rate":      p.get("income_tax_rate", 0.0),
         "num_simulations":      1000,
     }
 
+def _slice_to_overlap(ages_a, ages_b, series_dict_a, series_dict_b):
+    """
+    Use only the overlapping age range so the two lines are directly comparable.
+    series_dict_* keys: 'p10','p50','p90' -> list
+    """
+    start = max(ages_a[0], ages_b[0])
+    end   = min(ages_a[-1], ages_b[-1])
+    if end < start:
+        # no overlap (shouldn't happen), fall back to A
+        return ages_a, series_dict_a, series_dict_b
+
+    def slicer(ages, arr):
+        i0 = ages.index(start)
+        i1 = ages.index(end) + 1
+        return arr[i0:i1]
+
+    common_ages = list(range(start, end + 1))
+    a_sliced = {k: slicer(ages_a, v) for k, v in series_dict_a.items()}
+    b_sliced = {k: slicer(ages_b, v) for k, v in series_dict_b.items()}
+    return common_ages, a_sliced, b_sliced
+
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
+    """
+    Compare two saved scenarios; produce a chart that mirrors the planner:
+    overlapping ages only + median lines; sane y-axis.
+    """
     try:
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
@@ -579,50 +584,43 @@ def compare_retirement():
             flash("You can only compare your own saved scenarios.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        # Normalize saved rows
+        # Normalize + run engines
         params_a = _normalize_inputs(scen_a.inputs_json or {})
         params_b = _normalize_inputs(scen_b.inputs_json or {})
 
-        # Projection-only dicts for deterministic tasks
-        proj_a = _projection_args_from_params(params_a)
-        proj_b = _projection_args_from_params(params_b)
+        # Deterministic run (kept in case you want to display it later)
+        _ = run_retirement_projection(**_projection_args(params_a))
+        _ = run_retirement_projection(**_projection_args(params_b))
 
-        # Deterministic projection
-        out_a = run_retirement_projection(**proj_a)
-        out_b = run_retirement_projection(**proj_b)
+        mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args(params_a))
+        mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args(params_b))
 
-        # Monte Carlo (use projection args + stds only)
-        mc_args_a = _mc_args_from_proj_and_params(proj_a, params_a)
-        mc_args_b = _mc_args_from_proj_and_params(proj_b, params_b)
+        ages_a = mc_a["ages"]
+        ages_b = mc_b["ages"]
+        series_a = {"p10": mc_a["percentiles"]["p10"],
+                    "p50": mc_a["percentiles"]["p50"],
+                    "p90": mc_a["percentiles"]["p90"]}
+        series_b = {"p10": mc_b["percentiles"]["p10"],
+                    "p50": mc_b["percentiles"]["p50"],
+                    "p90": mc_b["percentiles"]["p90"]}
 
-        logger.info("MC A args (final): %s", mc_args_a)
-        logger.info("MC B args (final): %s", mc_args_b)
+        # Align to overlapping age window
+        ages, s_a, s_b = _slice_to_overlap(ages_a, ages_b, series_a, series_b)
 
-        mc_a = run_monte_carlo_simulation_locked_inputs(**mc_args_a)
-        mc_b = run_monte_carlo_simulation_locked_inputs(**mc_args_b)
-
-        # Sensitivity (projection-only params; no stds)
-        variables = [
-            "current_assets","return_rate","return_rate_after",
-            "annual_saving","annual_expense","saving_increase_rate",
-            "inflation_rate","income_tax_rate"
-        ]
-        sens_a = sensitivity_analysis(proj_a, variables, delta=0.01)
-        sens_b = sensitivity_analysis(proj_b, variables, delta=0.01)
+        # y-axis cap ~10% above max p90 in the overlap
+        y_max = max(max(s_a["p90"]), max(s_b["p90"]))
+        y_max = int((y_max * 1.10) // 1000) * 1000  # round down to nearest 1k
 
         compare_data = {
             "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
             "mc": {
-                "ages": mc_a["ages"],
-                "p10": {"A": mc_a["percentiles"]["p10"], "B": mc_b["percentiles"]["p10"]},
-                "p50": {"A": mc_a["percentiles"]["p50"], "B": mc_b["percentiles"]["p50"]},
-                "p90": {"A": mc_a["percentiles"]["p90"], "B": mc_b["percentiles"]["p90"]},
+                "ages": ages,
+                "p50": {"A": s_a["p50"], "B": s_b["p50"]},  # median only for lines
+                # keep p10/p90 if you later want a band
+                "p10": {"A": s_a["p10"], "B": s_b["p10"]},
+                "p90": {"A": s_a["p90"], "B": s_b["p90"]},
+                "y_max": y_max,
             },
-            "sens": {
-                "vars": variables,
-                "A": [sens_a[v]["dollar_impact"] for v in variables],
-                "B": [sens_b[v]["dollar_impact"] for v in variables],
-            }
         }
 
         return render_template(
