@@ -102,7 +102,7 @@ def canonical_to_form_inputs(canon: dict) -> dict:
 
     # Monthly Living Expense (form uses 'monthly_living_expense'; canonical is annual)
     if "annual_expense" in d:
-        out["monthly_living_expense"] = _to_float(d["annual_expense"])
+        out["monthly_living_expense"] = _to_float(d["annual_expense"]) / 12.0
 
     # CPP fields (form uses legacy names)
     if "cpp_monthly" in d:
@@ -114,7 +114,7 @@ def canonical_to_form_inputs(canon: dict) -> dict:
 
     # Savings: backend expects annual_saving field name; form label may say monthly.
     if "annual_saving" in d:
-        out["annual_saving"] = _to_float(d["annual_saving"]) /12.0
+        out["annual_saving"] = _to_float(d["annual_saving"])
 
     # Direct pass-throughs (same names)
     for k in [
