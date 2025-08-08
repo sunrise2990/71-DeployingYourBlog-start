@@ -527,49 +527,53 @@ def _mc_args_from_params(p):
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     try:
+        # Get scenario IDs from form
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
         if not a_id or not b_id:
             flash("Please pick both Scenario A and Scenario B.", "warning")
             return redirect(url_for("projects.retirement"))
 
+        # Fetch scenarios from DB
         scen_a = RetirementScenario.query.get(a_id)
         scen_b = RetirementScenario.query.get(b_id)
         if not scen_a or not scen_b:
             flash("One of the selected scenarios wasn't found.", "danger")
             return redirect(url_for("projects.retirement"))
 
+        # Ensure ownership
         if current_user.is_authenticated and (
             scen_a.user_id != current_user.id or scen_b.user_id != current_user.id
         ):
             flash("You can only compare your own saved scenarios.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        # Normalize saved rows using the single canonical normalizer
+        # Normalize inputs using canonical normalizer
         params_a = to_canonical_inputs(scen_a.inputs_json or {})
         params_b = to_canonical_inputs(scen_b.inputs_json or {})
 
-        # Projection-only dicts (deterministic)
+        # Projection-only dicts (deterministic inputs)
         proj_a = _projection_args_from_params(params_a)
         proj_b = _projection_args_from_params(params_b)
 
-        # (Optional) run deterministic projections to ensure params are sane
+        # (Optional) run deterministic projections to validate params
         _ = run_retirement_projection(**proj_a)
         _ = run_retirement_projection(**proj_b)
 
-        # Monte Carlo (means + stds)
+        # Monte Carlo simulations
         mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
         mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b))
 
-        # Sensitivity (projection-only params; no stds)
+        # Sensitivity analysis (projection-only params; no std devs)
         variables = [
-            "current_assets","return_rate","return_rate_after",
-            "annual_saving","annual_expense","saving_increase_rate",
-            "inflation_rate","income_tax_rate"
+            "current_assets", "return_rate", "return_rate_after",
+            "annual_saving", "annual_expense", "saving_increase_rate",
+            "inflation_rate", "income_tax_rate"
         ]
         sens_a = sensitivity_analysis(proj_a, variables, delta=0.01)
         sens_b = sensitivity_analysis(proj_b, variables, delta=0.01)
 
+        # Prepare comparison payload
         compare_data = {
             "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
             "mc": {
@@ -585,22 +589,21 @@ def compare_retirement():
             }
         }
 
-        # Re-render the main planner page with compare_data populated so the
-        # stacked charts appear above the projection table.
+        # Retrieve user's saved scenarios
         saved_scenarios = (
             RetirementScenario.query.filter_by(user_id=current_user.id).all()
             if current_user.is_authenticated else []
         )
 
+        # Render retirement.html with compare_data injected
         return render_template(
             "retirement.html",
-            # Normal planner context (blank so we don't show stale results)
             result=None,
             table=[],
             table_headers=[
-                "Age","Year","Retire?","Living Exp.","CPP / Extra Income","Income Tax Payment",
-                "Living Exp. – Ret.","Asset Liquidation","Savings – Before Retire","Asset",
-                "Asset – Retirement","Investment Return","Return Rate","Withdrawal Rate"
+                "Age", "Year", "Retire?", "Living Exp.", "CPP / Extra Income", "Income Tax Payment",
+                "Living Exp. – Ret.", "Asset Liquidation", "Savings – Before Retire", "Asset",
+                "Asset – Retirement", "Investment Return", "Return Rate", "Withdrawal Rate"
             ],
             retirement_age=None,
             reset=False,
@@ -614,13 +617,11 @@ def compare_retirement():
             sensitivities={},
             sensitivity_headers=[],
             sensitivity_table=[],
-            # <<< NEW: payload used by the stacked compare charts in retirement.html
-            compare_data=compare_data,
+            compare_data=compare_data,  # ✅ For stacked comparison charts
         )
 
     except Exception:
         logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
         flash("Error comparing scenarios.", "danger")
         return redirect(url_for("projects.retirement"))
-
 
