@@ -401,37 +401,25 @@ def delete_scenario(scenario_id):
         return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
 
 
-# === Compare Two Scenarios (final) ===
+# === Compare Two Scenarios (fix: don't pass stds to projection/sensitivity) ===
 import logging
 import traceback
 
 logger = logging.getLogger(__name__)
 
-# ---------- helpers: casts ----------
 def _as_int(x, default=0):
-    try:
-        return int(x)
+    try: return int(x)
     except Exception:
-        try:
-            return int(float(x))
-        except Exception:
-            return default
+        try: return int(float(x))
+        except Exception: return default
 
 def _as_float(x, default=0.0):
-    try:
-        return float(x)
-    except Exception:
-        return default
+    try: return float(x)
+    except Exception: return default
 
-# ---------- helper: normalize legacy + build canonical ----------
 def _normalize_inputs(raw: dict) -> dict:
-    """
-    Turn whatever is stored in inputs_json (possibly legacy keys)
-    into the canonical parameter set your app uses.
-    """
     d = dict(raw or {})
 
-    # legacy -> canonical
     life_expectancy = d.get("life_expectancy", d.get("lifespan"))
     annual_expense  = d.get("annual_expense")
     if annual_expense is None and "monthly_living_expense" in d:
@@ -441,7 +429,6 @@ def _normalize_inputs(raw: dict) -> dict:
     cpp_start_age = d.get("cpp_start_age", d.get("cpp_from_age"))
     cpp_end_age   = d.get("cpp_end_age",   d.get("cpp_to_age"))
 
-    # asset liquidations – support legacy fixed slots
     asset_liqs = d.get("asset_liquidations")
     if asset_liqs is None:
         asset_liqs = []
@@ -451,7 +438,6 @@ def _normalize_inputs(raw: dict) -> dict:
             if amt and age > 0:
                 asset_liqs.append({"amount": amt, "age": age})
 
-    # canonical dict (include stds here but don't pass them to projection)
     return {
         "current_age":          _as_int(d.get("current_age", 0)),
         "retirement_age":       _as_int(d.get("retirement_age", 0)),
@@ -468,40 +454,22 @@ def _normalize_inputs(raw: dict) -> dict:
         "inflation_rate":       _as_float(d.get("inflation_rate", 0.0)),
         "life_expectancy":      _as_int(life_expectancy, 0),
         "income_tax_rate":      _as_float(d.get("income_tax_rate", 0.0)),
-        # MC only (projection doesn't take these):
+        # MC-only fields (projection must NOT receive these)
         "return_std":           _as_float(d.get("return_std", 0.08)),
         "inflation_std":        _as_float(d.get("inflation_std", 0.005)),
     }
 
-# ---------- helper: build ARGS for each engine ----------
+# Whitelists for each engine
+_PROJECTION_KEYS = {
+    "current_age","retirement_age","annual_saving","saving_increase_rate",
+    "current_assets","return_rate","return_rate_after","annual_expense",
+    "cpp_monthly","cpp_start_age","cpp_end_age","asset_liquidations",
+    "inflation_rate","life_expectancy","income_tax_rate"
+}
+def _projection_args_from_params(p):
+    return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
-def _projection_args_from_params(p: dict) -> dict:
-    """
-    Only the kwargs accepted by run_retirement_projection().
-    """
-    return {
-        "current_age":          p["current_age"],
-        "retirement_age":       p["retirement_age"],
-        "annual_saving":        p["annual_saving"],
-        "saving_increase_rate": p["saving_increase_rate"],
-        "current_assets":       p["current_assets"],
-        "return_rate":          p["return_rate"],
-        "return_rate_after":    p["return_rate_after"],
-        "annual_expense":       p["annual_expense"],
-        "cpp_monthly":          p["cpp_monthly"],
-        "cpp_start_age":        p["cpp_start_age"],
-        "cpp_end_age":          p["cpp_end_age"],
-        "asset_liquidations":   p.get("asset_liquidations", []),
-        "inflation_rate":       p["inflation_rate"],
-        "life_expectancy":      p["life_expectancy"],
-        "income_tax_rate":      p.get("income_tax_rate", 0.0),
-    }
-
-def _mc_args_from_params(p: dict) -> dict:
-    """
-    The kwargs expected by run_monte_carlo_simulation_locked_inputs().
-    Note the mean/std names.
-    """
+def _mc_args_from_params(p):
     return {
         "current_age":          p["current_age"],
         "retirement_age":       p["retirement_age"],
@@ -525,10 +493,6 @@ def _mc_args_from_params(p: dict) -> dict:
 
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
-    """
-    Compare two saved scenarios safely: normalize legacy keys,
-    pass only the right kwargs to each engine, and render charts.
-    """
     try:
         a_id = request.form.get("scenario_a")
         b_id = request.form.get("scenario_b")
@@ -542,32 +506,36 @@ def compare_retirement():
             flash("One of the selected scenarios wasn't found.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        if current_user.is_authenticated:
-            if scen_a.user_id != current_user.id or scen_b.user_id != current_user.id:
-                flash("You can only compare your own saved scenarios.", "danger")
-                return redirect(url_for("projects.retirement"))
+        if current_user.is_authenticated and (
+            scen_a.user_id != current_user.id or scen_b.user_id != current_user.id
+        ):
+            flash("You can only compare your own saved scenarios.", "danger")
+            return redirect(url_for("projects.retirement"))
 
-        # Normalize stored JSON to canonical
+        # Normalize saved rows
         params_a = _normalize_inputs(scen_a.inputs_json or {})
         params_b = _normalize_inputs(scen_b.inputs_json or {})
 
-        # Deterministic projections (NO stds passed)
-        out_a = run_retirement_projection(**_projection_args_from_params(params_a))
-        out_b = run_retirement_projection(**_projection_args_from_params(params_b))
+        # --- use projection-only dicts for deterministic things ---
+        proj_a = _projection_args_from_params(params_a)
+        proj_b = _projection_args_from_params(params_b)
 
-        # Monte Carlo (means/stds + correct arg names)
+        # Deterministic projection
+        out_a = run_retirement_projection(**proj_a)
+        out_b = run_retirement_projection(**proj_b)
+
+        # Monte Carlo (full dict with stds mapped to mean/std names)
         mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
         mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b))
 
-        # Sensitivity on a stable set
-        allowed_vars = [
+        # Sensitivity must also use projection-only params
+        variables = [
             "current_assets","return_rate","return_rate_after",
             "annual_saving","annual_expense","saving_increase_rate",
             "inflation_rate","income_tax_rate"
         ]
-        variables = [v for v in allowed_vars if v in params_a and v in params_b]
-        sens_a = sensitivity_analysis(params_a, variables, delta=0.01)
-        sens_b = sensitivity_analysis(params_b, variables, delta=0.01)
+        sens_a = sensitivity_analysis(proj_a, variables, delta=0.01)
+        sens_b = sensitivity_analysis(proj_b, variables, delta=0.01)
 
         compare_data = {
             "labels": {"A": scen_a.scenario_name, "B": scen_b.scenario_name},
