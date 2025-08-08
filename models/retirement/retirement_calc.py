@@ -244,3 +244,4 @@ def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, chec
 
     probs["ever"] = ever_zero
     return probs
+

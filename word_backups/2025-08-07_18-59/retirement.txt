@@ -141,7 +141,7 @@
           <select id="load_scenario_select" name="load_scenario_select" class="form-select">
             <option value="">-- Select Scenario --</option>
             {% for scenario in saved_scenarios %}
-              <option value="{{ scenario.id }}" {% if selected_scenario_id == scenario.id|string %}selected{% endif %}>
+              <option value="{{ scenario.id }}" {% if selected_scenario_id|string == scenario.id|string %}selected{% endif %}>
                 {{ scenario.scenario_name }}
               </option>
             {% endfor %}
@@ -309,6 +309,197 @@
     </div>
     {% endif %}
 
+
+
+{% if sensitivities %}
+  <div class="mt-4">
+    <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
+    <div class="row">
+      <!-- Table with both Elasticity and Dollar Impact -->
+      <div class="col-md-6">
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered text-center">
+            <thead class="table-light">
+              <tr>
+                <th>Parameter</th>
+                <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
+                <th>Dollar Impact ($)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for var, vals in sensitivities.items() %}
+                <tr>
+                  <td>
+                    {% if var == 'return_rate' %}
+                      Pre-Retire Return Rate
+                    {% elif var == 'return_rate_after' %}
+                      Post-Retire Return Rate
+                    {% else %}
+                      {{ var.replace('_', ' ').title() }}
+                    {% endif %}
+                  </td>
+                  <td>{{ "{:.2f}".format(vals.sensitivity_pct) }}%</td>
+                  <td>${{ "{:,.0f}".format(vals.dollar_impact) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Full‐width horizontal bar chart beside table -->
+      <div class="col-md-6 d-flex align-items-center">
+        <div style="width:100%; height:400px;">
+          <canvas id="dollarImpactChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Explanations moved below both table & chart -->
+    <div class="mt-3">
+      <p><strong>Elasticity</strong> shows the percentage change in your <em>Final Assets</em> resulting from a 1% increase in each input.
+      For example, an elasticity of <code>8.09%</code> for <em>Current Assets</em> means boosting your starting assets by 1% yields an 8.09% higher projected balance.</p>
+      <p><strong>Dollar Impact</strong> shows the absolute dollar change in your <em>Final Assets</em> for that same 1% increase.
+      Positive bars extend to the right; negative bars extend to the left of zero.
+      For example, a dollar impact of <code>$153,394</code> for <em>Current Assets</em> means a 1% bump adds \$153,394 to your projection.</p>
+    </div>
+  </div>
+
+
+
+<!-- Compare Saved Scenarios -->
+</form>
+
+<!-- ==== Compare Saved Scenarios ==== -->
+<form method="POST" action="{{ url_for('projects.compare_retirement') }}">
+  {% if csrf_token is defined %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% endif %}
+
+  <hr class="my-5">
+
+  <h5 class="text-center mb-4">
+    🔄 Compare Saved Scenarios
+    <span tabindex="0"
+          data-bs-toggle="tooltip"
+          title="Pick two saved scenarios and see Monte Carlo + sensitivity side-by-side.">
+      &#9432;
+    </span>
+  </h5>
+
+  {% set has_scenarios = saved_scenarios|length > 1 %}
+
+  <div class="row align-items-end">
+    <!-- Scenario A -->
+    <div class="col-md-6 mt-3">
+      <label for="compare_scenario_a" class="form-label">Scenario A</label>
+      <select id="compare_scenario_a"
+              name="scenario_a"
+              class="form-select"
+              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
+        <option value="">-- Select Scenario A --</option>
+        {% for scenario in saved_scenarios %}
+          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Scenario B -->
+    <div class="col-md-6 mt-3">
+      <label for="compare_scenario_b" class="form-label">Scenario B</label>
+      <select id="compare_scenario_b"
+              name="scenario_b"
+              class="form-select"
+              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
+        <option value="">-- Select Scenario B --</option>
+        {% for scenario in saved_scenarios %}
+          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 text-center mt-4">
+      <button type="submit"
+              class="btn btn-primary px-4"
+              {% if not has_scenarios %}disabled{% endif %}>
+        Compare Scenarios
+      </button>
+      {% if not has_scenarios %}
+        <p class="text-muted mt-2 mb-0">
+          Save at least two scenarios to enable comparison.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</form>
+<!-- ==== End Compare UI ==== -->
+
+
+
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const labels = [
+      {% for var, vals in sensitivities.items() %}
+        {% if var == 'current_assets' %}'Current Assets',{% endif %}
+        {% if var == 'return_rate' %}'Pre-Retire Return Rate',{% endif %}
+        {% if var == 'return_rate_after' %}'Post-Retire Return Rate',{% endif %}
+        {% if var == 'annual_saving' %}'Annual Saving',{% endif %}
+        {% if var == 'annual_expense' %}'Annual Expense',{% endif %}
+        {% if var == 'saving_increase_rate' %}'Saving Increase Rate',{% endif %}
+        {% if var == 'inflation_rate' %}'Inflation Rate',{% endif %}
+        {% if var == 'income_tax_rate' %}'Income Tax Rate',{% endif %}
+      {% endfor %}
+    ];
+
+    const data = [
+      {% for var, vals in sensitivities.items() %}
+        {{ vals.dollar_impact }}{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ];
+
+    const maxImpact = Math.max(...data.map(v => Math.abs(v)));
+
+    new Chart(document.getElementById('dollarImpactChart').getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Dollar Impact',
+          data: data,
+          backgroundColor: '#4e73df'
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            min: -maxImpact,
+            max: maxImpact,
+            ticks: {
+              callback: value => '$' + value.toLocaleString()
+            }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => '$' + ctx.parsed.x.toLocaleString()
+            }
+          }
+        }
+      }
+    });
+  </script>
+{% endif %}
+
+
+
+
     {% if table %}
     <div class="table-responsive mt-5">
         <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
@@ -355,50 +546,74 @@
     {% endif %}
 </div>
 
+
+<!-- 1) Expose login state from Flask -->
+<script type="text/javascript">
+  const isUserLoggedIn = {{ 'true' if current_user.is_authenticated else 'false' }};
+</script>
+
+<!-- 2) Initialize Bootstrap tooltips -->
 <script>
-  // Collect all form inputs into a JSON object
+  const tooltipTriggerList = Array.from(
+    document.querySelectorAll('[data-bs-toggle="tooltip"]')
+  );
+  tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+</script>
+
+<!-- 3) Collect inputs, call save endpoint, and guard by login -->
+<script>
+  // Gather all the form’s inputs into a JSON object
   function collectFormInputs() {
     const inputs = {};
-    const formElements = document.querySelectorAll('form input[type="number"], form input[type="text"], form select');
-
-    formElements.forEach(input => {
-      inputs[input.name] = input.value;
+    document.querySelectorAll(
+      'form input[type="number"], form input[type="text"], form select'
+    ).forEach(el => {
+      inputs[el.name] = el.value;
     });
-
     return inputs;
   }
 
-  // Function to call your Flask API and save the scenario
+  // POST to your Flask /scenarios/save endpoint
   function saveScenario(scenarioName, inputsJson) {
     fetch('/scenarios/save', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ scenario_name: scenarioName, inputs_json: inputsJson })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scenario_name: scenarioName,
+        inputs_json: inputsJson
+      })
     })
-    .then(response => response.json())
+    .then(r => r.json())
     .then(data => {
       if (data.message) {
         alert('Scenario saved successfully!');
-      } else if (data.error) {
-        alert('Error: ' + data.error);
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
       }
     })
-    .catch(error => alert('Network error: ' + error));
+    .catch(err => {
+      alert('Network error: ' + err);
+    });
   }
 
-  // Trigger Save Scenario on button click
+  // Entry point for Save Scenario button
   function triggerSaveScenario() {
-    const scenarioName = document.getElementById('scenario_name_input').value.trim();
+    // 1) Redirect anonymous users
+    if (!isUserLoggedIn) {
+      alert('You need to register or log in to save a scenario.');
+      return;
+    }
 
-    if (!scenarioName) {
+    // 2) Ensure they entered a name
+    const name = document.getElementById('scenario_name_input').value.trim();
+    if (!name) {
       alert('Please enter a scenario name before saving.');
       return;
     }
 
+    // 3) Collect the inputs and send
     const inputsJson = collectFormInputs();
-    saveScenario(scenarioName, inputsJson);
+    saveScenario(name, inputsJson);
   }
 </script>
 
@@ -433,6 +648,9 @@
             }
           }
         });
+
+        // Set the dropdown selection explicitly to the loaded scenario
+        select.value = data.id || data.scenario_id || scenarioId;
 
         alert(`Loaded scenario: ${data.scenario_name}`);
       })
@@ -472,4 +690,6 @@
 
 
 
+
 {% endblock %}
+
