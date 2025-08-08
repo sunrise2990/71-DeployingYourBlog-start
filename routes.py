@@ -525,11 +525,12 @@ def _mc_args_from_params(p):
         "num_simulations":      1000,
     }
 
+# routes.py
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
-    Return JSON for the compare block: Monte Carlo and sensitivity for
-    Scenario A, optionally overlay B.
+    Return JSON for compare block. If only Scenario A is chosen,
+    return the exact same MC arrays you build for the main page.
     """
     try:
         a_id = (request.form.get("scenario_a") or "").strip()
@@ -544,53 +545,39 @@ def compare_retirement():
 
         scen_b = RetirementScenario.query.get(b_id) if b_id else None
 
-        # Ownership check only if logged in
+        # Optional ownership check
         if current_user.is_authenticated:
             if scen_a.user_id != current_user.id or (scen_b and scen_b.user_id != current_user.id):
                 return jsonify({"error": "You can only compare your own saved scenarios."}), 403
 
-        # --- Normalize to canonical
+        # === Use the SAME helpers as main page ===
         params_a = to_canonical_inputs(scen_a.inputs_json or {})
-        params_b = to_canonical_inputs(scen_b.inputs_json or {}) if scen_b else None
+        mc_args_a = _mc_args_from_params(params_a)         # the same args you feed to main MC
+        mc_a = run_monte_carlo_simulation_locked_inputs(**mc_args_a)
 
-        # Whitelist for deterministic engine (sanity check)
-        proj_a = _projection_args_from_params(params_a)
-        proj_b = _projection_args_from_params(params_b) if params_b else None
-        _ = run_retirement_projection(**proj_a)
-        if proj_b:
-            _ = run_retirement_projection(**proj_b)
-
-        # --- Monte Carlo
-        mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
-        mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b)) if proj_b else None
-
-        # --- Sensitivity (same variables as main page)
-        variables = [
-            "current_assets", "return_rate", "return_rate_after",
-            "annual_saving", "annual_expense", "saving_increase_rate",
-            "inflation_rate", "income_tax_rate"
-        ]
-        sens_a = sensitivity_analysis(proj_a, variables, delta=0.01)
-        sens_b = sensitivity_analysis(proj_b, variables, delta=0.01) if proj_b else None
-
-        # --- Build JSON payload
         compare_data = {
-            "labels": {"A": scen_a.scenario_name, **({"B": scen_b.scenario_name} if scen_b else {})},
+            "labels": {"A": scen_a.scenario_name},
             "mc": {
                 "ages": mc_a["ages"],
-                "p10": {"A": mc_a["percentiles"]["p10"], **({"B": mc_b["percentiles"]["p10"]} if mc_b else {})},
-                "p50": {"A": mc_a["percentiles"]["p50"], **({"B": mc_b["percentiles"]["p50"]} if mc_b else {})},
-                "p90": {"A": mc_a["percentiles"]["p90"], **({"B": mc_b["percentiles"]["p90"]} if mc_b else {})},
+                "p10": {"A": mc_a["percentiles"]["p10"]},
+                "p50": {"A": mc_a["percentiles"]["p50"]},
+                "p90": {"A": mc_a["percentiles"]["p90"]},
             },
-            "sens": {
-                "vars": variables,
-                "A": [sens_a[v]["dollar_impact"] for v in variables],
-                **({"B": [sens_b[v]["dollar_impact"] for v in variables]} if sens_b else {})
-            }
+            "sens": { "vars": [], "A": [] }  # keep structure; you can fill if needed
         }
+
+        if scen_b:
+            params_b = to_canonical_inputs(scen_b.inputs_json or {})
+            mc_args_b = _mc_args_from_params(params_b)
+            mc_b = run_monte_carlo_simulation_locked_inputs(**mc_args_b)
+            compare_data["labels"]["B"] = scen_b.scenario_name
+            compare_data["mc"]["p10"]["B"] = mc_b["percentiles"]["p10"]
+            compare_data["mc"]["p50"]["B"] = mc_b["percentiles"]["p50"]
+            compare_data["mc"]["p90"]["B"] = mc_b["percentiles"]["p90"]
 
         return jsonify(compare_data), 200
 
-    except Exception as e:
+    except Exception:
         logger.exception("compare_retirement failed")
         return jsonify({"error": "Server error during compare."}), 500
+

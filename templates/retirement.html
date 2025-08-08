@@ -517,7 +517,7 @@
 
     const traces = [
       { x: ages, y: aP10, line: {width: 0, color: 'rgba(0,100,200,0.15)'}, hoverinfo: 'skip', showlegend: false },
-      { x: ages, y: aP90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.15)', line: {width: 0, color: 'rgba(0,100,200,0.15)'}, hoverinfo: 'skip', name: `${labelA} – 10th–90th %ile`, showlegend: false },
+      { x: ages, y: aP90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.15)', line: {width: 0, color: 'rgba(0,100,200,0.15)'}, hoverinfo: 'skip', showlegend: false },
       { x: ages, y: aP50, mode: 'lines+markers', name: `${labelA} – Median`, line: {color: 'rgba(0,100,200,1)'}, marker: {size: 4} }
     ];
 
@@ -525,7 +525,7 @@
       const bP10 = cd.mc.p10.B, bP90 = cd.mc.p90.B, bP50 = cd.mc.p50.B;
       traces.push(
         { x: ages, y: bP10, line: {width: 0, color: 'rgba(255,159,64,0.15)'}, hoverinfo: 'skip', showlegend: false },
-        { x: ages, y: bP90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.15)', line: {width: 0, color: 'rgba(255,159,64,0.15)'}, hoverinfo: 'skip', name: `${labelB} – 10th–90th %ile`, showlegend: false },
+        { x: ages, y: bP90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.15)', line: {width: 0, color: 'rgba(255,159,64,0.15)'}, hoverinfo: 'skip', showlegend: false },
         { x: ages, y: bP50, mode: 'lines+markers', name: `${labelB} – Median`, line: {color: 'rgba(255,159,64,1)'}, marker: {size: 4} }
       );
     }
@@ -533,14 +533,21 @@
     const mcLayout = {
       margin: { t: 30 },
       xaxis: { title: 'Age' },
-      yaxis: { title: 'Projected Assets ($)', tickprefix: '$', separatethousands: true },
+      yaxis: {
+        title: 'Projected Assets ($)',
+        tickprefix: '$',
+        separatethousands: true,
+        exponentformat: 'none'  // avoid sci notation
+      },
       legend: { orientation: 'h', x: 0.1, y: -0.2 }
     };
 
     Plotly.newPlot('mcComparePlot', traces, mcLayout, { responsive: true });
 
     // ===== Chart.js Sensitivity =====
-    const vars = (cd.sens.vars || []).map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));
+    const vars = (cd.sens.vars || []).map(v =>
+      v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
+    );
     const impactA = cd.sens.A || [];
     const impactB = cd.sens.B || null;
 
@@ -549,9 +556,7 @@
       ...(impactB ? impactB.map(Math.abs) : [0])
     ) || 1;
 
-    const ds = [
-      { label: labelA, data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' }
-    ];
+    const ds = [{ label: labelA, data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' }];
     if (impactB) ds.push({ label: labelB, data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' });
 
     const ctx = document.getElementById('sensCompareChart').getContext('2d');
