@@ -7,10 +7,13 @@ from models.retirement.retirement_calc import (
     run_monte_carlo_simulation_locked_inputs, sensitivity_analysis
 )
 from models import db
-from models.retirement.retirement_scenario import RetirementScenario # adjust import path as needed
+from models.retirement.retirement_scenario import RetirementScenario  # adjust import path as needed
 
 from copy import deepcopy
 
+# -------------------------
+# Canonical keys + adapters
+# -------------------------
 _CANON_KEYS = {
     "current_age", "retirement_age",
     "annual_saving", "saving_increase_rate",
@@ -22,17 +25,22 @@ _CANON_KEYS = {
 }
 
 def _to_int(v, d=0):
-    try: return int(float(v))
-    except Exception: return d
+    try:
+        return int(float(v))
+    except Exception:
+        return d
 
 def _to_float(v, d=0.0):
-    try: return float(v)
-    except Exception: return d
+    try:
+        return float(v)
+    except Exception:
+        return d
 
-def _normalize_inputs(raw: dict) -> dict:
+def to_canonical_inputs(raw: dict) -> dict:
     """
     Accepts legacy or new shapes and returns canonical kwargs for the engine.
     Idempotent: safe to run on already-canonical dicts.
+    NOTE: Use this single normalizer everywhere (save, compare, etc.).
     """
     p = deepcopy(raw) if raw else {}
 
@@ -63,20 +71,74 @@ def _normalize_inputs(raw: dict) -> dict:
             p["asset_liquidations"] = alist
 
     # ---- light typing on canonical keys ----
-    ints   = {"current_age","retirement_age","cpp_start_age","cpp_end_age","life_expectancy"}
+    ints = {"current_age", "retirement_age", "cpp_start_age", "cpp_end_age", "life_expectancy"}
     floats = {
-        "annual_saving","saving_increase_rate","current_assets",
-        "return_rate","return_rate_after","annual_expense",
-        "inflation_rate","income_tax_rate","cpp_monthly"
+        "annual_saving", "saving_increase_rate", "current_assets",
+        "return_rate", "return_rate_after", "annual_expense",
+        "inflation_rate", "income_tax_rate", "cpp_monthly"
     }
     for k in list(p.keys()):
-        if k in ints:   p[k] = _to_int(p.get(k))
-        elif k in floats: p[k] = _to_float(p.get(k))
+        if k in ints:
+            p[k] = _to_int(p.get(k))
+        elif k in floats:
+            p[k] = _to_float(p.get(k))
 
     p.setdefault("asset_liquidations", [])
 
     # keep only what engine accepts
     return {k: p[k] for k in _CANON_KEYS if k in p}
+
+def canonical_to_form_inputs(canon: dict) -> dict:
+    """
+    Map canonical keys/units -> the exact form field names/units the template expects.
+    Use this when loading scenarios to populate the form.
+    """
+    d = dict(canon or {})
+    out = {}
+
+    # Lifespan (form uses 'lifespan')
+    if "life_expectancy" in d:
+        out["lifespan"] = _to_int(d["life_expectancy"])
+
+    # Monthly Living Expense (form uses 'monthly_living_expense'; canonical is annual)
+    if "annual_expense" in d:
+        out["monthly_living_expense"] = _to_float(d["annual_expense"]) / 12.0
+
+    # CPP fields (form uses legacy names)
+    if "cpp_monthly" in d:
+        out["cpp_support"] = _to_float(d["cpp_monthly"])
+    if "cpp_start_age" in d:
+        out["cpp_from_age"] = _to_int(d["cpp_start_age"])
+    if "cpp_end_age" in d:
+        out["cpp_to_age"] = _to_int(d["cpp_end_age"])
+
+    # Savings: backend expects annual_saving field name; form label may say monthly.
+    if "annual_saving" in d:
+        out["annual_saving"] = _to_float(d["annual_saving"]) /12.0
+
+    # Direct pass-throughs (same names)
+    for k in [
+        "current_age", "retirement_age", "saving_increase_rate", "current_assets",
+        "return_rate", "return_rate_after", "inflation_rate", "income_tax_rate"
+    ]:
+        if k in d:
+            out[k] = d[k]
+
+    # Asset liquidations -> 3 slots
+    als = d.get("asset_liquidations", [])
+    for i in range(3):
+        amt = als[i]["amount"] if i < len(als) else 0
+        age = als[i]["age"] if i < len(als) else 0
+        out[f"asset_liquidation_{i+1}"] = amt
+        out[f"asset_liquidation_age_{i+1}"] = age
+
+    # Optional MC fields if your form includes them
+    if "return_std" in d:
+        out["return_std"] = d["return_std"]
+    if "inflation_std" in d:
+        out["inflation_std"] = d["inflation_std"]
+
+    return out
 
 
 # Define main projects blueprint (existing)
@@ -149,7 +211,7 @@ def retirement():
                 # --- Gather form inputs ---
                 current_age            = get_form_value("current_age", int)
                 retirement_age         = get_form_value("retirement_age", int)
-                monthly_saving         = get_form_value("annual_saving", float)
+                monthly_saving         = get_form_value("annual_saving", float)  # form field name kept as-is
                 return_rate            = get_form_value("return_rate", float) / 100
                 return_rate_after      = get_form_value("return_rate_after", float) / 100
                 lifespan               = get_form_value("lifespan", int)
@@ -178,7 +240,7 @@ def retirement():
                 baseline_params = {
                     "current_age": current_age,
                     "retirement_age": retirement_age,
-                    "annual_saving": monthly_saving * 12,
+                    "annual_saving": monthly_saving * 12,  # convert form value to annual
                     "saving_increase_rate": saving_increase_rate,
                     "current_assets": current_assets,
                     "return_rate": return_rate,
@@ -317,9 +379,14 @@ def retirement():
     )
 
 
+
 # ===== New Scenario Blueprint and Routes =====
 
+import logging
+import traceback
+
 scenarios_bp = Blueprint("scenarios", __name__, url_prefix="/scenarios")
+logger = logging.getLogger(__name__)
 
 @scenarios_bp.route("/save", methods=["POST"])
 @login_required
@@ -331,8 +398,18 @@ def save_scenario():
     if not scenario_name or inputs_json is None:
         return jsonify({"error": "Missing scenario_name or inputs_json"}), 400
 
-    # Normalize BEFORE persisting so new rows are always canonical
-    canon = _normalize_inputs(inputs_json)
+    # >>> ADD THIS: treat form's "Monthly Savings" as monthly, convert to annual for storage
+    try:
+        if isinstance(inputs_json, dict) and "annual_saving" in inputs_json:
+            # Heuristic: presence of monthly_living_expense indicates a raw form payload
+            if "monthly_living_expense" in inputs_json:
+                inputs_json["annual_saving"] = float(inputs_json["annual_saving"] or 0) * 12.0
+    except Exception:
+        pass
+    # <<< END ADD
+
+    # ✅ Normalize BEFORE persisting so rows are always canonical
+    canon = to_canonical_inputs(inputs_json)
 
     existing = RetirementScenario.query.filter_by(
         user_id=current_user.id, scenario_name=scenario_name
@@ -374,17 +451,21 @@ def load_scenario(scenario_id):
     scenario = RetirementScenario.query.filter_by(id=scenario_id, user_id=current_user.id).first()
     if not scenario:
         return jsonify({"error": "Scenario not found"}), 404
+
+    # ✅ Convert canonical (DB) -> form field names/units for the UI
+    form_inputs = canonical_to_form_inputs(scenario.inputs_json or {})
+
     return jsonify(
         {
             "scenario_name": scenario.scenario_name,
-            "inputs_json": scenario.inputs_json,
+            "inputs_json": form_inputs,  # form-ready keys
             "created_at": scenario.created_at.isoformat(),
             "updated_at": scenario.updated_at.isoformat(),
         }
     ), 200
 
 
-# === New DELETE route to delete a scenario ===
+# === DELETE a scenario ===
 @scenarios_bp.route("/delete/<int:scenario_id>", methods=["DELETE"])
 @login_required
 def delete_scenario(scenario_id):
@@ -401,63 +482,9 @@ def delete_scenario(scenario_id):
         return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
 
 
-# === Compare Two Scenarios (fix: don't pass stds to projection/sensitivity) ===
-import logging
-import traceback
-
-logger = logging.getLogger(__name__)
-
-def _as_int(x, default=0):
-    try: return int(x)
-    except Exception:
-        try: return int(float(x))
-        except Exception: return default
-
-def _as_float(x, default=0.0):
-    try: return float(x)
-    except Exception: return default
-
-def _normalize_inputs(raw: dict) -> dict:
-    d = dict(raw or {})
-
-    life_expectancy = d.get("life_expectancy", d.get("lifespan"))
-    annual_expense  = d.get("annual_expense")
-    if annual_expense is None and "monthly_living_expense" in d:
-        annual_expense = _as_float(d["monthly_living_expense"]) * 12.0
-
-    cpp_monthly   = d.get("cpp_monthly", d.get("cpp_support"))
-    cpp_start_age = d.get("cpp_start_age", d.get("cpp_from_age"))
-    cpp_end_age   = d.get("cpp_end_age",   d.get("cpp_to_age"))
-
-    asset_liqs = d.get("asset_liquidations")
-    if asset_liqs is None:
-        asset_liqs = []
-        for i in (1, 2, 3):
-            amt = _as_float(d.get(f"asset_liquidation_{i}", 0.0), 0.0)
-            age = _as_int(d.get(f"asset_liquidation_age_{i}", 0), 0)
-            if amt and age > 0:
-                asset_liqs.append({"amount": amt, "age": age})
-
-    return {
-        "current_age":          _as_int(d.get("current_age", 0)),
-        "retirement_age":       _as_int(d.get("retirement_age", 0)),
-        "annual_saving":        _as_float(d.get("annual_saving", 0.0)),
-        "saving_increase_rate": _as_float(d.get("saving_increase_rate", 0.0)),
-        "current_assets":       _as_float(d.get("current_assets", 0.0)),
-        "return_rate":          _as_float(d.get("return_rate", 0.0)),
-        "return_rate_after":    _as_float(d.get("return_rate_after", 0.0)),
-        "annual_expense":       _as_float(annual_expense, 0.0),
-        "cpp_monthly":          _as_float(cpp_monthly, 0.0),
-        "cpp_start_age":        _as_int(cpp_start_age, 0),
-        "cpp_end_age":          _as_int(cpp_end_age, 0),
-        "asset_liquidations":   asset_liqs,
-        "inflation_rate":       _as_float(d.get("inflation_rate", 0.0)),
-        "life_expectancy":      _as_int(life_expectancy, 0),
-        "income_tax_rate":      _as_float(d.get("income_tax_rate", 0.0)),
-        # MC-only fields (projection must NOT receive these)
-        "return_std":           _as_float(d.get("return_std", 0.08)),
-        "inflation_std":        _as_float(d.get("inflation_std", 0.005)),
-    }
+# -------------------------------
+# Compare Two Scenarios (A vs. B)
+# -------------------------------
 
 # Whitelists for each engine
 _PROJECTION_KEYS = {
@@ -466,10 +493,12 @@ _PROJECTION_KEYS = {
     "cpp_monthly","cpp_start_age","cpp_end_age","asset_liquidations",
     "inflation_rate","life_expectancy","income_tax_rate"
 }
+
 def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
 def _mc_args_from_params(p):
+    # MC-only params (std devs) may not be saved; default them here.
     return {
         "current_age":          p["current_age"],
         "retirement_age":       p["retirement_age"],
@@ -512,9 +541,9 @@ def compare_retirement():
             flash("You can only compare your own saved scenarios.", "danger")
             return redirect(url_for("projects.retirement"))
 
-        # Normalize saved rows
-        params_a = _normalize_inputs(scen_a.inputs_json or {})
-        params_b = _normalize_inputs(scen_b.inputs_json or {})
+        # ✅ Normalize saved rows using the single canonical normalizer
+        params_a = to_canonical_inputs(scen_a.inputs_json or {})
+        params_b = to_canonical_inputs(scen_b.inputs_json or {})
 
         # --- use projection-only dicts for deterministic things ---
         proj_a = _projection_args_from_params(params_a)
@@ -524,11 +553,11 @@ def compare_retirement():
         out_a = run_retirement_projection(**proj_a)
         out_b = run_retirement_projection(**proj_b)
 
-        # Monte Carlo (full dict with stds mapped to mean/std names)
+        # Monte Carlo (means + stds)
         mc_a = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_a))
         mc_b = run_monte_carlo_simulation_locked_inputs(**_mc_args_from_params(params_b))
 
-        # Sensitivity must also use projection-only params
+        # Sensitivity (projection-only params; no stds)
         variables = [
             "current_assets","return_rate","return_rate_after",
             "annual_saving","annual_expense","saving_increase_rate",
@@ -560,7 +589,8 @@ def compare_retirement():
             ).all() if current_user.is_authenticated else [],
         )
 
-    except Exception as e:
+    except Exception:
         logger.error("Error in compare_retirement:\n%s", traceback.format_exc())
-        flash(f"Error comparing scenarios: {e}", "danger")
+        flash("Error comparing scenarios.", "danger")
         return redirect(url_for("projects.retirement"))
+
