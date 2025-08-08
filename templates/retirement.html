@@ -494,8 +494,12 @@
 
 
 {% if compare_data %}
+  {% set showB = compare_data.labels.B is defined and compare_data.labels.B %}
   <hr class="my-5">
-  <h5 class="text-center mb-4">🔄 Compare: {{ compare_data.labels.A }} vs {{ compare_data.labels.B }}</h5>
+  <h5 class="text-center mb-4">
+    🔄 Compare: {{ compare_data.labels.A }}
+    {% if showB %} vs {{ compare_data.labels.B }}{% endif %}
+  </h5>
 
   <!-- Monte Carlo (stacked, full width) -->
   <div class="mb-4">
@@ -522,33 +526,41 @@
   <script>
     // ----- Data from Flask -----
     const ages    = {{ compare_data.mc.ages  | tojson }};
-    const p10a    = {{ compare_data.mc.p10.A | tojson }};
-    const p10b    = {{ compare_data.mc.p10.B | tojson }};
-    const p50a    = {{ compare_data.mc.p50.A | tojson }};
-    const p50b    = {{ compare_data.mc.p50.B | tojson }};
-    const p90a    = {{ compare_data.mc.p90.A | tojson }};
-    const p90b    = {{ compare_data.mc.p90.B | tojson }};
+    const p10A    = {{ compare_data.mc.p10.A | tojson }};
+    const p50A    = {{ compare_data.mc.p50.A | tojson }};
+    const p90A    = {{ compare_data.mc.p90.A | tojson }};
+    {% if showB %}
+    const p10B    = {{ compare_data.mc.p10.B | tojson }};
+    const p50B    = {{ compare_data.mc.p50.B | tojson }};
+    const p90B    = {{ compare_data.mc.p90.B | tojson }};
+    {% endif %}
 
     const vars    = {{ compare_data.sens.vars | tojson }};
     const impactA = {{ compare_data.sens.A    | tojson }};
+    {% if showB %}
     const impactB = {{ compare_data.sens.B    | tojson }};
-    const maxImp  = Math.max(...impactA.map(Math.abs), ...impactB.map(Math.abs));
+    {% endif %}
+    const maxImp  = Math.max(
+      ...impactA.map(Math.abs)
+      {% if showB %}, ...impactB.map(Math.abs){% endif %}
+    );
     const safeMaxImp = maxImp === 0 ? 1 : maxImp;
 
     // ----- Monte Carlo line chart -----
+    const mcDatasets = [
+      { label: '{{ compare_data.labels.A }} – 10th %ile', data: p10A, borderColor: 'rgba(54,162,235,0.7)', borderDash: [5,5], fill: false },
+      { label: '{{ compare_data.labels.A }} – 50th %ile', data: p50A, borderColor: 'rgba(54,162,235,1)', fill: false },
+      { label: '{{ compare_data.labels.A }} – 90th %ile', data: p90A, borderColor: 'rgba(54,162,235,0.7)', borderDash: [2,2], fill: false },
+      {% if showB %}
+      { label: '{{ compare_data.labels.B }} – 10th %ile', data: p10B, borderColor: 'rgba(255,159,64,0.7)', borderDash: [5,5], fill: false },
+      { label: '{{ compare_data.labels.B }} – 50th %ile', data: p50B, borderColor: 'rgba(255,159,64,1)', fill: false },
+      { label: '{{ compare_data.labels.B }} – 90th %ile', data: p90B, borderColor: 'rgba(255,159,64,0.7)', borderDash: [2,2], fill: false },
+      {% endif %}
+    ];
+
     new Chart(document.getElementById('mcCompareChart'), {
       type: 'line',
-      data: {
-        labels: ages,
-        datasets: [
-          { label: '{{ compare_data.labels.A }} – 10th %ile', data: p10a, borderColor: 'rgba(54,162,235,0.7)', borderDash: [5,5], fill: false },
-          { label: '{{ compare_data.labels.B }} – 10th %ile', data: p10b, borderColor: 'rgba(255,159,64,0.7)', borderDash: [5,5], fill: false },
-          { label: '{{ compare_data.labels.A }} – 50th %ile', data: p50a, borderColor: 'rgba(54,162,235,1)', fill: false },
-          { label: '{{ compare_data.labels.B }} – 50th %ile', data: p50b, borderColor: 'rgba(255,159,64,1)', fill: false },
-          { label: '{{ compare_data.labels.A }} – 90th %ile', data: p90a, borderColor: 'rgba(54,162,235,0.7)', borderDash: [2,2], fill: false },
-          { label: '{{ compare_data.labels.B }} – 90th %ile', data: p90b, borderColor: 'rgba(255,159,64,0.7)', borderDash: [2,2], fill: false }
-        ]
-      },
+      data: { labels: ages, datasets: mcDatasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -565,14 +577,18 @@
     });
 
     // ----- Sensitivity horizontal bar chart -----
+    const sensDatasets = [
+      { label: '{{ compare_data.labels.A }}', data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' }
+      {% if showB %},
+      { label: '{{ compare_data.labels.B }}', data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' }
+      {% endif %}
+    ];
+
     new Chart(document.getElementById('sensCompareChart'), {
       type: 'bar',
       data: {
         labels: vars.map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())),
-        datasets: [
-          { label: '{{ compare_data.labels.A }}', data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' },
-          { label: '{{ compare_data.labels.B }}', data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' }
-        ]
+        datasets: sensDatasets
       },
       options: {
         indexAxis: 'y',
