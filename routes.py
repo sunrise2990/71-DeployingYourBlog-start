@@ -529,14 +529,15 @@ def _mc_args_from_params(p):
 # routes.py
 from flask import request, jsonify, current_app
 from flask_login import current_user
+import re
 
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
-    Compare MC output between two saved scenarios.
-    Normalizes inputs for BOTH A and B the same way; never 500s on bad units—
-    it returns a warning and still plots.
+    Compare Monte Carlo between two saved scenarios.
+    Robust normalization for BOTH scenarios; never 500s because of B.
     """
+
     def jerr(msg, code=400, extra=None):
         if extra:
             current_app.logger.warning("compare_retirement: %s | extra=%s", msg, extra)
@@ -546,7 +547,7 @@ def compare_retirement():
         raw_a = (request.form.get("scenario_a") or "").strip()
         raw_b = (request.form.get("scenario_b") or "").strip()
 
-        # --- parse ids
+        # parse ids
         try:
             a_id = int(raw_a)
         except Exception:
@@ -559,7 +560,7 @@ def compare_retirement():
             except Exception:
                 return jerr("Invalid Scenario B id.", 400, {"scenario_b": raw_b})
 
-        # --- fetch rows
+        # fetch rows
         scen_a = RetirementScenario.query.get(a_id)
         if not scen_a:
             return jerr("Scenario A not found.", 404, {"a_id": a_id})
@@ -571,56 +572,45 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
-        # ---------- helpers ----------
+        # ---------- normalization helpers (GENERIC) ----------
+        rate_like = re.compile(r"(rate|mean|std)", re.I)
+        int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection)", re.I)
+
         def _to_num(v):
             if isinstance(v, (int, float)):
                 return v
             try:
-                return float(str(v).strip())
+                return float(str(v).replace(",", "").strip())
             except Exception:
                 return v
 
-        RATE_KEYS = {
-            # generic
-            "return_rate", "return_rate_before", "return_rate_after",
-            "return_mean", "return_std",
-            "inflation_rate", "inflation_mean", "inflation_std",
-            # sometimes users save these:
-            "post_retire_return_rate", "pre_retire_return_rate",
-        }
-        INT_KEYS = {
-            "current_age", "start_age", "end_age", "retirement_age", "cpp_start_age",
-            "years", "horizon_years", "planning_horizon", "projection_years",
-            "iterations", "seed", "steps_per_year", "n_years", "n_steps", "sim_years",
-        }
-
         def _normalize_args(args: dict) -> dict:
             """
-            Coerce numeric strings -> numbers, fix percent vs decimal,
-            and FORCE int for any field that should be integer.
+            Generic normalizer:
+              - numeric strings -> numbers
+              - any key containing 'rate|mean|std': if 2..100 => divide by 100
+              - any key containing 'age|year|iter|seed|step|horizon|projection': -> int
+              - keep end_age >= start_age
             """
             if not args:
                 return {}
+            a = {k: _to_num(v) for k, v in (args or {}).items()}
 
-            args = {k: _to_num(v) for k, v in args.items()}
+            for k, v in list(a.items()):
+                # percent-looking → decimal (7 -> 0.07)
+                if rate_like.search(k) and isinstance(v, (int, float)) and 2 <= v <= 1000:
+                    a[k] = v / 100.0
+                # integers for ranges/sizes
+                if int_like.search(k) and isinstance(a[k], (int, float)):
+                    a[k] = int(round(a[k]))
 
-            # Percent-like to decimals (7 -> 0.07) when obviously a percent
-            for k in RATE_KEYS:
-                if k in args and isinstance(args[k], (int, float)) and args[k] >= 2:
-                    args[k] = args[k] / 100.0
-
-            # Force integers for range()/sizes
-            for k in INT_KEYS:
-                if k in args and isinstance(args[k], (int, float)):
-                    args[k] = int(round(args[k]))
-
-            # Keep age bounds sane
-            if "start_age" in args and "end_age" in args:
-                sa, ea = args["start_age"], args["end_age"]
+            # keep ages sane
+            if "start_age" in a and "end_age" in a:
+                sa, ea = a["start_age"], a["end_age"]
                 if isinstance(sa, int) and isinstance(ea, int) and ea < sa:
-                    args["end_age"] = sa
+                    a["end_age"] = sa
 
-            return args
+            return a
 
         def _run_mc_for(scn):
             params = to_canonical_inputs(scn.inputs_json or {})
@@ -628,10 +618,7 @@ def compare_retirement():
             if current_app.debug:
                 current_app.logger.info("COMPARE mc_args for %s: %s", scn.scenario_name, mc_args)
 
-            try:
-                mc = run_monte_carlo_simulation_locked_inputs(**mc_args)
-            except Exception as e:
-                raise RuntimeError(f"MC failed for scenario '{scn.scenario_name}': {e}") from e
+            mc = run_monte_carlo_simulation_locked_inputs(**mc_args)
 
             ages = [int(x) for x in mc["ages"]]
             p10  = [float(x) for x in mc["percentiles"]["p10"]]
@@ -652,7 +639,7 @@ def compare_retirement():
             A = _run_mc_for(scen_a)
         except Exception as e:
             current_app.logger.exception("compare_retirement A failed")
-            return jerr(str(e), 400)
+            return jerr(f"MC failed for scenario '{scen_a.scenario_name}': {e}", 400)
 
         payload = {
             "labels": {"A": A["label"]},
@@ -663,7 +650,6 @@ def compare_retirement():
                 "p90": {"A": A["p90"]},
             }
         }
-
         warning = None
 
         # ---------- B (optional) ----------
@@ -671,10 +657,11 @@ def compare_retirement():
             try:
                 B = _run_mc_for(scen_b)
             except Exception as e:
+                # Don’t 500—return A plus a clear message
                 current_app.logger.exception("compare_retirement B failed")
-                return jerr(str(e), 400)
+                return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-            # align to the same age vector
+            # align both to same ages
             m = min(len(A["ages"]), len(B["ages"]))
             ages = A["ages"][:m]
             payload["mc"]["ages"] = ages
@@ -686,19 +673,19 @@ def compare_retirement():
             payload["mc"]["p90"]["B"] = B["p90"][:m]
             payload["labels"]["B"] = B["label"]
 
-            # Soft-proof B (don’t block rendering; just warn)
+            # Soft warning (don’t block render)
             maxA = max(A["p50"][:m] or [0])
             maxB = max(B["p50"][:m] or [0])
             if maxB > 1e9 or (maxA > 0 and maxB > 20 * maxA):
-                warning = "Scenario B looks invalid (rates/units). Please check inputs."
+                warning = "Scenario B may be using different units (rates/years). Overlay shown; please review inputs."
                 current_app.logger.warning("Compare soft warning: maxA=%s maxB=%s | A_args=%s | B_args=%s",
-                                           maxA, maxB, A.get('_args'), B.get('_args'))
+                                           maxA, maxB, A.get("_args"), B.get("_args"))
 
         if warning:
             payload["warning"] = warning
 
         if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
-            payload["_debug"] = {"A_args": A["_args"], **({"B_args": B["_args"]} if scen_b else {})}
+            payload["_debug"] = {"A_args": A["_args"], **({"B_args": B.get("_args")} if scen_b else {})}
 
         return jsonify(payload), 200
 
