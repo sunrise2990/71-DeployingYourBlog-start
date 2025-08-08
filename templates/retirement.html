@@ -367,75 +367,6 @@
 
 
 
-<!-- Compare Saved Scenarios -->
-</form>
-
-<!-- ==== Compare Saved Scenarios ==== -->
-<form method="POST" action="{{ url_for('projects.compare_retirement') }}">
-  {% if csrf_token is defined %}
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  {% endif %}
-
-  <hr class="my-5">
-
-  <h5 class="text-center mb-4">
-    🔄 Compare Saved Scenarios
-    <span tabindex="0"
-          data-bs-toggle="tooltip"
-          title="Pick two saved scenarios and see Monte Carlo + sensitivity side-by-side.">
-      &#9432;
-    </span>
-  </h5>
-
-  {% set has_scenarios = saved_scenarios|length > 1 %}
-
-  <div class="row align-items-end">
-    <!-- Scenario A -->
-    <div class="col-md-6 mt-3">
-      <label for="compare_scenario_a" class="form-label">Scenario A</label>
-      <select id="compare_scenario_a"
-              name="scenario_a"
-              class="form-select"
-              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
-        <option value="">-- Select Scenario A --</option>
-        {% for scenario in saved_scenarios %}
-          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <!-- Scenario B -->
-    <div class="col-md-6 mt-3">
-      <label for="compare_scenario_b" class="form-label">Scenario B</label>
-      <select id="compare_scenario_b"
-              name="scenario_b"
-              class="form-select"
-              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
-        <option value="">-- Select Scenario B --</option>
-        {% for scenario in saved_scenarios %}
-          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="col-12 text-center mt-4">
-      <button type="submit"
-              class="btn btn-primary px-4"
-              {% if not has_scenarios %}disabled{% endif %}>
-        Compare Scenarios
-      </button>
-      {% if not has_scenarios %}
-        <p class="text-muted mt-2 mb-0">
-          Save at least two scenarios to enable comparison.
-        </p>
-      {% endif %}
-    </div>
-  </div>
-</form>
-<!-- ==== End Compare UI ==== -->
-
-
-
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -491,6 +422,173 @@
               label: ctx => '$' + ctx.parsed.x.toLocaleString()
             }
           }
+        }
+      }
+    });
+  </script>
+{% endif %}
+
+
+<!-- ==== Compare Saved Scenarios ==== -->
+<form method="POST" action="{{ url_for('projects.compare_retirement') }}">
+  {% if csrf_token is defined %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% endif %}
+
+  <hr class="my-5">
+
+  <h5 class="text-center mb-4">
+    🔄 Compare Saved Scenarios
+    <span tabindex="0"
+          data-bs-toggle="tooltip"
+          title="Pick two saved scenarios and render Monte Carlo + sensitivity below.">
+      &#9432;
+    </span>
+  </h5>
+
+  {% set has_scenarios = saved_scenarios|length > 1 %}
+
+  <div class="row align-items-end">
+    <!-- Scenario A -->
+    <div class="col-md-6 mt-3">
+      <label for="compare_scenario_a" class="form-label">Scenario A</label>
+      <select id="compare_scenario_a"
+              name="scenario_a"
+              class="form-select"
+              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
+        <option value="">-- Select Scenario A --</option>
+        {% for scenario in saved_scenarios %}
+          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Scenario B -->
+    <div class="col-md-6 mt-3">
+      <label for="compare_scenario_b" class="form-label">Scenario B</label>
+      <select id="compare_scenario_b"
+              name="scenario_b"
+              class="form-select"
+              {% if not has_scenarios %}disabled{% else %}required{% endif %}>
+        <option value="">-- Select Scenario B --</option>
+        {% for scenario in saved_scenarios %}
+          <option value="{{ scenario.id }}">{{ scenario.scenario_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 text-center mt-4">
+      <button type="submit"
+              class="btn btn-primary px-4"
+              {% if not has_scenarios %}disabled{% endif %}>
+        Compare Scenarios
+      </button>
+      {% if not has_scenarios %}
+        <p class="text-muted mt-2 mb-0">
+          Save at least two scenarios to enable comparison.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</form>
+<!-- ==== End Compare UI ==== -->
+
+
+{% if compare_data %}
+  <hr class="my-5">
+  <h5 class="text-center mb-4">🔄 Compare: {{ compare_data.labels.A }} vs {{ compare_data.labels.B }}</h5>
+
+  <!-- Monte Carlo (stacked, full width) -->
+  <div class="mb-4">
+    <div class="card">
+      <div class="card-header">Monte Carlo Simulation</div>
+      <div class="card-body">
+        <canvas id="mcCompareChart" style="height: 400px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sensitivity (stacked, full width) -->
+  <div class="mb-4">
+    <div class="card">
+      <div class="card-header">Sensitivity (Dollar Impact)</div>
+      <div class="card-body">
+        <canvas id="sensCompareChart" style="height: 400px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart.js (safe if included twice) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // ----- Data from Flask -----
+    const ages    = {{ compare_data.mc.ages  | tojson }};
+    const p10a    = {{ compare_data.mc.p10.A | tojson }};
+    const p10b    = {{ compare_data.mc.p10.B | tojson }};
+    const p50a    = {{ compare_data.mc.p50.A | tojson }};
+    const p50b    = {{ compare_data.mc.p50.B | tojson }};
+    const p90a    = {{ compare_data.mc.p90.A | tojson }};
+    const p90b    = {{ compare_data.mc.p90.B | tojson }};
+
+    const vars    = {{ compare_data.sens.vars | tojson }};
+    const impactA = {{ compare_data.sens.A    | tojson }};
+    const impactB = {{ compare_data.sens.B    | tojson }};
+    const maxImp  = Math.max(...impactA.map(Math.abs), ...impactB.map(Math.abs));
+    const safeMaxImp = maxImp === 0 ? 1 : maxImp;
+
+    // ----- Monte Carlo line chart -----
+    new Chart(document.getElementById('mcCompareChart'), {
+      type: 'line',
+      data: {
+        labels: ages,
+        datasets: [
+          { label: '{{ compare_data.labels.A }} – 10th %ile', data: p10a, borderColor: 'rgba(54,162,235,0.7)', borderDash: [5,5], fill: false },
+          { label: '{{ compare_data.labels.B }} – 10th %ile', data: p10b, borderColor: 'rgba(255,159,64,0.7)', borderDash: [5,5], fill: false },
+          { label: '{{ compare_data.labels.A }} – 50th %ile', data: p50a, borderColor: 'rgba(54,162,235,1)', fill: false },
+          { label: '{{ compare_data.labels.B }} – 50th %ile', data: p50b, borderColor: 'rgba(255,159,64,1)', fill: false },
+          { label: '{{ compare_data.labels.A }} – 90th %ile', data: p90a, borderColor: 'rgba(54,162,235,0.7)', borderDash: [2,2], fill: false },
+          { label: '{{ compare_data.labels.B }} – 90th %ile', data: p90b, borderColor: 'rgba(255,159,64,0.7)', borderDash: [2,2], fill: false }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { title: { display: true, text: 'Age' } },
+          y: { title: { display: true, text: 'Projected Assets ($)' },
+               ticks: { callback: v => '$' + Number(v).toLocaleString() } }
+        },
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: $${Number(ctx.parsed.y).toLocaleString()}` } }
+        }
+      }
+    });
+
+    // ----- Sensitivity horizontal bar chart -----
+    new Chart(document.getElementById('sensCompareChart'), {
+      type: 'bar',
+      data: {
+        labels: vars.map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())),
+        datasets: [
+          { label: '{{ compare_data.labels.A }}', data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' },
+          { label: '{{ compare_data.labels.B }}', data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            min: -safeMaxImp, max: safeMaxImp,
+            title: { display: true, text: 'Dollar Impact ($)' },
+            ticks: { callback: v => '$' + Number(v).toLocaleString() }
+          }
+        },
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: $${Number(ctx.parsed.x).toLocaleString()}` } }
         }
       }
     });
@@ -687,3 +785,9 @@
     .catch(err => alert('Error deleting scenario: ' + err.message));
   }
 </script>
+
+
+
+
+{% endblock %}
+
