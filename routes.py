@@ -10,6 +10,7 @@ from models import db
 from models.retirement.retirement_scenario import RetirementScenario  # adjust import path as needed
 
 from copy import deepcopy
+from flask import current_app
 
 # -------------------------
 # Canonical keys + adapters
@@ -526,11 +527,15 @@ def _mc_args_from_params(p):
     }
 
 # routes.py
+from flask import request, jsonify
+from flask_login import current_user
+
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
-    Return JSON for compare block. If only Scenario A is chosen,
-    return the exact same MC arrays you build for the main page.
+    JSON endpoint for Scenario Compare.
+    Uses the SAME Monte Carlo pipeline as the main page.
+    Structure returned matches the front-end JS expectations.
     """
     try:
         a_id = (request.form.get("scenario_a") or "").strip()
@@ -539,45 +544,69 @@ def compare_retirement():
         if not a_id:
             return jsonify({"error": "Pick Scenario A first."}), 400
 
+        # --- Fetch scenarios
         scen_a = RetirementScenario.query.get(a_id)
         if not scen_a:
             return jsonify({"error": "Scenario A not found."}), 404
 
         scen_b = RetirementScenario.query.get(b_id) if b_id else None
 
-        # Optional ownership check
+        # --- Ownership guard (optional; keep if your app enforces per-user scenarios)
         if current_user.is_authenticated:
             if scen_a.user_id != current_user.id or (scen_b and scen_b.user_id != current_user.id):
                 return jsonify({"error": "You can only compare your own saved scenarios."}), 403
 
-        # === Use the SAME helpers as main page ===
+        # === CANONICALIZE INPUTS (identical to main page path) ===
         params_a = to_canonical_inputs(scen_a.inputs_json or {})
-        mc_args_a = _mc_args_from_params(params_a)         # the same args you feed to main MC
+        mc_args_a = _mc_args_from_params(params_a)  # <- same helper main page uses
+
+        # Optional guard: fix accidental % inputs (e.g., 7 -> 0.07) exactly once
+        def _normalize_rates(args: dict) -> dict:
+            # Only touch if it's clearly percent-like (>= 2.0)
+            for k in ("return_mean", "return_std", "inflation_mean", "inflation_std",
+                      "return_rate_before", "return_rate_after"):
+                if k in args and isinstance(args[k], (int, float)) and args[k] >= 2:
+                    args[k] = args[k] / 100.0
+            return args
+
+        mc_args_a = _normalize_rates(mc_args_a)
+
+        # === RUN MC WITH THE SAME FUNCTION AS MAIN PAGE ===
         mc_a = run_monte_carlo_simulation_locked_inputs(**mc_args_a)
 
-        compare_data = {
+        # Build base payload (A always present)
+        payload = {
             "labels": {"A": scen_a.scenario_name},
             "mc": {
-                "ages": mc_a["ages"],
+                "ages": mc_a["ages"],  # list
                 "p10": {"A": mc_a["percentiles"]["p10"]},
                 "p50": {"A": mc_a["percentiles"]["p50"]},
                 "p90": {"A": mc_a["percentiles"]["p90"]},
             },
-            "sens": { "vars": [], "A": [] }  # keep structure; you can fill if needed
+            # Sensitivities are optional; keep empty to avoid front-end errors
+            "sens": {"vars": [], "A": []}
         }
 
+        # If B selected, compute with the SAME pipeline
         if scen_b:
             params_b = to_canonical_inputs(scen_b.inputs_json or {})
-            mc_args_b = _mc_args_from_params(params_b)
+            mc_args_b = _normalize_rates(_mc_args_from_params(params_b))
             mc_b = run_monte_carlo_simulation_locked_inputs(**mc_args_b)
-            compare_data["labels"]["B"] = scen_b.scenario_name
-            compare_data["mc"]["p10"]["B"] = mc_b["percentiles"]["p10"]
-            compare_data["mc"]["p50"]["B"] = mc_b["percentiles"]["p50"]
-            compare_data["mc"]["p90"]["B"] = mc_b["percentiles"]["p90"]
 
-        return jsonify(compare_data), 200
+            payload["labels"]["B"] = scen_b.scenario_name
+            payload["mc"]["p10"]["B"] = mc_b["percentiles"]["p10"]
+            payload["mc"]["p50"]["B"] = mc_b["percentiles"]["p50"]
+            payload["mc"]["p90"]["B"] = mc_b["percentiles"]["p90"]
 
-    except Exception:
+        if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
+            dbg = {"A_mc_args": mc_args_a}
+            if scen_b:
+                dbg["B_mc_args"] = mc_args_b
+            payload["_debug"] = dbg
+
+        return jsonify(payload), 200
+
+    except Exception as e:
+        # Log full trace server-side
         logger.exception("compare_retirement failed")
         return jsonify({"error": "Server error during compare."}), 500
-
