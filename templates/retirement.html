@@ -541,8 +541,8 @@
 <!-- Compare block -->
 <style>
   /* Clamp chart heights so they don't balloon */
-  #sens-core-chart, #sens-ra-chart { max-height: 260px; }
-  #sens-ra-chart { max-height: 70px; }
+  #sens-core-chart, #sens-ra-chart { max-height: 320px; }
+  #sens-ra-chart { max-height: 110px; }
 </style>
 
 <div id="compare-block" class="mt-5 d-none">
@@ -561,7 +561,7 @@
   <div id="sens-core-card" class="card mb-4 d-none">
     <div class="card-header">Sensitivity – Dollar Impact (Core Inputs)</div>
     <div class="card-body">
-      <canvas id="sens-core-chart" style="height:260px;"></canvas>
+      <canvas id="sens-core-chart" style="height:320px;"></canvas>
     </div>
   </div>
 
@@ -569,7 +569,7 @@
   <div id="sens-ra-card" class="card mb-4 d-none">
     <div class="card-header">Retirement Age – Dollar Impact (Own Scale)</div>
     <div class="card-body">
-      <canvas id="sens-ra-chart" style="height:70px;"></canvas>
+      <canvas id="sens-ra-chart" style="height:110px;"></canvas>
       <div id="sens-ra-note" class="text-muted small mt-2"></div>
     </div>
   </div>
