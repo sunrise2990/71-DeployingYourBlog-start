@@ -826,21 +826,26 @@ def _merge(d):
             base[k] = v
     return base
 
+
 @bp_for_live.post("/api/live-update")
 def live_update():
-    """
-    Accepts small JSON from sliders, seeds RNG around your existing MC,
-    and returns a minimal payload for Chart.js (labels + curves).
-    """
     params = _merge(request.get_json(silent=True) or {})
 
-    # 1) Deterministic projection (your function expects kwargs)
-    det_out = _DET(**params)
+    # ✅ Pass ONLY the args that run_retirement_projection expects
+    det_keys = [
+        "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
+        "current_assets", "return_rate", "return_rate_after", "annual_expense",
+        "cpp_monthly", "cpp_start_age", "cpp_end_age",
+        "asset_liquidations", "inflation_rate", "life_expectancy", "income_tax_rate",
+    ]
+    det_params = {k: params[k] for k in det_keys if k in params}
+    det_out = _DET(**det_params)
+
     det_table = det_out.get("table", [])
     labels = [row.get("Year") for row in det_table]
     det_curve = [row.get("Asset") for row in det_table]
 
-    # 2) Monte Carlo (map deterministic params to MC names, then call with kwargs)
+    # MC mapping stays the same as before
     mc_params = dict(
         current_age=params["current_age"],
         retirement_age=params["retirement_age"],
@@ -866,16 +871,12 @@ def live_update():
     mc_out = run_mc_with_seed(seed, _MC, **mc_params)
 
     pct = mc_out.get("percentiles", {})
-    p10 = pct.get("p10", [])
-    p50 = pct.get("p50", [])
-    p90 = pct.get("p90", [])
-
     out = {
         "labels": labels,
         "deterministic": det_curve,
-        "p10": p10,
-        "p50": p50,
-        "p90": p90,
+        "p10": pct.get("p10", []),
+        "p50": pct.get("p50", []),
+        "p90": pct.get("p90", []),
     }
     return jsonify(out), 200
 
