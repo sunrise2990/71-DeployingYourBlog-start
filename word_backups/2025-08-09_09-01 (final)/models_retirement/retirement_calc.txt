@@ -247,34 +247,3 @@ def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, chec
     probs["ever"] = ever_zero
     return probs
 
-
-
-# ==== Live-WhatIf: RNG seeding utilities (non-invasive) ====
-# Safe drop-in: lets us seed around your existing MC function without editing it.
-
-import random as _py_random
-import numpy as _np
-from contextlib import contextmanager as _ctxmgr
-
-@_ctxmgr
-def _mc_seeded(seed: int):
-    """Seed python & numpy RNGs, run code, then restore previous state."""
-    # Save RNG states
-    _py_state = _py_random.getstate()
-    _np_state = _np.random.get_state()
-
-    # Seed
-    _py_random.seed(seed)
-    _np.random.seed(seed)
-
-    try:
-        yield
-    finally:
-        # Restore
-        _py_random.setstate(_py_state)
-        _np.random.set_state(_np_state)
-
-def run_mc_with_seed(seed: int, runner, *args, **kwargs):
-    """Run existing MC function 'runner' reproducibly without modifying it."""
-    with _mc_seeded(seed):
-        return runner(*args, **kwargs)
