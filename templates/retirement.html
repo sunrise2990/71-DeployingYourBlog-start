@@ -436,7 +436,6 @@
               max:  maxImpact,
               ticks: {
                 ...tickStyle,
-                stepSize: 50000,
                 callback: value => '$' + Number(value).toLocaleString()
               },
               title: { display: true, text: 'Dollar Impact ($)', color: '#111', font: { weight: 'bold' } }
@@ -480,7 +479,6 @@
               max:  raMax,
               ticks: {
                 ...tickStyle,
-                stepSize: 200000,
                 callback: value => '$' + Number(value).toLocaleString()
               },
               title: { display: true, text: 'Dollar Impact ($)', color: '#111', font: { weight: 'bold' } }
@@ -724,7 +722,6 @@
               title: { display: true, text: 'Dollar Impact ($)', color: '#111', font: { weight: 'bold' } },
               ticks: {
                 ...tickStyle,
-                stepSize: 50000,
                 callback: v => '$' + Number(v).toLocaleString()
               },
               grid: { color: 'rgba(0,0,0,0.06)' }
@@ -767,7 +764,6 @@
               title: { display: true, text: 'Dollar Impact ($)', color: '#111', font: { weight: 'bold' } },
               ticks: {
                 ...tickStyle,
-                stepSize: 200000,
                 callback: v => '$' + Number(v).toLocaleString()
               },
               grid: { color: 'rgba(0,0,0,0.06)' }
