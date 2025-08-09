@@ -356,7 +356,7 @@
             <div class="text-muted small mt-2">
               +1% change in <em>Retirement Age</em> ⇒
               ${{ "{:,.0f}".format(sensitivities['retirement_age'].dollar_impact) }}
-              (Elasticity: {{ "{:.2f}".format(sensitivities['retirement_age'].sensitivity_pct) }}%)
+              (Elasticity: {{ "{:.0f}".format(sensitivities['retirement_age'].sensitivity_pct) }}%)
             </div>
           {% endif %}
         </div>
@@ -436,6 +436,7 @@
               max:  maxImpact,
               ticks: {
                 ...tickStyle,
+                stepSize: 50000,
                 callback: value => '$' + Number(value).toLocaleString()
               },
               title: { display: true, text: 'Dollar Impact ($)', color: '#111', font: { weight: 'bold' } }
@@ -479,6 +480,7 @@
               max:  raMax,
               ticks: {
                 ...tickStyle,
+                stepSize: 200000,
                 callback: value => '$' + Number(value).toLocaleString()
               },
               title: { display: true, text: 'Dollar Impact ($)', color: '#111', font: { weight: 'bold' } }
@@ -722,6 +724,7 @@
               title: { display: true, text: 'Dollar Impact ($)', color: '#111', font: { weight: 'bold' } },
               ticks: {
                 ...tickStyle,
+                stepSize: 50000,
                 callback: v => '$' + Number(v).toLocaleString()
               },
               grid: { color: 'rgba(0,0,0,0.06)' }
@@ -764,6 +767,7 @@
               title: { display: true, text: 'Dollar Impact ($)', color: '#111', font: { weight: 'bold' } },
               ticks: {
                 ...tickStyle,
+                stepSize: 200000,
                 callback: v => '$' + Number(v).toLocaleString()
               },
               grid: { color: 'rgba(0,0,0,0.06)' }
