@@ -690,21 +690,7 @@
       if (B) B.splice(raIdx, 1);
     }
 
-
-    // Core labels → match table wording
-    const LABELS = {
-      current_assets:        'Current Assets',
-      return_rate:           'Pre-Retire Return Rate',
-      return_rate_after:     'Post-Retire Return Rate',
-      annual_saving:         'Annual Saving',
-      annual_expense:        'Annual Expense',
-      saving_increase_rate:  'Saving Increase Rate',
-      inflation_rate:        'Inflation Rate',
-      income_tax_rate:       'Income Tax Rate',
-      retirement_age:        'Retirement Age'
-    };
-
-    const coreLabels = vars.map(v => LABELS[v] ?? v.replace(/_/g, ' ').replace(/\b\w/g,c=>c.toUpperCase()));
+    const coreLabels = vars.map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));
     const coreA = A.map(Number);
     const coreB = B ? B.map(Number) : null;
 
