@@ -263,7 +263,7 @@ def retirement():
                 variables = [
                     "current_assets", "return_rate", "return_rate_after",
                     "annual_saving", "annual_expense", "saving_increase_rate",
-                    "inflation_rate", "income_tax_rate", "retirement_age",
+                    "inflation_rate", "income_tax_rate"
                 ]
 
                 # Run sensitivity analysis (includes dollar impact)
@@ -694,7 +694,7 @@ def compare_retirement():
         SENS_VARS = [
             "current_assets", "return_rate", "return_rate_after",
             "annual_saving", "annual_expense", "saving_increase_rate",
-            "inflation_rate", "income_tax_rate", "retirement_age",
+            "inflation_rate", "income_tax_rate",
         ]
 
         def _proj_args_for(scn):

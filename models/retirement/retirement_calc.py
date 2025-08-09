@@ -48,7 +48,7 @@ def run_retirement_projection(
         income_tax = (living_exp + cpp_support) / (1 - income_tax_rate) * income_tax_rate if retired else 0
         row["Income_Tax_Payment"] = round(income_tax)
 
-        # 🔸 Net retirement expense = living_exp - cpp_support - income_tax
+        # 🔸 Net retirement expense = living_exp - cpp_support + income_tax
         retired = age >= retirement_age
         net_expense = living_exp - cpp_support + income_tax
         row["Living_Exp_Retirement"] = round(net_expense) if retired else None
@@ -94,53 +94,55 @@ def run_retirement_projection(
 
 
 # 🔹 Sensitivity Analysis Function
-def sensitivity_analysis(
-    baseline_params: dict,
-    variables: list[str],
-    delta: float = 0.01
-) -> dict[str, dict[str, float]]:
-    """
-    Perform one-at-a-time sensitivity analysis on the final assets output.
+# helper: consistent way to get final assets
+def _final_assets_from_params(params: dict) -> float:
+    out = run_retirement_projection(**params)
+    return float(out.get("final_assets", 0.0))
 
-    baseline_params: dict of parameters passed to run_retirement_projection
-    variables: list of parameter names in baseline_params to perturb
-    delta: fractional change to apply (e.g., 0.01 = 1%)
-
-    Returns a dict mapping each variable name to:
-      {
-        "sensitivity_pct": % change in final assets from a +1% bump,
-        "dollar_impact": absolute $ change in final assets from a +1% bump
-      }
-    """
-    # 1) Compute the baseline projection
-    base_output = run_retirement_projection(**baseline_params)
-    base_assets = base_output["final_assets"]
-
+# 🔹 Sensitivity Analysis (with 1% retirement_age handling)
+def sensitivity_analysis(baseline_params: dict, variables: list[str], delta: float = 0.01) -> dict[str, dict[str, float]]:
+    base_assets = _final_assets_from_params(baseline_params)
     sensitivities: dict[str, dict[str, float]] = {}
 
+    cur_age = int(baseline_params.get("current_age", 0))
+    max_age = int(baseline_params.get("life_expectancy", cur_age + 60))
+
     for var in variables:
-        # skip if not present or not numeric
         if var not in baseline_params or not isinstance(baseline_params[var], (int, float)):
             continue
 
-        orig_val = baseline_params[var]
-        # 2) Build a perturbed copy of the inputs (+1% bump)
-        perturbed = baseline_params.copy()
-        perturbed[var] = orig_val * (1 + delta)
+        if var == "retirement_age":
+            ra = float(baseline_params["retirement_age"])
+            if ra <= 0:
+                sensitivities[var] = {"sensitivity_pct": 0.0, "dollar_impact": 0.0}
+                continue
 
-        # 3) Re-run the projection
-        new_assets = run_retirement_projection(**perturbed)["final_assets"]
+            up_params = dict(baseline_params)
+            dn_params = dict(baseline_params)
+            up_params["retirement_age"] = int(min(max_age, round(ra + 1)))
+            dn_params["retirement_age"] = int(max(cur_age,  round(ra - 1)))
 
-        # 4a) Percentage sensitivity: ((ΔF / F) * 100)
-        sensitivity_pct = ((new_assets - base_assets) / base_assets) * 100 if base_assets else 0.0
+            up_assets = _final_assets_from_params(up_params)
+            dn_assets = _final_assets_from_params(dn_params)
 
-        # 4b) Dollar impact: absolute change in final assets
+            slope_per_year = (up_assets - dn_assets) / 2.0
+            delta_years = delta * ra
+            dollar_impact = slope_per_year * delta_years
+            sensitivity_pct = (dollar_impact / base_assets * 100.0) if base_assets else 0.0
+
+            sensitivities[var] = {"sensitivity_pct": sensitivity_pct, "dollar_impact": dollar_impact}
+            continue
+
+        # default 1% bump
+        orig = baseline_params[var]
+        perturbed = dict(baseline_params)
+        perturbed[var] = orig * (1 + delta)
+
+        new_assets = _final_assets_from_params(perturbed)
         dollar_impact = new_assets - base_assets
+        sensitivity_pct = ((new_assets - base_assets) / base_assets * 100.0) if base_assets else 0.0
 
-        sensitivities[var] = {
-            "sensitivity_pct": sensitivity_pct,
-            "dollar_impact": dollar_impact
-        }
+        sensitivities[var] = {"sensitivity_pct": sensitivity_pct, "dollar_impact": dollar_impact}
 
     return sensitivities
 

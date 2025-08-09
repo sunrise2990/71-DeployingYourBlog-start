@@ -356,7 +356,6 @@
               {% if var == 'saving_increase_rate' %}'Saving Increase Rate',{% endif %}
               {% if var == 'inflation_rate' %}'Inflation Rate',{% endif %}
               {% if var == 'income_tax_rate' %}'Income Tax Rate',{% endif %}
-              {% if var == 'retirement_age' %}'Retirement Age',{% endif %}
             {% endfor %}
           ];
 
