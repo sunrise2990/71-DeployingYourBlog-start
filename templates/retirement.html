@@ -1150,6 +1150,9 @@
     el.addEventListener('change', send);
   });
 
+console.log("Live What-If ready");
+window.__liveTest = { ping, collectParams };
+
   // initial draw
   ping();
 })();
