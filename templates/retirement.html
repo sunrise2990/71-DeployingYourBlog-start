@@ -293,116 +293,204 @@
         </div>
         {% endif %}
 
-        {% if sensitivities %}
-        <div class="mt-4">
-          <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
-          <div class="row">
-            <!-- Table -->
-            <div class="col-md-6">
-              <div class="table-responsive">
-                <table class="table table-sm table-bordered text-center">
-                  <thead class="table-light">
-                    <tr>
-                      <th>Parameter</th>
-                      <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
-                      <th>Dollar Impact ($)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for var, vals in sensitivities.items() %}
-                      <tr>
-                        <td>
-                          {% if var == 'return_rate' %}
-                            Pre-Retire Return Rate
-                          {% elif var == 'return_rate_after' %}
-                            Post-Retire Return Rate
-                          {% else %}
-                            {{ var.replace('_', ' ').title() }}
-                          {% endif %}
-                        </td>
-                        <td>{{ "{:.2f}".format(vals.sensitivity_pct) }}%</td>
-                        <td>${{ "{:,.0f}".format(vals.dollar_impact) }}</td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
-            <!-- Horizontal bar chart -->
-            <div class="col-md-6 d-flex align-items-center">
-              <div style="width:100%; height:400px;">
-                <canvas id="dollarImpactChart"></canvas>
-              </div>
-            </div>
-          </div>
+{% if sensitivities %}
+<div class="mt-4">
+  <h5 class="text-center mb-3">🔍 Sensitivity Analysis</h5>
 
-          <div class="mt-3">
-            <p><strong>Elasticity</strong> shows the percentage change in your <em>Final Assets</em> resulting from a 1% increase in each input.</p>
-            <p><strong>Dollar Impact</strong> shows the absolute dollar change in your <em>Final Assets</em> for that same 1% increase.</p>
+  <div class="row g-3">
+    <!-- Table -->
+    <div class="col-md-6">
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered text-center">
+          <thead class="table-light">
+            <tr>
+              <th>Parameter</th>
+              <th>Elasticity<br>(%Δ Output / %Δ Input)</th>
+              <th>Dollar Impact ($)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for var, vals in sensitivities.items() %}
+              {% set is_ra = (var == 'retirement_age') %}
+              <tr>
+                <td>
+                  {% if var == 'return_rate' %}
+                    Pre-Retire Return Rate
+                  {% elif var == 'return_rate_after' %}
+                    Post-Retire Return Rate
+                  {% elif var == 'retirement_age' %}
+                    Retirement Age <span class="badge bg-secondary ms-1">separate scale</span>
+                  {% else %}
+                    {{ var.replace('_', ' ').title() }}
+                  {% endif %}
+                </td>
+                <td>{{ "{:.2f}".format(vals.sensitivity_pct) }}%</td>
+                <td>${{ "{:,.0f}".format(vals.dollar_impact) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="col-md-6">
+      <!-- Core inputs -->
+      <div class="card mb-3">
+        <div class="card-header">Dollar Impact – Core Inputs</div>
+        <div class="card-body">
+          <div style="width:100%; height:300px;">
+            <canvas id="dollarImpactCoreChart"></canvas>
           </div>
         </div>
+      </div>
 
-        <!-- Chart.js for sensitivity bars -->
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <script>
-          const labels = [
-            {% for var, vals in sensitivities.items() %}
-              {% if var == 'current_assets' %}'Current Assets',{% endif %}
-              {% if var == 'return_rate' %}'Pre-Retire Return Rate',{% endif %}
-              {% if var == 'return_rate_after' %}'Post-Retire Return Rate',{% endif %}
-              {% if var == 'annual_saving' %}'Annual Saving',{% endif %}
-              {% if var == 'annual_expense' %}'Annual Expense',{% endif %}
-              {% if var == 'saving_increase_rate' %}'Saving Increase Rate',{% endif %}
-              {% if var == 'inflation_rate' %}'Inflation Rate',{% endif %}
-              {% if var == 'income_tax_rate' %}'Income Tax Rate',{% endif %}
-              {% if var == 'retirement_age' %}'Retirement Age',{% endif %}
-            {% endfor %}
-          ];
+      <!-- Retirement Age (own scale) -->
+      <div class="card">
+        <div class="card-header">Retirement Age – Dollar Impact (Own Scale)</div>
+        <div class="card-body">
+          <div style="width:100%; height:160px;">
+            <canvas id="dollarImpactRAChart"></canvas>
+          </div>
+          {% if sensitivities.get('retirement_age') %}
+            <div class="text-muted small mt-2">
+              +1% change in <em>Retirement Age</em> ⇒
+              ${{ "{:,.0f}".format(sensitivities['retirement_age'].dollar_impact) }}
+              (Elasticity: {{ "{:.2f}".format(sensitivities['retirement_age'].sensitivity_pct) }}%)
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
 
-          const data = [
-            {% for var, vals in sensitivities.items() %}
-              {{ vals.dollar_impact }}{% if not loop.last %},{% endif %}
-            {% endfor %}
-          ];
+  <div class="mt-3">
+    <p><strong>Elasticity</strong> shows the % change in <em>Final Assets</em> from a 1% increase in each input.</p>
+    <p><strong>Dollar Impact</strong> shows the absolute change in <em>Final Assets</em> for that same 1% increase.</p>
+  </div>
+</div>
 
-          const maxImpact = Math.max(...data.map(v => Math.abs(v)));
+<!-- Chart.js for sensitivity bars -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function(){
+    // Build Core vs RA arrays from the server-side sensitivities
+    const coreLabels = [];
+    const coreData   = [];
+    let raValue = null;
 
-          new Chart(document.getElementById('dollarImpactChart').getContext('2d'), {
-            type: 'bar',
-            data: {
-              labels: labels,
-              datasets: [{
-                label: 'Dollar Impact',
-                data: data,
-                backgroundColor: '#4e73df'
-              }]
-            },
-            options: {
-              indexAxis: 'y',
-              responsive: true,
-              maintainAspectRatio: false,
-              scales: {
-                x: {
-                  min: -maxImpact,
-                  max: maxImpact,
-                  ticks: {
-                    callback: value => '$' + value.toLocaleString()
-                  }
-                }
+    {% for var, vals in sensitivities.items() %}
+      {% if var != 'retirement_age' %}
+        {% if var == 'current_assets' %}
+          coreLabels.push('Current Assets');
+        {% elif var == 'return_rate' %}
+          coreLabels.push('Pre-Retire Return Rate');
+        {% elif var == 'return_rate_after' %}
+          coreLabels.push('Post-Retire Return Rate');
+        {% elif var == 'annual_saving' %}
+          coreLabels.push('Annual Saving');
+        {% elif var == 'annual_expense' %}
+          coreLabels.push('Annual Expense');
+        {% elif var == 'saving_increase_rate' %}
+          coreLabels.push('Saving Increase Rate');
+        {% elif var == 'inflation_rate' %}
+          coreLabels.push('Inflation Rate');
+        {% elif var == 'income_tax_rate' %}
+          coreLabels.push('Income Tax Rate');
+        {% else %}
+          coreLabels.push('{{ var.replace("_", " ").title() }}');
+        {% endif %}
+        coreData.push({{ vals.dollar_impact }});
+      {% else %}
+        raValue = {{ sensitivities['retirement_age'].dollar_impact }};
+      {% endif %}
+    {% endfor %}
+
+    // ----- Core inputs chart -----
+    if (coreLabels.length) {
+      const maxImpact = Math.max(...coreData.map(v => Math.abs(v))) || 1;
+
+      new Chart(document.getElementById('dollarImpactCoreChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: coreLabels,
+          datasets: [{
+            label: 'Dollar Impact',
+            data: coreData,
+            backgroundColor: '#4e73df'
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              min: -maxImpact,
+              max:  maxImpact,
+              ticks: {
+                callback: value => '$' + Number(value).toLocaleString()
               },
-              plugins: {
-                legend: { display: false },
-                tooltip: {
-                  callbacks: {
-                    label: ctx => '$' + ctx.parsed.x.toLocaleString()
-                  }
-                }
+              title: { display: true, text: 'Dollar Impact ($)' }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => '$' + Number(ctx.parsed.x).toLocaleString()
               }
             }
-          });
-        </script>
-        {% endif %}
+          }
+        }
+      });
+    }
+
+    // ----- Retirement Age chart (own scale) -----
+    if (raValue !== null) {
+      const raAbs = Math.abs(raValue);
+      const raMax = raAbs === 0 ? 1 : raAbs * 1.1; // small headroom
+
+      new Chart(document.getElementById('dollarImpactRAChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: ['Retirement Age'],
+          datasets: [{
+            label: 'Dollar Impact',
+            data: [raValue],
+            backgroundColor: '#7e57c2'
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              min: -raMax,
+              max:  raMax,
+              ticks: {
+                callback: value => '$' + Number(value).toLocaleString()
+              },
+              title: { display: true, text: 'Dollar Impact ($)' }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => '$' + Number(ctx.parsed.x).toLocaleString()
+              }
+            }
+          }
+        }
+      });
+    }
+  })();
+</script>
+{% endif %}
+
 
 
 <!-- ==== Compare Saved Scenarios (plain POST) ==== -->
@@ -452,11 +540,19 @@
     </div>
   </div>
 
-  <!-- Sensitivity (Chart.js) -->
-  <div id="sens-card" class="card mb-4 d-none">
-    <div class="card-header">Sensitivity (Dollar Impact)</div>
+  <!-- Sensitivity: split into Core and Retirement Age -->
+  <div id="sens-core-card" class="card mb-4 d-none">
+    <div class="card-header">Sensitivity – Dollar Impact (Core Inputs)</div>
     <div class="card-body">
-      <canvas id="sens-compare-chart" style="height:400px;"></canvas>
+      <canvas id="sens-core-chart" style="height:300px;"></canvas>
+    </div>
+  </div>
+
+  <div id="sens-ra-card" class="card mb-4 d-none">
+    <div class="card-header">Retirement Age – Dollar Impact (Own Scale)</div>
+    <div class="card-body">
+      <canvas id="sens-ra-chart" style="height:200px;"></canvas>
+      <div id="sens-ra-note" class="text-muted small mt-2"></div>
     </div>
   </div>
 </div>
@@ -470,14 +566,15 @@
   const form = document.getElementById('compare-form');
   if (!form) return;
 
-  let sensChart = null;
+  let sensChartCore = null;
+  let sensChartRA   = null;
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const bId = document.getElementById('scenario_b').value || '';
 
-    // A-only: clone the existing MC chart; hide sensitivity block
+    // A-only: clone the existing MC chart; hide sensitivity blocks
     if (!bId) {
       const src = document.getElementById('monte-carlo-chart');
       if (!src || !src.data) { alert('Main MC chart not found on page.'); return; }
@@ -510,7 +607,7 @@
     if (!res.ok) { alert(cd.error || 'Compare failed.'); return; }
 
     renderOverlay(cd);
-    renderSensitivity(cd); // modular sensitivity
+    renderSensitivitySplit(cd); // split: core vs retirement_age
   });
 
   // ---------- MC overlay (Plotly) ----------
@@ -552,8 +649,8 @@
     Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
   }
 
-  // ---------- Sensitivity (Chart.js) ----------
-  function renderSensitivity(cd){
+  // ---------- Sensitivity (SPLIT) ----------
+  function renderSensitivitySplit(cd){
     // Only show when backend provided sensitivity arrays
     if (!cd.sens || !Array.isArray(cd.sens.vars)) {
       hideSensitivity();
@@ -563,49 +660,115 @@
     const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
     const labelB = (cd.labels && cd.labels.B) || null;
 
-    const vars = cd.sens.vars.map(v =>
-      v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
-    );
-    const impactA = cd.sens.A || [];
-    const impactB = cd.sens.B || null;
+    const vars = cd.sens.vars.slice();           // e.g., [..., "retirement_age"]
+    const A    = (cd.sens.A   || []).slice();    // dollar impacts
+    const B    = (cd.sens.B   || null) ? cd.sens.B.slice() : null;
 
-    const maxImp = Math.max(
-      ...(impactA.map(x => Math.abs(x))),
-      ...(impactB ? impactB.map(x => Math.abs(x)) : [0])
-    ) || 1;
+    // Separate retirement_age from the rest
+    const raIdx = vars.indexOf('retirement_age');
+    let raA = null, raB = null;
+    if (raIdx !== -1) {
+      raA = (A[raIdx] != null) ? Number(A[raIdx]) : null;
+      raB = (B && B[raIdx] != null) ? Number(B[raIdx]) : null;
 
-    const ds = [{ label: labelA, data: impactA, backgroundColor: 'rgba(54,162,235,0.5)' }];
-    if (impactB) ds.push({ label: labelB, data: impactB, backgroundColor: 'rgba(255,159,64,0.5)' });
+      // Core arrays without RA
+      vars.splice(raIdx, 1);
+      A.splice(raIdx, 1);
+      if (B) B.splice(raIdx, 1);
+    }
 
-    const ctx = document.getElementById('sens-compare-chart').getContext('2d');
-    if (sensChart) sensChart.destroy();
-    sensChart = new Chart(ctx, {
-      type: 'bar',
-      data: { labels: vars, datasets: ds },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            min: -maxImp, max: maxImp,
-            title: { display: true, text: 'Dollar Impact ($)' },
-            ticks: { callback: v => '$' + Number(v).toLocaleString() }
-          }
-        },
-        plugins: {
-          legend: { position: 'bottom' },
-          tooltip: {
-            callbacks: {
-              label: (c) => `${c.dataset.label}: $${Number(c.parsed.x).toLocaleString()}`
+    // Core labels → Pretty
+    const coreLabels = vars.map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));
+    const coreA = A.map(Number);
+    const coreB = B ? B.map(Number) : null;
+
+    // Build Core chart
+    if (coreLabels.length) {
+      const maxImp = Math.max(
+        ...(coreA.map(Math.abs)),
+        ...(coreB ? coreB.map(Math.abs) : [0])
+      ) || 1;
+
+      const ds = [{ label: labelA, data: coreA, backgroundColor: 'rgba(54,162,235,0.55)' }];
+      if (coreB) ds.push({ label: labelB, data: coreB, backgroundColor: 'rgba(255,159,64,0.55)' });
+
+      const ctxCore = document.getElementById('sens-core-chart').getContext('2d');
+      if (sensChartCore) sensChartCore.destroy();
+      sensChartCore = new Chart(ctxCore, {
+        type: 'bar',
+        data: { labels: coreLabels, datasets: ds },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              min: -maxImp, max: maxImp,
+              title: { display: true, text: 'Dollar Impact ($)' },
+              ticks: { callback: v => '$' + Number(v).toLocaleString() }
+            }
+          },
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                label: (c) => `${c.dataset.label}: $${Number(c.parsed.x).toLocaleString()}`
+              }
             }
           }
         }
-      }
-    });
+      });
+      document.getElementById('sens-core-card').classList.remove('d-none');
+    } else {
+      document.getElementById('sens-core-card').classList.add('d-none');
+      if (sensChartCore) { sensChartCore.destroy(); sensChartCore = null; }
+    }
 
-    // reveal sensitivity card
-    document.getElementById('sens-card').classList.remove('d-none');
+    // Build Retirement Age (own scale) if present
+    if (raA != null || raB != null) {
+      const labels = ['Retirement Age'];
+      const dsRA = [{ label: labelA, data: [raA || 0], backgroundColor: 'rgba(54,162,235,0.55)' }];
+      if (raB != null) dsRA.push({ label: labelB, data: [raB], backgroundColor: 'rgba(255,159,64,0.55)' });
+
+      const ctxRA = document.getElementById('sens-ra-chart').getContext('2d');
+      if (sensChartRA) sensChartRA.destroy();
+      sensChartRA = new Chart(ctxRA, {
+        type: 'bar',
+        data: { labels, datasets: dsRA },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              title: { display: true, text: 'Dollar Impact ($)' },
+              ticks: { callback: v => '$' + Number(v).toLocaleString() }
+            }
+          },
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                label: (c) => `${c.dataset.label}: $${Number(c.parsed.x).toLocaleString()}`
+              }
+            }
+          }
+        }
+      });
+
+      // Note under the RA chart (only if we have A’s value)
+      const note = document.getElementById('sens-ra-note');
+      if (raA != null) {
+        note.textContent = `A +1% change in Retirement Age affects Final Assets by ${raA >= 0 ? '+' : ''}$${Math.abs(raA).toLocaleString()} for Scenario A` + (raB != null ? `; Scenario B: ${raB >= 0 ? '+' : ''}$${Math.abs(raB).toLocaleString()}.` : '.');
+      } else {
+        note.textContent = '';
+      }
+
+      document.getElementById('sens-ra-card').classList.remove('d-none');
+    } else {
+      document.getElementById('sens-ra-card').classList.add('d-none');
+      if (sensChartRA) { sensChartRA.destroy(); sensChartRA = null; }
+    }
   }
 
   // ---------- helpers ----------
@@ -629,12 +792,16 @@
   }
 
   function hideSensitivity(){
-    const card = document.getElementById('sens-card');
-    if (!card.classList.contains('d-none')) card.classList.add('d-none');
-    if (sensChart) { sensChart.destroy(); sensChart = null; }
+    const core = document.getElementById('sens-core-card');
+    const ra   = document.getElementById('sens-ra-card');
+    if (!core.classList.contains('d-none')) core.classList.add('d-none');
+    if (!ra.classList.contains('d-none')) ra.classList.add('d-none');
+    if (sensChartCore) { sensChartCore.destroy(); sensChartCore = null; }
+    if (sensChartRA)   { sensChartRA.destroy();   sensChartRA   = null; }
   }
 })();
 </script>
+
 
 
 
