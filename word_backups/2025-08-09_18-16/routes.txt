@@ -826,23 +826,10 @@ def _merge(d):
             base[k] = v
     return base
 
-def _harmonize(params: dict) -> dict:
-    """
-    If the UI doesn't provide an explicit CPP window, infer a window that
-    matches the main app semantics: start at retirement, end at life expectancy.
-    """
-    ra = int(params.get("retirement_age", 65))
-    le = int(params.get("life_expectancy", ra + 30))
-    if "cpp_start_age" not in params or params.get("cpp_start_age") is None:
-        params["cpp_start_age"] = ra
-    if "cpp_end_age" not in params or params.get("cpp_end_age") is None:
-        params["cpp_end_age"] = le
-    return params
 
 @bp_for_live.post("/api/live-update")
 def live_update():
     params = _merge(request.get_json(silent=True) or {})
-    params = _harmonize(params)  # ensure CPP window aligns with main calculator
 
     # ✅ Pass ONLY the args that run_retirement_projection expects
     det_keys = [
@@ -858,7 +845,7 @@ def live_update():
     labels = [row.get("Year") for row in det_table]
     det_curve = [row.get("Asset") for row in det_table]
 
-    # MC mapping
+    # MC mapping stays the same as before
     mc_params = dict(
         current_age=params["current_age"],
         retirement_age=params["retirement_age"],
@@ -892,5 +879,4 @@ def live_update():
         "p90": pct.get("p90", []),
     }
     return jsonify(out), 200
-
 

@@ -555,48 +555,43 @@
     }
   });
 
-// send ALL form values + slider overrides
-let lastForm = null;
-function collectParams() {
-  const form = gatherForm();
+  // send ALL form values + slider overrides
+  let lastForm = null;
+  function collectParams() {
+    const form = gatherForm();
 
-  // ---- overrides coming from the sliders ----
-  form.retirement_age      = +elAge.value;
-  form.annual_expense      = (+elExpMo.value) * 12;     // monthly → annual
-  form.return_rate_after   = (+elPost.value) / 100;     // deterministic
-  form.return_mean_after   = form.return_rate_after;    // MC
+    // override from sliders
+    form.retirement_age     = +elAge.value;
+    form.annual_expense     = (+elExpMo.value) * 12;         // monthly → annual
+    form.return_rate_after  = (+elPost.value) / 100;
+    form.return_mean_after  = form.return_rate_after;
 
-  form.return_rate         = (+elPre.value) / 100;
-  form.return_mean         = form.return_rate;
+    form.return_rate        = (+elPre.value) / 100;
+    form.return_mean        = form.return_rate;
 
-  form.annual_saving       = (+elSaveMo.value) * 12;
-  form.current_assets      = +elAssets.value;
-  form.income_tax_rate     = (+elTax.value) / 100;
-  form.inflation_rate      = (+elInfl.value) / 100;
-  form.inflation_mean      = form.inflation_rate;
-  form.life_expectancy     = +elLife.value;
+    form.annual_saving      = (+elSaveMo.value) * 12;
+    form.current_assets     = +elAssets.value;
+    form.income_tax_rate    = (+elTax.value) / 100;
+    form.inflation_rate     = (+elInfl.value) / 100;
+    form.inflation_mean     = form.inflation_rate;
+    form.life_expectancy    = +elLife.value;
 
-  // ✅ Ensure CPP window matches the main calculator semantics
-  form.cpp_start_age       = form.retirement_age;   // NEW
-  form.cpp_end_age         = form.life_expectancy;  // NEW
+    form.num_simulations    = 2000;
 
-  form.num_simulations     = 2000;
+    // reflect labels
+    ageVal.textContent    = form.retirement_age;
+    expVal.textContent    = fmt(+elExpMo.value);
+    postVal.textContent   = (+elPost.value).toFixed(1);
+    preVal.textContent    = (+elPre.value).toFixed(1);
+    saveVal.textContent   = fmt(+elSaveMo.value);
+    assetsVal.textContent = fmt(+elAssets.value);
+    taxVal.textContent    = (+elTax.value).toFixed(1);
+    inflVal.textContent   = (+elInfl.value).toFixed(1);
+    lifeVal.textContent   = form.life_expectancy;
 
-  // ---- reflect labels ----
-  ageVal.textContent       = form.retirement_age;
-  expVal.textContent       = Number(+elExpMo.value).toLocaleString();
-  postVal.textContent      = (+elPost.value).toFixed(1);
-  preVal.textContent       = (+elPre.value).toFixed(1);
-  saveVal.textContent      = Number(+elSaveMo.value).toLocaleString();
-  assetsVal.textContent    = Number(+elAssets.value).toLocaleString();
-  taxVal.textContent       = (+elTax.value).toFixed(1);
-  inflVal.textContent      = (+elInfl.value).toFixed(1);
-  lifeVal.textContent      = form.life_expectancy;
-
-  lastForm = form;
-  return form;
-}
-
+    lastForm = form;
+    return form;
+  }
 
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
