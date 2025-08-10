@@ -884,13 +884,41 @@ def live_update():
     mc_out = run_mc_with_seed(seed, _MC, **mc_params)
 
     pct = mc_out.get("percentiles", {})
+    det_last = det_curve[-1] if det_curve else None
+
+    # Slim debug payload so you can inspect inputs from the browser console
+    debug = {
+        "used_params": {
+            "current_age": params["current_age"],
+            "retirement_age": params["retirement_age"],
+            "life_expectancy": params["life_expectancy"],
+            "annual_saving": params["annual_saving"],
+            "saving_increase_rate": params["saving_increase_rate"],
+            "current_assets": params["current_assets"],
+            "annual_expense": params["annual_expense"],
+            "income_tax_rate": params["income_tax_rate"],
+            "inflation_rate": params["inflation_rate"],
+            "cpp_monthly": params["cpp_monthly"],
+            "cpp_start_age": params["cpp_start_age"],
+            "cpp_end_age": params["cpp_end_age"],
+            "return_rate": params["return_rate"],
+            "return_rate_after": params["return_rate_after"],
+            "return_std": params["return_std"],
+            "inflation_std": params["inflation_std"],
+            "asset_liquidations": params["asset_liquidations"],
+        },
+        "derived": {
+            "deterministic_last": det_last
+        }
+    }
+
     out = {
         "labels": labels,
         "deterministic": det_curve,
         "p10": pct.get("p10", []),
         "p50": pct.get("p50", []),
         "p90": pct.get("p90", []),
+        "debug": debug,
     }
     return jsonify(out), 200
-
 
