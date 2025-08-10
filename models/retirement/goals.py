@@ -1,0 +1,109 @@
+# models/retirement/goals.py
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import List, Dict, Literal
+
+Recurrence = Literal["once", "annual", "years"]
+
+@dataclass
+class GoalEvent:
+    """
+    A goal is either an extra expense (is_expense=True) or extra inflow (False).
+    amount is in today's dollars; inflation_linked=True grows it by inflation each year.
+    recurrence:
+      - "once": applies in start_age only
+      - "annual": applies every year from start_age..end_age (inclusive)
+      - "years": applies for 'years' consecutive years starting at start_age
+    """
+    name: str
+    start_age: int
+    amount: float
+    is_expense: bool = True
+    inflation_linked: bool = True
+    recurrence: Recurrence = "once"
+    end_age: int | None = None   # needed for "annual"
+    years: int | None = None     # needed for "years"
+
+def _inflated(base: float, years_since_start: int, inflation_rate: float, link: bool) -> float:
+    if not link:
+        return base
+    return base * ((1 + inflation_rate) ** max(0, years_since_start))
+
+def expand_goals_to_per_age(
+    *,
+    current_age: int,
+    life_expectancy: int,
+    inflation_rate: float,
+    goals: List[dict | GoalEvent]
+) -> Dict[int, Dict[str, float]]:
+    """
+    Returns {age: {'expense': sum_expenses, 'inflow': sum_inflows}} for ages within horizon.
+    """
+    # normalize into GoalEvent
+    norm: List[GoalEvent] = []
+    for g in goals or []:
+        if isinstance(g, GoalEvent):
+            norm.append(g)
+        else:
+            norm.append(GoalEvent(
+                name=g.get("name", ""),
+                start_age=int(g["start_age"]),
+                amount=float(g["amount"]),
+                is_expense=bool(g.get("is_expense", True)),
+                inflation_linked=bool(g.get("inflation_linked", True)),
+                recurrence=g.get("recurrence", "once"),
+                end_age=g.get("end_age"),
+                years=g.get("years"),
+            ))
+
+    per_age: Dict[int, Dict[str, float]] = {}
+    a0, a1 = int(current_age), int(life_expectancy)
+
+    for ev in norm:
+        if ev.recurrence == "once":
+            ages = [ev.start_age]
+        elif ev.recurrence == "annual":
+            end = ev.end_age if ev.end_age is not None else a1
+            ages = list(range(ev.start_age, end + 1))
+        elif ev.recurrence == "years":
+            n = int(ev.years or 1)
+            ages = [ev.start_age + i for i in range(n)]
+        else:
+            ages = [ev.start_age]
+
+        for age in ages:
+            if age < a0 or age > a1:
+                continue
+            yrs = age - ev.start_age
+            val = _inflated(ev.amount, yrs, inflation_rate, ev.inflation_linked)
+            bucket = "expense" if ev.is_expense else "inflow"
+            per_age.setdefault(age, {"expense": 0.0, "inflow": 0.0})
+            per_age[age][bucket] += float(val)
+
+    return per_age
+
+def goals_to_liquidations_adapter(
+    *,
+    current_liqs: List[dict],
+    per_age: Dict[int, Dict[str, float]]
+) -> List[dict]:
+    """
+    MVP (post-tax goals): convert goals into asset 'liquidations':
+    - inflows -> positive liquidation at that age
+    - expenses -> negative liquidation at that age
+    NOTE: This does NOT increase 'Living_Exp' → taxes won't reflect goal expenses.
+          That’s acceptable for MVP and keeps core calculators untouched.
+    """
+    liqs = list(current_liqs or [])
+    for age, vals in (per_age or {}).items():
+        inflow = float(vals.get("inflow", 0.0))
+        expense = float(vals.get("expense", 0.0))
+        net = 0.0
+        if inflow:
+            net += inflow
+        if expense:
+            net -= expense
+        if net != 0.0:
+            liqs.append({"age": int(age), "amount": float(net)})
+    return liqs
+

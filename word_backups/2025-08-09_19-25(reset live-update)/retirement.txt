@@ -337,91 +337,53 @@
       <span class="text-muted small">Restore sliders from the current inputs above.</span>
     </div>
 
-    <!-- ================= GOALS (beta) ================= -->
-    <details class="mt-3" open>
-      <summary class="h6 mb-2">Goals (beta) — extra expenses or inflows</summary>
-
-      <!-- Add goal form -->
-      <div class="row g-2 align-items-end">
-        <div class="col-md-3">
-          <label class="form-label">Name</label>
-          <input id="goal_name" type="text" class="form-control" placeholder="College, Cottage, etc.">
+    <!-- More controls -->
+    <details class="mt-3">
+      <summary class="h6 mb-2">More controls</summary>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Pre-Ret Return (%):
+            <span id="lw_pre_val" class="fw-semibold">8.0</span>
+          </label>
+          <input type="range" id="lw_mu_pre" class="form-range" min="0" max="12" step="0.1" value="8.0">
         </div>
 
-        <div class="col-md-2">
-          <label class="form-label">Type</label>
-          <select id="goal_type" class="form-select">
-            <option value="expense" selected>Expense (outflow)</option>
-            <option value="inflow">Inflow (gift/sale)</option>
-          </select>
+        <div class="col-md-4">
+          <label class="form-label">Monthly Savings ($/mo):
+            <span id="lw_save_val" class="fw-semibold">7,100</span>
+          </label>
+          <input type="range" id="lw_saving_mo" class="form-range" min="0" max="20000" step="100" value="7100">
         </div>
 
-        <div class="col-md-2">
-          <label class="form-label">Amount ($, today)</label>
-          <input id="goal_amount" type="number" class="form-control" min="0" step="1000" placeholder="30000">
+        <div class="col-md-4">
+          <label class="form-label">Current Assets ($):
+            <span id="lw_assets_val" class="fw-semibold">1,000,000</span>
+          </label>
+          <input type="range" id="lw_assets" class="form-range" min="0" max="5000000" step="50000" value="1000000">
         </div>
 
-        <div class="col-md-2">
-          <label class="form-label">Start Age</label>
-          <input id="goal_start_age" type="number" class="form-control" min="0" step="1" placeholder="60">
+        <div class="col-md-4">
+          <label class="form-label">Income Tax Rate (%):
+            <span id="lw_tax_val" class="fw-semibold">12.0</span>
+          </label>
+          <input type="range" id="lw_tax" class="form-range" min="0" max="50" step="0.5" value="12">
         </div>
 
-        <div class="col-md-3">
-          <label class="form-label">Recurrence</label>
-          <select id="goal_recurrence" class="form-select">
-            <option value="once" selected>Once (at start age)</option>
-            <option value="annual">Annual (from start..end age)</option>
-            <option value="years">X Years (consecutive from start)</option>
-          </select>
+        <div class="col-md-4">
+          <label class="form-label">Inflation Rate (%):
+            <span id="lw_infl_val" class="fw-semibold">2.0</span>
+          </label>
+          <input type="range" id="lw_infl" class="form-range" min="0" max="10" step="0.1" value="2.0">
         </div>
 
-        <div class="col-md-2 d-none" id="goal_end_age_wrap">
-          <label class="form-label">End Age (inclusive)</label>
-          <input id="goal_end_age" type="number" class="form-control" min="0" step="1" placeholder="65">
+        <div class="col-md-4">
+          <label class="form-label">Expected Lifespan (Age):
+            <span id="lw_life_val" class="fw-semibold">84</span>
+          </label>
+          <input type="range" id="lw_life" class="form-range" min="70" max="105" step="1" value="84">
         </div>
-
-        <div class="col-md-2 d-none" id="goal_years_wrap">
-          <label class="form-label">Years (count)</label>
-          <input id="goal_years" type="number" class="form-control" min="1" step="1" placeholder="4">
-        </div>
-
-        <div class="col-md-2">
-          <div class="form-check mt-4">
-            <input id="goal_infl_linked" class="form-check-input" type="checkbox" checked>
-            <label class="form-check-label" for="goal_infl_linked">Inflation linked</label>
-          </div>
-        </div>
-
-        <div class="col-md-2">
-          <button id="goal_add" type="button" class="btn btn-primary w-100">+ Add Goal</button>
-        </div>
-      </div>
-
-      <!-- Goals list -->
-      <div class="table-responsive mt-3">
-        <table class="table table-sm align-middle">
-          <thead>
-            <tr>
-              <th>Enabled</th>
-              <th>Name</th>
-              <th>Type</th>
-              <th>When</th>
-              <th>Amount</th>
-              <th>Infl.</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="goals_tbody">
-            <!-- rows injected by JS -->
-          </tbody>
-        </table>
-      </div>
-      <div class="text-muted small">
-        Note: MVP routes convert goals to asset liquidations (post-tax). These don’t alter
-        Living Expense (for taxes) yet—that’s fine for MVP and keeps core calculators untouched.
       </div>
     </details>
-    <!-- =============== /GOALS (beta) =============== -->
 
     <canvas id="lw_assets_chart" class="mt-4"></canvas>
   </div>
@@ -429,7 +391,7 @@
 
 <script>
 (function () {
-  // =================== Sliders + value spans ===================
+  // Sliders + value spans
   const elAge   = document.getElementById('lw_ret_age');
   const elExpMo = document.getElementById('lw_expense_mo');
   const elPost  = document.getElementById('lw_mu_post');
@@ -451,22 +413,9 @@
   const inflVal  = document.getElementById('lw_infl_val');
   const lifeVal  = document.getElementById('lw_life_val');
 
-  // =================== GOALS UI refs ===================
-  const gName  = document.getElementById('goal_name');
-  const gType  = document.getElementById('goal_type');
-  const gAmt   = document.getElementById('goal_amount');
-  const gStart = document.getElementById('goal_start_age');
-  const gRec   = document.getElementById('goal_recurrence');
-  const gEndW  = document.getElementById('goal_end_age_wrap');
-  const gEnd   = document.getElementById('goal_end_age');
-  const gYearsW= document.getElementById('goal_years_wrap');
-  const gYears = document.getElementById('goal_years');
-  const gInfl  = document.getElementById('goal_infl_linked');
-  const gAdd   = document.getElementById('goal_add');
-  const gBody  = document.getElementById('goals_tbody');
-
   // ---- helpers to read the existing form ----
   const $ = (sel, root=document) => root.querySelector(sel);
+
   function findByLabelText(text) {
     const labels = Array.from(document.querySelectorAll('label'));
     const t = (text || '').toLowerCase();
@@ -478,12 +427,14 @@
     const col = lab.closest('.col-md-4, .col, .form-group, .mb-3') || lab.parentElement;
     return col ? col.querySelector('input,select,textarea') : null;
   }
+
   function findInput({ids=[], names=[], labelIncludes=[]}) {
     for (const id of ids)   { const el = document.getElementById(id); if (el) return el; }
     for (const nm of names) { const el = $(`[name="${nm}"]`);         if (el) return el; }
     for (const txt of labelIncludes) { const el = findByLabelText(txt); if (el) return el; }
     return null;
   }
+
   function numFrom(el) {
     if (!el) return NaN;
     if (el.tagName === 'SELECT') {
@@ -499,15 +450,31 @@
   const nz = (v, f) => (Number.isFinite(v) ? v : f);
   const fmt = x => Number(x).toLocaleString();
 
-  // =================== snapshot the whole form ===================
+  // ---- snapshot the whole form (includes CPP from Extended-Year fields) ----
   function gatherForm() {
     const current_age     = nz(numFrom(findInput({labelIncludes:['Current Age'], names:['current_age']})), 53);
     const retirement_age  = nz(numFrom(findInput({labelIncludes:['Retirement Age'], names:['retirement_age']})), 65);
+
+    // Lifespan (needed for fallback)
     const life_expectancy = nz(numFrom(findInput({labelIncludes:['Expected Lifespan'], names:['expected_lifespan']})), 90);
 
-    // Extended-year -> CPP window
-    const ext_from = nz(numFrom(findInput({ids:['extended_year_from_age','extended_from_age'],names:['extended_year_from_age'],labelIncludes:['Extended Year From']})), retirement_age);
-    const ext_to_raw = nz(numFrom(findInput({ids:['extended_year_to_age','extended_to_age'],names:['extended_year_to_age'],labelIncludes:['Extended Year To']})), life_expectancy + 1);
+    // Map Extended-Year to CPP window: start = From, end = To - 1 (inclusive)
+    const ext_from = nz(
+      numFrom(findInput({
+        ids:['extended_year_from_age','extended_from_age'],
+        names:['extended_year_from_age'],
+        labelIncludes:['Extended Year From']
+      })), retirement_age
+    );
+
+    const ext_to_raw = nz(
+      numFrom(findInput({
+        ids:['extended_year_to_age','extended_to_age'],
+        names:['extended_year_to_age'],
+        labelIncludes:['Extended Year To']
+      })), life_expectancy + 1
+    );
+
     const cpp_start_age = ext_from;
     const cpp_end_age   = Math.max(ext_from, (Number.isFinite(ext_to_raw) ? (ext_to_raw - 1) : life_expectancy));
 
@@ -556,8 +523,8 @@
       return_rate_after,
       annual_expense,
       cpp_monthly,
-      cpp_start_age,
-      cpp_end_age,
+      cpp_start_age,   // from Extended Year From
+      cpp_end_age,     // (Extended Year To - 1), inclusive
       asset_liquidations,
       inflation_rate,
       life_expectancy,
@@ -572,12 +539,12 @@
     };
   }
 
-  // =================== initialize sliders ===================
+  // ---- initialize sliders from the form values ----
   const base = gatherForm();
   setSlidersFromForm(base);
   updateLabelsFromSliders();
 
-  // =================== Chart ===================
+  // ---- Chart ----
   const ctx = document.getElementById('lw_assets_chart').getContext('2d');
   const chart = new Chart(ctx, {
     type: 'line',
@@ -621,108 +588,8 @@
     lifeVal.textContent    = elLife.value;
   }
 
-  // =================== GOALS: minimal state + wiring ===================
-  let goals = []; // each: {id, name, start_age, amount, is_expense, inflation_linked, recurrence, end_age?, years?, enabled}
-
-  // show/hide end_age/years inputs per recurrence
-  function syncGoalRecurrenceUI() {
-    const rec = gRec.value;
-    gEndW.classList.toggle('d-none', rec !== 'annual');
-    gYearsW.classList.toggle('d-none', rec !== 'years');
-  }
-  gRec.addEventListener('change', syncGoalRecurrenceUI);
-  syncGoalRecurrenceUI();
-
-  function addGoal() {
-    const name = (gName.value || '').trim() || '(unnamed)';
-    const type = gType.value; // 'expense' | 'inflow'
-    const amount = Number(gAmt.value || 0);
-    const start_age = Number(gStart.value || 0);
-    const recurrence = gRec.value; // 'once'|'annual'|'years'
-    const end_age = (recurrence === 'annual') ? Number(gEnd.value || NaN) : undefined;
-    const years = (recurrence === 'years') ? Number(gYears.value || NaN) : undefined;
-    const inflation_linked = !!gInfl.checked;
-
-    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(start_age)) {
-      alert('Please enter a valid amount and start age.');
-      return;
-    }
-
-    const g = {
-      id: cryptoRandomId(),
-      name,
-      start_age,
-      amount,
-      is_expense: (type === 'expense'),
-      inflation_linked,
-      recurrence,
-      enabled: true
-    };
-    if (recurrence === 'annual' && Number.isFinite(end_age)) g.end_age = end_age;
-    if (recurrence === 'years'  && Number.isFinite(years))   g.years   = years;
-
-    goals.push(g);
-    renderGoals();
-    ping(); // recalc
-    // soft clear inputs (keep recurrence/type)
-    gName.value = ''; gAmt.value = ''; gStart.value = ''; gEnd.value = ''; gYears.value = '';
-  }
-
-  function cryptoRandomId() {
-    try { return crypto.randomUUID(); } catch(e) { return 'g_' + Math.random().toString(36).slice(2); }
-  }
-
-  function renderGoals() {
-    gBody.innerHTML = '';
-    if (!goals.length) {
-      gBody.innerHTML = `<tr><td colspan="7" class="text-muted">No goals added.</td></tr>`;
-      return;
-    }
-    for (const g of goals) {
-      const when = (g.recurrence === 'once')
-        ? `At ${g.start_age}`
-        : (g.recurrence === 'annual')
-          ? `Annual ${g.start_age}–${g.end_age ?? 'LE'}`
-          : `For ${g.years ?? '?'} years from ${g.start_age}`;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><input type="checkbox" ${g.enabled ? 'checked':''} data-act="toggle"></td>
-        <td>${escapeHtml(g.name)}</td>
-        <td>${g.is_expense ? 'Expense':'Inflow'}</td>
-        <td>${when}</td>
-        <td>${fmt(g.amount)}</td>
-        <td>${g.inflation_linked ? 'Yes':'No'}</td>
-        <td class="text-end">
-          <button class="btn btn-sm btn-outline-danger" data-act="remove">Remove</button>
-        </td>
-      `;
-      tr.dataset.id = g.id;
-      gBody.appendChild(tr);
-    }
-  }
-
-  function escapeHtml(s){ return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-
-  gAdd.addEventListener('click', addGoal);
-  gBody.addEventListener('click', (e) => {
-    const tr = e.target.closest('tr'); if (!tr) return;
-    const id = tr.dataset.id;
-    const act = e.target.getAttribute('data-act') || (e.target.type === 'checkbox' ? 'toggle' : '');
-    if (act === 'remove') {
-      goals = goals.filter(x => x.id !== id);
-      renderGoals();
-      ping();
-    } else if (act === 'toggle') {
-      const g = goals.find(x => x.id === id);
-      if (g) { g.enabled = !g.enabled; }
-      renderGoals();
-      ping();
-    }
-  });
-
-  // =================== payload composition ===================
+  // send ALL form values + slider overrides
   let lastForm = null;
-
   function collectParams() {
     const form = gatherForm();
 
@@ -742,11 +609,6 @@
     form.inflation_mean     = form.inflation_rate;
     form.life_expectancy    = +elLife.value;
 
-    // include enabled goals only (strip UI-only fields)
-    form.goal_events = goals
-      .filter(g => g.enabled)
-      .map(({id, enabled, ...rest}) => rest);
-
     form.num_simulations    = 2000;
 
     // reflect labels
@@ -756,7 +618,6 @@
     return form;
   }
 
-  // =================== debounce + fetch ===================
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
   async function ping() {
@@ -802,17 +663,17 @@
     const f = gatherForm();           // read the *current* baseline from the page
     setSlidersFromForm(f);            // write sliders
     updateLabelsFromSliders();        // sync little value spans
-    ping();                           // redraw with baseline (goals remain as set)
+    ping();                           // redraw with baseline
   });
 
-  console.log("Live What-If ready (form-derived, goals-enabled)");
+  console.log("Live What-If ready (form-derived)");
   window.__liveTest = { ping, collectParams };
 
   // initial draw
-  renderGoals();
   ping();
 })();
 </script>
+
 
 
 

@@ -839,52 +839,10 @@ def _harmonize(params: dict) -> dict:
         params["cpp_end_age"] = le
     return params
 
-
-# Update GoalEvents
-from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
-
 @bp_for_live.post("/api/live-update")
 def live_update():
     params = _merge(request.get_json(silent=True) or {})
-    params = _harmonize(params)  # keep CPP window aligned with main calculator
-
-    goal_events = params.get("goal_events") or []
-
-    # ---- Expand goals to per-age cashflows (MVP post-tax via liquidations) ----
-    try:
-        per_age = expand_goals_to_per_age(
-            current_age=int(params["current_age"]),
-            life_expectancy=int(params["life_expectancy"]),
-            inflation_rate=float(params.get("inflation_rate", 0.0)),
-            goals=goal_events,
-        )
-
-        # Adapt into (positive/negative) liquidations without touching calculators
-        liqs = goals_to_liquidations_adapter(
-            current_liqs=list(params.get("asset_liquidations") or []),
-            per_age=per_age,
-        )
-
-        # Optional safety: sort + coalesce same-age liquidations
-        liqs.sort(key=lambda r: int(r.get("age", 0)))
-        coalesced: list[dict] = []
-        i = 0
-        while i < len(liqs):
-            age_i = int(liqs[i]["age"])
-            amt = 0.0
-            while i < len(liqs) and int(liqs[i]["age"]) == age_i:
-                amt += float(liqs[i]["amount"])
-                i += 1
-            if amt != 0.0:
-                coalesced.append({"age": age_i, "amount": amt})
-
-        params["asset_liquidations"] = coalesced
-        goals_error = None
-    except Exception as e:
-        # Fall back cleanly if the payload for goals is malformed
-        per_age = {}
-        params["asset_liquidations"] = list(params.get("asset_liquidations") or [])
-        goals_error = str(e)
+    params = _harmonize(params)  # ensure CPP window aligns with main calculator
 
     # ✅ Pass ONLY the args that run_retirement_projection expects
     det_keys = [
@@ -928,7 +886,7 @@ def live_update():
     pct = mc_out.get("percentiles", {})
     det_last = det_curve[-1] if det_curve else None
 
-    # Keep a rich (but compact) debug payload for browser-side inspection
+    # Slim debug payload so you can inspect inputs from the browser console
     debug = {
         "used_params": {
             "current_age": params["current_age"],
@@ -948,14 +906,10 @@ def live_update():
             "return_std": params["return_std"],
             "inflation_std": params["inflation_std"],
             "asset_liquidations": params["asset_liquidations"],
-            "goal_events_count": len(goal_events),
         },
-        "goals": {
-            "per_age": per_age,            # expanded view: {age: {expense, inflow}}
-            "error": goals_error,          # None if OK
-        },
-        "mc": {"seed": seed},
-        "derived": {"deterministic_last": det_last},
+        "derived": {
+            "deterministic_last": det_last
+        }
     }
 
     out = {
@@ -967,7 +921,4 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
-
-
-
 
