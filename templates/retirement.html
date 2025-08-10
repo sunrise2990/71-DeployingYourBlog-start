@@ -158,6 +158,137 @@
         </div>
         {% endif %}
 
+
+
+<!-- ==== Live What-If (beta) – append-only block ==== -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<div class="card mt-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">⚡ Live What-If</h5>
+
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Retirement Age:
+          <span id="lw_age_val" class="fw-semibold">65</span>
+        </label>
+        <input type="range" id="lw_ret_age" class="form-range" min="55" max="75" step="1" value="65">
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">Annual Expense ($/yr):
+          <span id="lw_exp_val" class="fw-semibold">72,000</span>
+        </label>
+        <input type="range" id="lw_expense" class="form-range" min="24000" max="180000" step="1000" value="72000">
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">Post-Ret Return (%):
+          <span id="lw_post_val" class="fw-semibold">4.5</span>
+        </label>
+        <input type="range" id="lw_mu_post" class="form-range" min="0" max="10" step="0.1" value="4.5">
+      </div>
+    </div>
+
+    <canvas id="lw_assets_chart" class="mt-4"></canvas>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Elements
+  const elAge = document.getElementById('lw_ret_age');
+  const elExp = document.getElementById('lw_expense');
+  const elPost = document.getElementById('lw_mu_post');
+  const ageVal = document.getElementById('lw_age_val');
+  const expVal = document.getElementById('lw_exp_val');
+  const postVal = document.getElementById('lw_post_val');
+
+  // Chart
+  const ctx = document.getElementById('lw_assets_chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'Deterministic', data: [] },
+      { label: 'MC P10', data: [] },
+      { label: 'MC Median', data: [] },
+      { label: 'MC P90', data: [] },
+    ]},
+    options: {
+      responsive: true,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        y: { ticks: { callback: (v) => Number(v).toLocaleString() } }
+      }
+    }
+  });
+
+  function fmt(x){ return Number(x).toLocaleString(); }
+
+  function collectParams() {
+    const retirement_age = +elAge.value;
+    const annual_expense = +elExp.value;
+    const post_rate_pct = +elPost.value;     // slider shows %
+    const post_rate = post_rate_pct / 100.0; // convert to decimal
+
+    // reflect live values
+    ageVal.textContent = retirement_age;
+    expVal.textContent = fmt(annual_expense);
+    postVal.textContent = post_rate_pct.toFixed(1);
+
+    // IMPORTANT: keys must match Step-2 defaults/merge + MC mapping
+    return {
+      retirement_age: retirement_age,
+      annual_expense: annual_expense,
+      // deterministic uses return_rate_after; MC uses return_mean_after
+      return_rate_after: post_rate,
+      return_mean_after: post_rate,
+      // keep these stable per session for consistent speed/feel
+      num_simulations: 2000
+    };
+  }
+
+  function debounce(fn, ms){
+    let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
+  }
+
+  async function ping() {
+    const url = "{{ url_for('projects.live_update') }}";  // projects_bp endpoint from Step 2
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectParams())
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+
+    chart.data.labels = data.labels || [];
+    chart.data.datasets[0].data = data.deterministic || [];
+    chart.data.datasets[1].data = data.p10 || [];
+    chart.data.datasets[2].data = data.p50 || [];
+    chart.data.datasets[3].data = data.p90 || [];
+    chart.update('none');
+  }
+
+  const send = debounce(ping, 120);
+  [elAge, elExp, elPost].forEach(el => {
+    el.addEventListener('input', send);
+    el.addEventListener('change', send);
+  });
+
+console.log("Live What-If ready");
+window.__liveTest = { ping, collectParams };
+
+  // initial draw
+  ping();
+})();
+</script>
+
+
+
+
         {% if chart_data %}
         <div class="mt-5">
             <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
@@ -1031,132 +1162,6 @@
 
 
 
-
-<!-- ==== Live What-If (beta) – append-only block ==== -->
-<link rel="preconnect" href="https://cdn.jsdelivr.net">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<div class="card mt-4">
-  <div class="card-body">
-    <h5 class="card-title mb-3">⚡ Live What-If</h5>
-
-    <div class="row g-3">
-      <div class="col-md-4">
-        <label class="form-label">Retirement Age:
-          <span id="lw_age_val" class="fw-semibold">65</span>
-        </label>
-        <input type="range" id="lw_ret_age" class="form-range" min="55" max="75" step="1" value="65">
-      </div>
-
-      <div class="col-md-4">
-        <label class="form-label">Annual Expense ($/yr):
-          <span id="lw_exp_val" class="fw-semibold">72,000</span>
-        </label>
-        <input type="range" id="lw_expense" class="form-range" min="24000" max="180000" step="1000" value="72000">
-      </div>
-
-      <div class="col-md-4">
-        <label class="form-label">Post-Ret Return (%):
-          <span id="lw_post_val" class="fw-semibold">4.5</span>
-        </label>
-        <input type="range" id="lw_mu_post" class="form-range" min="0" max="10" step="0.1" value="4.5">
-      </div>
-    </div>
-
-    <canvas id="lw_assets_chart" class="mt-4"></canvas>
-  </div>
-</div>
-
-<script>
-(function () {
-  // Elements
-  const elAge = document.getElementById('lw_ret_age');
-  const elExp = document.getElementById('lw_expense');
-  const elPost = document.getElementById('lw_mu_post');
-  const ageVal = document.getElementById('lw_age_val');
-  const expVal = document.getElementById('lw_exp_val');
-  const postVal = document.getElementById('lw_post_val');
-
-  // Chart
-  const ctx = document.getElementById('lw_assets_chart').getContext('2d');
-  const chart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: [], datasets: [
-      { label: 'Deterministic', data: [] },
-      { label: 'MC P10', data: [] },
-      { label: 'MC Median', data: [] },
-      { label: 'MC P90', data: [] },
-    ]},
-    options: {
-      responsive: true,
-      animation: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        y: { ticks: { callback: (v) => Number(v).toLocaleString() } }
-      }
-    }
-  });
-
-  function fmt(x){ return Number(x).toLocaleString(); }
-
-  function collectParams() {
-    const retirement_age = +elAge.value;
-    const annual_expense = +elExp.value;
-    const post_rate_pct = +elPost.value;     // slider shows %
-    const post_rate = post_rate_pct / 100.0; // convert to decimal
-
-    // reflect live values
-    ageVal.textContent = retirement_age;
-    expVal.textContent = fmt(annual_expense);
-    postVal.textContent = post_rate_pct.toFixed(1);
-
-    // IMPORTANT: keys must match Step-2 defaults/merge + MC mapping
-    return {
-      retirement_age: retirement_age,
-      annual_expense: annual_expense,
-      // deterministic uses return_rate_after; MC uses return_mean_after
-      return_rate_after: post_rate,
-      return_mean_after: post_rate,
-      // keep these stable per session for consistent speed/feel
-      num_simulations: 2000
-    };
-  }
-
-  function debounce(fn, ms){
-    let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
-  }
-
-  async function ping() {
-    const url = "{{ url_for('projects.live_update') }}";  // projects_bp endpoint from Step 2
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(collectParams())
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-
-    chart.data.labels = data.labels || [];
-    chart.data.datasets[0].data = data.deterministic || [];
-    chart.data.datasets[1].data = data.p10 || [];
-    chart.data.datasets[2].data = data.p50 || [];
-    chart.data.datasets[3].data = data.p90 || [];
-    chart.update('none');
-  }
-
-  const send = debounce(ping, 120);
-  [elAge, elExp, elPost].forEach(el => {
-    el.addEventListener('input', send);
-    el.addEventListener('change', send);
-  });
-
-console.log("Live What-If ready");
-window.__liveTest = { ping, collectParams };
-
-  // initial draw
-  ping();
-})();
-</script>
 
 
 {% endblock %}
