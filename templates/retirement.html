@@ -329,7 +329,7 @@
       </div>
     </div>
 
-    <!-- More controls (the ones you marked) -->
+    <!-- More controls -->
     <details class="mt-3">
       <summary class="h6 mb-2">More controls</summary>
       <div class="row g-3">
@@ -415,10 +415,7 @@
     if (!lab) return null;
     if (lab.control) return lab.control;
     const forId = lab.getAttribute('for');
-    if (forId) {
-      const el = document.getElementById(forId);
-      if (el) return el;
-    }
+    if (forId) { const el = document.getElementById(forId); if (el) return el; }
     const col = lab.closest('.col-md-4, .col, .form-group, .mb-3') || lab.parentElement;
     return col ? col.querySelector('input,select,textarea') : null;
   }
@@ -450,6 +447,17 @@
     const current_age     = nz(numFrom(findInput({labelIncludes:['Current Age'], names:['current_age']})), 53);
     const retirement_age  = nz(numFrom(findInput({labelIncludes:['Retirement Age'], names:['retirement_age']})), 65);
 
+    // CPP window: read from form (ids, names, or labels), fall back to RA/LE if missing
+    const life_expectancy = nz(numFrom(findInput({labelIncludes:['Expected Lifespan'], names:['expected_lifespan']})), 90);
+    const cpp_start_age   = nz(numFrom(findInput({
+                              ids:['cpp_start_age'], names:['cpp_start_age'],
+                              labelIncludes:['CPP Start Age','Support Start Age']
+                            })), retirement_age);
+    const cpp_end_age     = nz(numFrom(findInput({
+                              ids:['cpp_end_age'], names:['cpp_end_age'],
+                              labelIncludes:['CPP End Age','Support End Age']
+                            })), life_expectancy);
+
     const msav            = nz(numFrom(findInput({labelIncludes:['Monthly Savings'], names:['monthly_savings']})), 0);
     const annual_saving   = msav * 12;
 
@@ -460,8 +468,6 @@
     const post_ret_pct    = nz(numFrom(findInput({labelIncludes:['Post-Retire Return Rate'], names:['post_retire_return_rate']})), 4.5);
     const return_rate     = toDec(pre_ret_pct);
     const return_rate_after = toDec(post_ret_pct);
-
-    const life_expectancy = nz(numFrom(findInput({labelIncludes:['Expected Lifespan'], names:['expected_lifespan']})), 90);
 
     const mexp            = nz(numFrom(findInput({labelIncludes:['Monthly Living Expense'], names:['monthly_living_expense','living_expense']})), 0);
     const annual_expense  = mexp * 12;
@@ -497,6 +503,8 @@
       return_rate_after,
       annual_expense,
       cpp_monthly,
+      cpp_start_age,     // <-- from form
+      cpp_end_age,       // <-- from form
       asset_liquidations,
       inflation_rate,
       life_expectancy,
@@ -555,48 +563,45 @@
     }
   });
 
-// send ALL form values + slider overrides
-let lastForm = null;
-function collectParams() {
-  const form = gatherForm();
+  // send ALL form values + slider overrides
+  let lastForm = null;
+  function collectParams() {
+    const form = gatherForm();
 
-  // ---- overrides coming from the sliders ----
-  form.retirement_age      = +elAge.value;
-  form.annual_expense      = (+elExpMo.value) * 12;     // monthly → annual
-  form.return_rate_after   = (+elPost.value) / 100;     // deterministic
-  form.return_mean_after   = form.return_rate_after;    // MC
+    // overrides coming from sliders
+    form.retirement_age      = +elAge.value;
+    form.annual_expense      = (+elExpMo.value) * 12;     // monthly → annual
+    form.return_rate_after   = (+elPost.value) / 100;     // deterministic
+    form.return_mean_after   = form.return_rate_after;    // MC
 
-  form.return_rate         = (+elPre.value) / 100;
-  form.return_mean         = form.return_rate;
+    form.return_rate         = (+elPre.value) / 100;
+    form.return_mean         = form.return_rate;
 
-  form.annual_saving       = (+elSaveMo.value) * 12;
-  form.current_assets      = +elAssets.value;
-  form.income_tax_rate     = (+elTax.value) / 100;
-  form.inflation_rate      = (+elInfl.value) / 100;
-  form.inflation_mean      = form.inflation_rate;
-  form.life_expectancy     = +elLife.value;
+    form.annual_saving       = (+elSaveMo.value) * 12;
+    form.current_assets      = +elAssets.value;
+    form.income_tax_rate     = (+elTax.value) / 100;
+    form.inflation_rate      = (+elInfl.value) / 100;
+    form.inflation_mean      = form.inflation_rate;
+    form.life_expectancy     = +elLife.value;
 
-  // ✅ Ensure CPP window matches the main calculator semantics
-  form.cpp_start_age       = form.retirement_age;   // NEW
-  form.cpp_end_age         = form.life_expectancy;  // NEW
+    // NOTE: cpp_start_age / cpp_end_age are taken directly from gatherForm()
 
-  form.num_simulations     = 2000;
+    form.num_simulations     = 2000;
 
-  // ---- reflect labels ----
-  ageVal.textContent       = form.retirement_age;
-  expVal.textContent       = Number(+elExpMo.value).toLocaleString();
-  postVal.textContent      = (+elPost.value).toFixed(1);
-  preVal.textContent       = (+elPre.value).toFixed(1);
-  saveVal.textContent      = Number(+elSaveMo.value).toLocaleString();
-  assetsVal.textContent    = Number(+elAssets.value).toLocaleString();
-  taxVal.textContent       = (+elTax.value).toFixed(1);
-  inflVal.textContent      = (+elInfl.value).toFixed(1);
-  lifeVal.textContent      = form.life_expectancy;
+    // reflect labels
+    ageVal.textContent       = form.retirement_age;
+    expVal.textContent       = Number(+elExpMo.value).toLocaleString();
+    postVal.textContent      = (+elPost.value).toFixed(1);
+    preVal.textContent       = (+elPre.value).toFixed(1);
+    saveVal.textContent      = Number(+elSaveMo.value).toLocaleString();
+    assetsVal.textContent    = Number(+elAssets.value).toLocaleString();
+    taxVal.textContent       = (+elTax.value).toFixed(1);
+    inflVal.textContent      = (+elInfl.value).toFixed(1);
+    lifeVal.textContent      = form.life_expectancy;
 
-  lastForm = form;
-  return form;
-}
-
+    lastForm = form;
+    return form;
+  }
 
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
@@ -615,7 +620,7 @@ function collectParams() {
       }
       const data = await res.json();
 
-      // --- DEBUG: see exactly what the API used vs what we sent ---
+      // DEBUG
       if (data.debug) {
         console.groupCollapsed("LIVE DEBUG");
         console.table(data.debug.used_params || {});
@@ -648,9 +653,9 @@ function collectParams() {
 
   // initial draw
   ping();
-
 })();
 </script>
+
 
 
 
