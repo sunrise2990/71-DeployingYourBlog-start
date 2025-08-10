@@ -305,7 +305,6 @@
   <div class="card-body">
     <h5 class="card-title mb-3">⚡ Live What-If</h5>
 
-    <!-- Top quick controls -->
     <div class="row g-3">
       <div class="col-md-4">
         <label class="form-label">Retirement Age:
@@ -315,67 +314,19 @@
       </div>
 
       <div class="col-md-4">
-        <label class="form-label">Monthly Expense ($/mo):
-          <span id="lw_exp_val" class="fw-semibold">6,900</span>
+        <label class="form-label">Annual Expense ($/yr):
+          <span id="lw_exp_val" class="fw-semibold">72,000</span>
         </label>
-        <input type="range" id="lw_expense_mo" class="form-range" min="2000" max="20000" step="50" value="6900">
+        <input type="range" id="lw_expense" class="form-range" min="24000" max="180000" step="1000" value="72000">
       </div>
 
       <div class="col-md-4">
         <label class="form-label">Post-Ret Return (%):
-          <span id="lw_post_val" class="fw-semibold">6.0</span>
+          <span id="lw_post_val" class="fw-semibold">4.5</span>
         </label>
-        <input type="range" id="lw_mu_post" class="form-range" min="0" max="12" step="0.1" value="6.0">
+        <input type="range" id="lw_mu_post" class="form-range" min="0" max="10" step="0.1" value="4.5">
       </div>
     </div>
-
-    <!-- More controls (the ones you marked) -->
-    <details class="mt-3">
-      <summary class="h6 mb-2">More controls</summary>
-      <div class="row g-3">
-        <div class="col-md-4">
-          <label class="form-label">Pre-Ret Return (%):
-            <span id="lw_pre_val" class="fw-semibold">8.0</span>
-          </label>
-          <input type="range" id="lw_mu_pre" class="form-range" min="0" max="12" step="0.1" value="8.0">
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Monthly Savings ($/mo):
-            <span id="lw_save_val" class="fw-semibold">7,100</span>
-          </label>
-          <input type="range" id="lw_saving_mo" class="form-range" min="0" max="20000" step="100" value="7100">
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Current Assets ($):
-            <span id="lw_assets_val" class="fw-semibold">1,000,000</span>
-          </label>
-          <input type="range" id="lw_assets" class="form-range" min="0" max="5000000" step="50000" value="1000000">
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Income Tax Rate (%):
-            <span id="lw_tax_val" class="fw-semibold">12.0</span>
-          </label>
-          <input type="range" id="lw_tax" class="form-range" min="0" max="50" step="0.5" value="12">
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Inflation Rate (%):
-            <span id="lw_infl_val" class="fw-semibold">2.0</span>
-          </label>
-          <input type="range" id="lw_infl" class="form-range" min="0" max="10" step="0.1" value="2.0">
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Expected Lifespan (Age):
-            <span id="lw_life_val" class="fw-semibold">84</span>
-          </label>
-          <input type="range" id="lw_life" class="form-range" min="70" max="105" step="1" value="84">
-        </div>
-      </div>
-    </details>
 
     <canvas id="lw_assets_chart" class="mt-4"></canvas>
   </div>
@@ -383,29 +334,15 @@
 
 <script>
 (function () {
-  // Sliders + value spans
-  const elAge   = document.getElementById('lw_ret_age');
-  const elExpMo = document.getElementById('lw_expense_mo');
-  const elPost  = document.getElementById('lw_mu_post');
+  // UI elements (sliders + labels)
+  const elAge  = document.getElementById('lw_ret_age');
+  const elExp  = document.getElementById('lw_expense');   // annual $
+  const elPost = document.getElementById('lw_mu_post');   // %
+  const ageVal = document.getElementById('lw_age_val');
+  const expVal = document.getElementById('lw_exp_val');
+  const postVal= document.getElementById('lw_post_val');
 
-  const elPre   = document.getElementById('lw_mu_pre');
-  const elSaveMo= document.getElementById('lw_saving_mo');
-  const elAssets= document.getElementById('lw_assets');
-  const elTax   = document.getElementById('lw_tax');
-  const elInfl  = document.getElementById('lw_infl');
-  const elLife  = document.getElementById('lw_life');
-
-  const ageVal   = document.getElementById('lw_age_val');
-  const expVal   = document.getElementById('lw_exp_val');
-  const postVal  = document.getElementById('lw_post_val');
-  const preVal   = document.getElementById('lw_pre_val');
-  const saveVal  = document.getElementById('lw_save_val');
-  const assetsVal= document.getElementById('lw_assets_val');
-  const taxVal   = document.getElementById('lw_tax_val');
-  const inflVal  = document.getElementById('lw_infl_val');
-  const lifeVal  = document.getElementById('lw_life_val');
-
-  // -------- helpers to read the existing form --------
+  // ---------- helpers to read your form fields by id / name / label ----------
   const $ = (sel, root=document) => root.querySelector(sel);
 
   function findByLabelText(text) {
@@ -413,20 +350,33 @@
     const t = (text || '').toLowerCase();
     const lab = labels.find(lb => (lb.textContent || '').toLowerCase().includes(t));
     if (!lab) return null;
+
+    // 1) Properly wired label?
     if (lab.control) return lab.control;
+
+    // 2) for="id" wiring?
     const forId = lab.getAttribute('for');
     if (forId) {
       const el = document.getElementById(forId);
       if (el) return el;
     }
+
+    // 3) Fallback: nearest input/select/textarea in same column/container
     const col = lab.closest('.col-md-4, .col, .form-group, .mb-3') || lab.parentElement;
-    return col ? col.querySelector('input,select,textarea') : null;
+    if (col) {
+      const el = col.querySelector('input,select,textarea');
+      if (el) return el;
+    }
+    return null;
   }
 
   function findInput({ids=[], names=[], labelIncludes=[]}) {
     for (const id of ids)   { const el = document.getElementById(id); if (el) return el; }
     for (const nm of names) { const el = $(`[name="${nm}"]`);         if (el) return el; }
-    for (const txt of labelIncludes) { const el = findByLabelText(txt); if (el) return el; }
+    for (const txt of labelIncludes) {
+      const el = findByLabelText(txt);
+      if (el) return el;
+    }
     return null;
   }
 
@@ -441,11 +391,11 @@
     const raw = (el.value ?? el.textContent ?? '').toString();
     return Number(raw.replace(/[^\d.\-]/g, ''));
   }
+
   const toDec = x => (Number.isFinite(x) ? x/100 : NaN);
   const nz = (v, f) => (Number.isFinite(v) ? v : f);
-  const fmt = x => Number(x).toLocaleString();
 
-  // -------- snapshot the whole form --------
+  // ---------- gather ALL inputs from the page (so server doesn’t use defaults) ----------
   function gatherForm() {
     const current_age     = nz(numFrom(findInput({labelIncludes:['Current Age'], names:['current_age']})), 53);
     const retirement_age  = nz(numFrom(findInput({labelIncludes:['Retirement Age'], names:['retirement_age']})), 65);
@@ -474,12 +424,13 @@
     const current_assets  = nz(numFrom(findInput({labelIncludes:['Current Assets'], names:['current_assets']})), 0);
     const cpp_monthly     = nz(numFrom(findInput({labelIncludes:['Living Expense Support','CPP'], names:['cpp_monthly','living_expense_support']})), 0);
 
+    // Std dev selects like “Conservative (8%)”, “Stable (0.5%)”
     const ret_std_pct     = nz(numFrom(findInput({labelIncludes:['Return Std Dev'], names:['return_std_dev']})), 8);
     const infl_std_pct    = nz(numFrom(findInput({labelIncludes:['Inflation Std Dev'], names:['inflation_std_dev']})), 0.5);
     const return_std      = toDec(ret_std_pct);
     const inflation_std   = toDec(infl_std_pct);
 
-    // optional liquidations (1..3)
+    // Optional: up to 3 liquidations
     function liq(n){
       const amt = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation ${n}`], names:[`asset_liquidation_${n}`]})), 0);
       const age = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation Age ${n}`], names:[`asset_liquidation_age_${n}`]})), NaN);
@@ -497,12 +448,13 @@
       return_rate_after,
       annual_expense,
       cpp_monthly,
+      // keep cpp_start_age/cpp_end_age server defaults unless you add fields
       asset_liquidations,
       inflation_rate,
       life_expectancy,
       income_tax_rate,
 
-      // MC mirrors deterministic inputs
+      // MC layer mirrors deterministic rates/vols
       return_mean: return_rate,
       return_mean_after: return_rate_after,
       return_std,
@@ -511,30 +463,17 @@
     };
   }
 
-  // -------- initialize sliders from the form values --------
+  // ---------- initialize sliders from the form values ----------
   const base = gatherForm();
-  elAge.value    = base.retirement_age;
-  elExpMo.value  = Math.round((base.annual_expense/12) / 50) * 50; // step 50
-  elPost.value   = Math.round((base.return_rate_after * 100) * 10) / 10;
+  elAge.value  = base.retirement_age;
+  elExp.value  = Math.round(base.annual_expense / 1000) * 1000;
+  elPost.value = Math.round((base.return_rate_after * 100) * 10) / 10;
 
-  elPre.value    = Math.round((base.return_rate * 100) * 10) / 10;
-  elSaveMo.value = Math.round((base.annual_saving/12) / 100) * 100;
-  elAssets.value = base.current_assets;
-  elTax.value    = Math.round((base.income_tax_rate * 100) * 2) / 2;
-  elInfl.value   = Math.round((base.inflation_rate * 100) * 10) / 10;
-  elLife.value   = base.life_expectancy;
+  ageVal.textContent  = elAge.value;
+  expVal.textContent  = Number(elExp.value).toLocaleString();
+  postVal.textContent = (+elPost.value).toFixed(1);
 
-  ageVal.textContent    = elAge.value;
-  expVal.textContent    = fmt(elExpMo.value);
-  postVal.textContent   = (+elPost.value).toFixed(1);
-  preVal.textContent    = (+elPre.value).toFixed(1);
-  saveVal.textContent   = fmt(elSaveMo.value);
-  assetsVal.textContent = fmt(elAssets.value);
-  taxVal.textContent    = (+elTax.value).toFixed(1);
-  inflVal.textContent   = (+elInfl.value).toFixed(1);
-  lifeVal.textContent   = elLife.value;
-
-  // -------- Chart --------
+  // ---------- Chart ----------
   const ctx = document.getElementById('lw_assets_chart').getContext('2d');
   const chart = new Chart(ctx, {
     type: 'line',
@@ -548,69 +487,43 @@
       responsive: true,
       animation: false,
       interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { title: { display: true, text: 'Age' } },
-        y: { ticks: { callback: v => Number(v).toLocaleString() } }
-      }
+      scales: { y: { ticks: { callback: v => Number(v).toLocaleString() } } }
     }
   });
 
+  function fmt(x){ return Number(x).toLocaleString(); }
+
   // send ALL form values + slider overrides
-  let lastForm = null;
   function collectParams() {
-    const form = gatherForm();
+    const form = gatherForm();               // fresh snapshot
+    const post_rate_pct = +elPost.value;
+    const post_rate     = post_rate_pct / 100;
 
-    // override from sliders
-    form.retirement_age     = +elAge.value;
-    form.annual_expense     = (+elExpMo.value) * 12;         // monthly → annual
-    form.return_rate_after  = (+elPost.value) / 100;
-    form.return_mean_after  = form.return_rate_after;
+    form.retirement_age    = +elAge.value;
+    form.annual_expense    = +elExp.value;
+    form.return_rate_after = post_rate;     // deterministic
+    form.return_mean_after = post_rate;     // MC
+    form.num_simulations   = 2000;
 
-    form.return_rate        = (+elPre.value) / 100;
-    form.return_mean        = form.return_rate;
+    ageVal.textContent = form.retirement_age;
+    expVal.textContent = fmt(form.annual_expense);
+    postVal.textContent = post_rate_pct.toFixed(1);
 
-    form.annual_saving      = (+elSaveMo.value) * 12;
-    form.current_assets     = +elAssets.value;
-    form.income_tax_rate    = (+elTax.value) / 100;
-    form.inflation_rate     = (+elInfl.value) / 100;
-    form.inflation_mean     = form.inflation_rate;
-    form.life_expectancy    = +elLife.value;
-
-    form.num_simulations    = 2000;
-
-    // reflect labels
-    ageVal.textContent    = form.retirement_age;
-    expVal.textContent    = fmt(+elExpMo.value);
-    postVal.textContent   = (+elPost.value).toFixed(1);
-    preVal.textContent    = (+elPre.value).toFixed(1);
-    saveVal.textContent   = fmt(+elSaveMo.value);
-    assetsVal.textContent = fmt(+elAssets.value);
-    taxVal.textContent    = (+elTax.value).toFixed(1);
-    inflVal.textContent   = (+elInfl.value).toFixed(1);
-    lifeVal.textContent   = form.life_expectancy;
-
-    lastForm = form;
     return form;
   }
 
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
   async function ping() {
-    const payload = collectParams();
     const url = "{{ url_for('projects.live_update') }}";
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(collectParams())
     });
     if (!res.ok) return;
     const data = await res.json();
-
-    // X-axis = Age (compute from current_age + length)
-    const n = (data.p50?.length) || (data.deterministic?.length) || 0;
-    const startAge = (lastForm?.current_age) ?? payload.current_age ?? 0;
-    chart.data.labels = Array.from({length: n}, (_, i) => startAge + i);
-
+    chart.data.labels           = data.labels || [];
     chart.data.datasets[0].data = data.deterministic || [];
     chart.data.datasets[1].data = data.p10 || [];
     chart.data.datasets[2].data = data.p50 || [];
@@ -619,8 +532,10 @@
   }
 
   const send = debounce(ping, 120);
-  [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
-    .forEach(el => { el.addEventListener('input', send); el.addEventListener('change', send); });
+  [elAge, elExp, elPost].forEach(el => {
+    el.addEventListener('input', send);
+    el.addEventListener('change', send);
+  });
 
   console.log("Live What-If ready (form-derived)");
   window.__liveTest = { ping, collectParams };
@@ -629,7 +544,6 @@
   ping();
 })();
 </script>
-
 
 
 
