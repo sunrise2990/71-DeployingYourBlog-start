@@ -88,22 +88,52 @@ def goals_to_liquidations_adapter(
     per_age: Dict[int, Dict[str, float]]
 ) -> List[dict]:
     """
-    MVP (post-tax goals): convert goals into asset 'liquidations':
-    - inflows -> positive liquidation at that age
-    - expenses -> negative liquidation at that age
-    NOTE: This does NOT increase 'Living_Exp' → taxes won't reflect goal expenses.
-          That’s acceptable for MVP and keeps core calculators untouched.
+    Convert goal cashflows into 'asset_liquidations' entries understood by the
+    calculators.
+
+    CONVENTION (most calculators use this):
+      - Expense/outflow  -> positive liquidation (reduces portfolio)
+      - Inflow           -> negative liquidation (adds to portfolio)
+
+    Notes
+    -----
+    - This MVP maps goals post-tax and does NOT alter 'Living_Exp' for tax calcs.
+    - Existing liquidations are preserved and merged by age.
+    - Output is sorted by age and rounded to cents.
     """
-    liqs = list(current_liqs or [])
+    # Start with existing liquidations, grouped by age
+    agg: Dict[int, float] = {}
+    for row in (current_liqs or []):
+        try:
+            age = int(row.get("age"))
+            amt = float(row.get("amount", 0.0))
+        except Exception:
+            continue
+        agg[age] = agg.get(age, 0.0) + amt
+
+    # Fold in goals: +expense, -inflow
     for age, vals in (per_age or {}).items():
-        inflow = float(vals.get("inflow", 0.0))
+        try:
+            a = int(age)
+        except Exception:
+            continue
+        inflow  = float(vals.get("inflow", 0.0))
         expense = float(vals.get("expense", 0.0))
         net = 0.0
-        if inflow:
-            net += inflow
         if expense:
-            net -= expense
-        if net != 0.0:
-            liqs.append({"age": int(age), "amount": float(net)})
-    return liqs
+            net += expense      # expense = withdrawal (+)
+        if inflow:
+            net -= inflow       # inflow  = deposit (-)
+        if net:
+            agg[a] = agg.get(a, 0.0) + net
+
+    # Emit as sorted list, drop ~zero, round to cents
+    out: List[dict] = []
+    for age in sorted(agg.keys()):
+        amt = round(agg[age], 2)
+        if abs(amt) < 0.005:
+            continue
+        out.append({"age": int(age), "amount": float(amt)})
+
+    return out
 

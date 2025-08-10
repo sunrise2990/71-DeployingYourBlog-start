@@ -611,12 +611,8 @@
 
     form.num_simulations    = 2000;
 
-
-
-  // 🔗 attach goals (if the separate Goals module exists)
-  form.goal_events = (window.GoalsModule?.current() || []);
-
-
+    // 🔗 attach goals (if the separate Goals module exists)
+    form.goal_events = (window.GoalsModule?.current() || []);
 
     // reflect labels
     updateLabelsFromSliders();
@@ -662,15 +658,24 @@
   }
 
   const send = debounce(ping, 120);
+
   [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
-    .forEach(el => { el.addEventListener('input', send); el.addEventListener('change', send); });
+    .forEach(el => {
+      el.addEventListener('input', send);
+      el.addEventListener('change', send);
+    });
+
+  // Make goal edits trigger a live update too (works if GoalsModule is already loaded)
+  if (window.GoalsModule?.onChange) {
+    window.GoalsModule.onChange(() => { send(); });
+  }
 
   // --- RESET: snap sliders back to whatever the main form currently holds
   document.getElementById('lw_reset').addEventListener('click', () => {
-    const f = gatherForm();           // read the *current* baseline from the page
-    setSlidersFromForm(f);            // write sliders
-    updateLabelsFromSliders();        // sync little value spans
-    ping();                           // redraw with baseline
+    const f = gatherForm();
+    setSlidersFromForm(f);
+    updateLabelsFromSliders();
+    ping();
   });
 
   console.log("Live What-If ready (form-derived)");
@@ -680,9 +685,6 @@
   ping();
 })();
 </script>
-
-
-
 
 <!-- ==== Goals (modular, optional) ==== -->
 <div class="card mt-3">
@@ -764,6 +766,112 @@
         </table>
       </div>
 
+<script id="goals-module">
+(() => {
+  // ---- grab elements
+  const rowsEl   = document.getElementById('goal_rows');
+  const addBtn   = document.getElementById('goal_add');
+
+  const nameEl   = document.getElementById('g_name');
+  const typeEl   = document.getElementById('g_type');     // expense | inflow
+  const amtEl    = document.getElementById('g_amt');
+  const ageEl    = document.getElementById('g_age');
+  const recEl    = document.getElementById('g_rec');      // once | annual | years
+  const yearsWrap= document.getElementById('g_years_wrap');
+  const yearsEl  = document.getElementById('g_years');
+  const endWrap  = document.getElementById('g_endage_wrap');
+  const endEl    = document.getElementById('g_endage');
+  const inflEl   = document.getElementById('g_infl');
+
+  // ---- tiny state + pub/sub
+  // each row: {enabled, name, is_expense, amount, start_age, recurrence, years?, end_age?, inflation_linked}
+  let rows = [];
+  const subs = new Set();
+  const notify = () => subs.forEach(fn => { try { fn(); } catch {} });
+  const onChange = fn => (subs.add(fn), () => subs.delete(fn));
+  const current = () => rows.filter(r => r.enabled !== false);
+
+  // ---- helpers
+  function esc(s){ return (s ?? '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function whenText(r){
+    if (r.recurrence === 'annual') return `Age ${r.start_age}–${r.end_age ?? ''}`;
+    if (r.recurrence === 'years')  return `Age ${r.start_age} × ${r.years}`;
+    return `At ${r.start_age}`;
+  }
+  function render(){
+    rowsEl.innerHTML = '';
+    rows.forEach((r,i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input class="form-check-input g-en" type="checkbox" data-i="${i}" ${r.enabled !== false ? 'checked' : ''}></td>
+        <td>${esc(r.name || 'Goal')}</td>
+        <td>${r.is_expense ? 'Expense' : 'Inflow'}</td>
+        <td>${whenText(r)}</td>
+        <td class="text-end">$${(+r.amount).toLocaleString()}</td>
+        <td>${r.inflation_linked ? 'Yes' : 'No'}</td>
+        <td><button class="btn btn-sm btn-outline-danger g-del" data-i="${i}">×</button></td>`;
+      rowsEl.appendChild(tr);
+    });
+  }
+  function readNew(){
+    return {
+      enabled: true,
+      name: (nameEl.value || 'Goal').trim(),
+      is_expense: (typeEl.value !== 'inflow'),
+      amount: +amtEl.value || 0,
+      start_age: parseInt(ageEl.value, 10) || 0,
+      recurrence: recEl.value,
+      years: recEl.value === 'years'  ? (parseInt(yearsEl.value, 10) || 1) : undefined,
+      end_age: recEl.value === 'annual' ? (parseInt(endEl.value, 10) || undefined) : undefined,
+      inflation_linked: !!inflEl.checked
+    };
+  }
+
+  // ---- UI wiring
+  recEl.addEventListener('change', () => {
+    yearsWrap.classList.toggle('d-none', recEl.value !== 'years');
+    endWrap.classList.toggle('d-none',   recEl.value !== 'annual');
+  });
+
+  addBtn.addEventListener('click', () => {
+    rows.push(readNew());
+    render();
+    notify();
+  });
+
+  rowsEl.addEventListener('click', e => {
+    const i = e.target.getAttribute('data-i');
+    if (i == null) return;
+    if (e.target.classList.contains('g-del')) {
+      rows.splice(+i, 1);
+      render();
+      notify();
+    }
+  });
+  rowsEl.addEventListener('change', e => {
+    if (e.target.classList.contains('g-en')) {
+      const i = +e.target.getAttribute('data-i');
+      rows[i].enabled = e.target.checked;
+      notify();
+    }
+  });
+
+  // ---- expose API
+  window.GoalsModule = { current, onChange };
+
+  // ---- late-bind Live What-If recalc (in case Live block ran earlier)
+  try {
+    if (window.__liveTest?.ping) {
+      let t;
+      onChange(() => {
+        clearTimeout(t);
+        t = setTimeout(() => window.__liveTest.ping(), 120);
+      });
+    }
+  } catch {}
+})();
+</script>
+
       <p class="text-muted small mb-0">
         Note: MVP routes convert goals to asset liquidations (post-tax). These don’t alter Living Expense (for taxes) yet—
         that keeps the core calculators untouched.
@@ -773,103 +881,7 @@
 </div>
 
 
-<script>
-/* ---- GoalsModule: minimal state + wiring ---- */
-(function () {
-  const rows = document.getElementById('goal_rows');
-  const elName   = document.getElementById('g_name');
-  const elType   = document.getElementById('g_type');
-  const elAmt    = document.getElementById('g_amt');
-  const elAge    = document.getElementById('g_age');
-  const elRec    = document.getElementById('g_rec');
-  const elYearsW = document.getElementById('g_years_wrap');
-  const elYears  = document.getElementById('g_years');
-  const elEndW   = document.getElementById('g_endage_wrap');
-  const elEnd    = document.getElementById('g_endage');
-  const elInfl   = document.getElementById('g_infl');
-  const elAdd    = document.getElementById('goal_add');
 
-  let goals = []; // each: {enabled, name, start_age, amount, is_expense, inflation_linked, recurrence, years?, end_age?}
-
-  function usd(v){ return Number(v||0).toLocaleString(undefined,{maximumFractionDigits:0}); }
-  function whenTxt(g){
-    if (g.recurrence === 'once')   return `At ${g.start_age}`;
-    if (g.recurrence === 'years')  return `${g.start_age} for ${g.years||1}y`;
-    const end = g.end_age ?? g.start_age;
-    return `${g.start_age}–${end}`;
-  }
-
-  function render(){
-    rows.innerHTML = goals.map((g,i)=>`
-      <tr data-i="${i}">
-        <td><input type="checkbox" class="form-check-input goal-enable" ${g.enabled?'checked':''}></td>
-        <td>${g.name}</td>
-        <td>${g.is_expense ? 'Expense' : 'Inflow'}</td>
-        <td>${whenTxt(g)}</td>
-        <td class="text-end">$${usd(g.amount)}</td>
-        <td>${g.inflation_linked ? 'Yes' : 'No'}</td>
-        <td><button type="button" class="btn btn-sm btn-outline-danger goal-del">&times;</button></td>
-      </tr>`).join('');
-  }
-
-  function addGoal(){
-    const rec = elRec.value;
-    const g = {
-      enabled: true,
-      name: (elName.value || 'Goal').trim(),
-      start_age: +elAge.value || 0,
-      amount: +elAmt.value || 0,
-      is_expense: (elType.value === 'expense'),
-      inflation_linked: !!elInfl.checked,
-      recurrence: rec
-    };
-    if (rec === 'years')  g.years   = +elYears.value || 1;
-    if (rec === 'annual') g.end_age = +elEnd.value   || g.start_age;
-
-    goals.push(g);
-    render();
-    // nudge live update
-    window.__liveTest?.ping();
-  }
-
-  // toggle the extra inputs depending on recurrence
-  function recChanged(){
-    const v = elRec.value;
-    elYearsW.classList.toggle('d-none', v !== 'years');
-    elEndW.classList.toggle('d-none',   v !== 'annual');
-  }
-
-  // row events (enable/disable + delete)
-  rows.addEventListener('change', (e)=>{
-    if (!e.target.classList.contains('goal-enable')) return;
-    const i = +e.target.closest('tr').dataset.i;
-    goals[i].enabled = e.target.checked;
-    window.__liveTest?.ping();
-  });
-  rows.addEventListener('click', (e)=>{
-    const del = e.target.closest('.goal-del');
-    if (!del) return;
-    const i = +del.closest('tr').dataset.i;
-    goals.splice(i,1);
-    render();
-    window.__liveTest?.ping();
-  });
-
-  elAdd.addEventListener('click', addGoal);
-  elRec.addEventListener('change', recChanged);
-  recChanged(); // set correct visibility on load
-
-  // public API for the Live What-If block
-  window.GoalsModule = {
-    current(){
-      // return only enabled goals, and strip the 'enabled' flag
-      return goals.filter(g=>g.enabled).map(({enabled, ...rest}) => rest);
-    },
-    all(){ return goals.slice(); },
-    clear(){ goals = []; render(); window.__liveTest?.ping(); }
-  };
-})();
-</script>
 
 
 
