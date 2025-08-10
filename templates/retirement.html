@@ -358,7 +358,7 @@
 
         <div class="col-md-2">
           <label class="form-label">Amount ($, today)</label>
-          <input id="goal_amount" type="number" class="form-control" min="0" step="1000" placeholder="30000">
+          <input id="goal_amount" type="text" class="form-control" placeholder="30000">
         </div>
 
         <div class="col-md-2">
@@ -370,8 +370,8 @@
           <label class="form-label">Recurrence</label>
           <select id="goal_recurrence" class="form-select">
             <option value="once" selected>Once (at start age)</option>
-            <option value="annual">Annual (from start..end age)</option>
-            <option value="years">X Years (consecutive from start)</option>
+            <option value="annual">Annual (start..end age)</option>
+            <option value="years">X Years (from start)</option>
           </select>
         </div>
 
@@ -411,9 +411,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="goals_tbody">
-            <!-- rows injected by JS -->
-          </tbody>
+          <tbody id="goals_tbody"></tbody>
         </table>
       </div>
       <div class="text-muted small">
@@ -429,11 +427,10 @@
 
 <script>
 (function () {
-  // =================== Sliders + value spans ===================
+  // ========== Slider refs ==========
   const elAge   = document.getElementById('lw_ret_age');
   const elExpMo = document.getElementById('lw_expense_mo');
   const elPost  = document.getElementById('lw_mu_post');
-
   const elPre   = document.getElementById('lw_mu_pre');
   const elSaveMo= document.getElementById('lw_saving_mo');
   const elAssets= document.getElementById('lw_assets');
@@ -451,22 +448,18 @@
   const inflVal  = document.getElementById('lw_infl_val');
   const lifeVal  = document.getElementById('lw_life_val');
 
-  // =================== GOALS UI refs ===================
-  const gName  = document.getElementById('goal_name');
-  const gType  = document.getElementById('goal_type');
-  const gAmt   = document.getElementById('goal_amount');
-  const gStart = document.getElementById('goal_start_age');
-  const gRec   = document.getElementById('goal_recurrence');
-  const gEndW  = document.getElementById('goal_end_age_wrap');
-  const gEnd   = document.getElementById('goal_end_age');
-  const gYearsW= document.getElementById('goal_years_wrap');
-  const gYears = document.getElementById('goal_years');
-  const gInfl  = document.getElementById('goal_infl_linked');
-  const gAdd   = document.getElementById('goal_add');
-  const gBody  = document.getElementById('goals_tbody');
-
-  // ---- helpers to read the existing form ----
+  // ===== helpers =====
   const $ = (sel, root=document) => root.querySelector(sel);
+  const fmt = x => Number(x).toLocaleString();
+  const toDec = x => (Number.isFinite(x) ? x/100 : NaN);
+  const nz = (v, f) => (Number.isFinite(v) ? v : f);
+  function numFrom(el) {
+    if (!el) return NaN;
+    const raw = (el.value ?? el.textContent ?? '').toString().replace(/[^\d.\-]/g, '');
+    return Number(raw);
+  }
+  function escapeHtml(s){ return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
   function findByLabelText(text) {
     const labels = Array.from(document.querySelectorAll('label'));
     const t = (text || '').toLowerCase();
@@ -484,28 +477,13 @@
     for (const txt of labelIncludes) { const el = findByLabelText(txt); if (el) return el; }
     return null;
   }
-  function numFrom(el) {
-    if (!el) return NaN;
-    if (el.tagName === 'SELECT') {
-      const opt = el.options[el.selectedIndex];
-      const txt = (opt && opt.text) || el.value || '';
-      const m = txt.toString().match(/[\d.]+/);
-      return m ? Number(m[0]) : NaN;
-    }
-    const raw = (el.value ?? el.textContent ?? '').toString();
-    return Number(raw.replace(/[^\d.\-]/g, ''));
-  }
-  const toDec = x => (Number.isFinite(x) ? x/100 : NaN);
-  const nz = (v, f) => (Number.isFinite(v) ? v : f);
-  const fmt = x => Number(x).toLocaleString();
 
-  // =================== snapshot the whole form ===================
+  // ===== snapshot main form =====
   function gatherForm() {
     const current_age     = nz(numFrom(findInput({labelIncludes:['Current Age'], names:['current_age']})), 53);
     const retirement_age  = nz(numFrom(findInput({labelIncludes:['Retirement Age'], names:['retirement_age']})), 65);
     const life_expectancy = nz(numFrom(findInput({labelIncludes:['Expected Lifespan'], names:['expected_lifespan']})), 90);
 
-    // Extended-year -> CPP window
     const ext_from = nz(numFrom(findInput({ids:['extended_year_from_age','extended_from_age'],names:['extended_year_from_age'],labelIncludes:['Extended Year From']})), retirement_age);
     const ext_to_raw = nz(numFrom(findInput({ids:['extended_year_to_age','extended_to_age'],names:['extended_year_to_age'],labelIncludes:['Extended Year To']})), life_expectancy + 1);
     const cpp_start_age = ext_from;
@@ -538,7 +516,6 @@
     const return_std      = toDec(ret_std_pct);
     const inflation_std   = toDec(infl_std_pct);
 
-    // optional liquidations (1..3)
     function liq(n){
       const amt = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation ${n}`], names:[`asset_liquidation_${n}`]})), 0);
       const age = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation Age ${n}`], names:[`asset_liquidation_age_${n}`]})), NaN);
@@ -562,8 +539,6 @@
       inflation_rate,
       life_expectancy,
       income_tax_rate,
-
-      // MC mirrors deterministic
       return_mean: return_rate,
       return_mean_after: return_rate_after,
       return_std,
@@ -572,36 +547,11 @@
     };
   }
 
-  // =================== initialize sliders ===================
-  const base = gatherForm();
-  setSlidersFromForm(base);
-  updateLabelsFromSliders();
-
-  // =================== Chart ===================
-  const ctx = document.getElementById('lw_assets_chart').getContext('2d');
-  const chart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: [], datasets: [
-      { label: 'Deterministic', data: [] },
-      { label: 'MC P10', data: [] },
-      { label: 'MC Median', data: [] },
-      { label: 'MC P90', data: [] },
-    ]},
-    options: {
-      responsive: true,
-      animation: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: { x: { title: { display: true, text: 'Age' } },
-               y: { ticks: { callback: v => Number(v).toLocaleString() } } }
-    }
-  });
-
-  // Helpers to write sliders/labels from a form snapshot
+  // ===== init sliders + labels =====
   function setSlidersFromForm(f) {
     elAge.value     = f.retirement_age;
     elExpMo.value   = Math.round((f.annual_expense/12) / 50) * 50;
     elPost.value    = Math.round((f.return_rate_after * 100) * 10) / 10;
-
     elPre.value     = Math.round((f.return_rate * 100) * 10) / 10;
     elSaveMo.value  = Math.round((f.annual_saving/12) / 100) * 100;
     elAssets.value  = f.current_assets;
@@ -621,58 +571,61 @@
     lifeVal.textContent    = elLife.value;
   }
 
-  // =================== GOALS: minimal state + wiring ===================
-  let goals = []; // each: {id, name, start_age, amount, is_expense, inflation_linked, recurrence, end_age?, years?, enabled}
+  const base = gatherForm();
+  setSlidersFromForm(base);
+  updateLabelsFromSliders();
 
-  // show/hide end_age/years inputs per recurrence
-  function syncGoalRecurrenceUI() {
-    const rec = gRec.value;
-    gEndW.classList.toggle('d-none', rec !== 'annual');
-    gYearsW.classList.toggle('d-none', rec !== 'years');
-  }
-  gRec.addEventListener('change', syncGoalRecurrenceUI);
-  syncGoalRecurrenceUI();
-
-  function addGoal() {
-    const name = (gName.value || '').trim() || '(unnamed)';
-    const type = gType.value; // 'expense' | 'inflow'
-    const amount = Number(gAmt.value || 0);
-    const start_age = Number(gStart.value || 0);
-    const recurrence = gRec.value; // 'once'|'annual'|'years'
-    const end_age = (recurrence === 'annual') ? Number(gEnd.value || NaN) : undefined;
-    const years = (recurrence === 'years') ? Number(gYears.value || NaN) : undefined;
-    const inflation_linked = !!gInfl.checked;
-
-    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(start_age)) {
-      alert('Please enter a valid amount and start age.');
-      return;
+  // ===== Chart (create early, before goals wiring) =====
+  const ctx = document.getElementById('lw_assets_chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'Deterministic', data: [] },
+      { label: 'MC P10', data: [] },
+      { label: 'MC Median', data: [] },
+      { label: 'MC P90', data: [] },
+    ]},
+    options: {
+      responsive: true,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { title: { display: true, text: 'Age' } },
+               y: { ticks: { callback: v => Number(v).toLocaleString() } } }
     }
+  });
 
-    const g = {
-      id: cryptoRandomId(),
-      name,
-      start_age,
-      amount,
-      is_expense: (type === 'expense'),
-      inflation_linked,
-      recurrence,
-      enabled: true
-    };
-    if (recurrence === 'annual' && Number.isFinite(end_age)) g.end_age = end_age;
-    if (recurrence === 'years'  && Number.isFinite(years))   g.years   = years;
+  // =================== GOALS: minimal state + wiring ===================
+  const gName  = document.getElementById('goal_name');
+  const gType  = document.getElementById('goal_type');
+  const gAmt   = document.getElementById('goal_amount');
+  const gStart = document.getElementById('goal_start_age');
+  const gRec   = document.getElementById('goal_recurrence');
+  const gEndW  = document.getElementById('goal_end_age_wrap');
+  const gEnd   = document.getElementById('goal_end_age');
+  const gYearsW= document.getElementById('goal_years_wrap');
+  const gYears = document.getElementById('goal_years');
+  const gInfl  = document.getElementById('goal_infl_linked');
+  const gAdd   = document.getElementById('goal_add');
+  const gBody  = document.getElementById('goals_tbody');
 
-    goals.push(g);
-    renderGoals();
-    ping(); // recalc
-    // soft clear inputs (keep recurrence/type)
-    gName.value = ''; gAmt.value = ''; gStart.value = ''; gEnd.value = ''; gYears.value = '';
-  }
+  let goals = []; // {id,name,start_age,amount,is_expense,inflation_linked,recurrence,end_age?,years?,enabled}
 
   function cryptoRandomId() {
     try { return crypto.randomUUID(); } catch(e) { return 'g_' + Math.random().toString(36).slice(2); }
   }
+  function syncGoalRecurrenceUI() {
+    if (!gRec || !gEndW || !gYearsW) return;
+    const rec = gRec.value;
+    gEndW.classList.toggle('d-none', rec !== 'annual');
+    gYearsW.classList.toggle('d-none', rec !== 'years');
+  }
+  if (gRec) {
+    gRec.addEventListener('change', syncGoalRecurrenceUI);
+    syncGoalRecurrenceUI();
+  }
 
   function renderGoals() {
+    if (!gBody) return;
     gBody.innerHTML = '';
     if (!goals.length) {
       gBody.innerHTML = `<tr><td colspan="7" class="text-muted">No goals added.</td></tr>`;
@@ -701,40 +654,84 @@
     }
   }
 
-  function escapeHtml(s){ return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function addGoal() {
+    if (!gName || !gType || !gAmt || !gStart || !gRec || !gInfl) return;
+    const name = (gName.value || '').trim() || '(unnamed)';
+    const type = gType.value;
+    const amount = Number((gAmt.value || '').toString().replace(/[^\d.\-]/g, ''));
+    const start_age = Number(gStart.value || 0);
+    const recurrence = gRec.value;
+    const end_age = (recurrence === 'annual') ? Number(gEnd?.value || NaN) : undefined;
+    const years = (recurrence === 'years') ? Number(gYears?.value || NaN) : undefined;
+    const inflation_linked = !!gInfl.checked;
 
-  gAdd.addEventListener('click', addGoal);
-  gBody.addEventListener('click', (e) => {
-    const tr = e.target.closest('tr'); if (!tr) return;
-    const id = tr.dataset.id;
-    const act = e.target.getAttribute('data-act') || (e.target.type === 'checkbox' ? 'toggle' : '');
-    if (act === 'remove') {
-      goals = goals.filter(x => x.id !== id);
-      renderGoals();
-      ping();
-    } else if (act === 'toggle') {
-      const g = goals.find(x => x.id === id);
-      if (g) { g.enabled = !g.enabled; }
-      renderGoals();
-      ping();
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(start_age)) {
+      alert('Please enter a valid amount and start age.');
+      return;
     }
-  });
 
-  // =================== payload composition ===================
+    const g = {
+      id: cryptoRandomId(),
+      name,
+      start_age,
+      amount,
+      is_expense: (type === 'expense'),
+      inflation_linked,
+      recurrence,
+      enabled: true
+    };
+    if (recurrence === 'annual' && Number.isFinite(end_age)) g.end_age = end_age;
+    if (recurrence === 'years'  && Number.isFinite(years))   g.years   = years;
+
+    goals.push(g);
+    renderGoals();
+    ping();
+    // soft clear
+    gName.value = ''; gAmt.value = ''; gStart.value = ''; if (gEnd) gEnd.value = ''; if (gYears) gYears.value = '';
+  }
+
+  if (gAdd) gAdd.addEventListener('click', addGoal);
+
+  if (gBody) {
+    gBody.addEventListener('click', (e) => {
+      const tr = e.target.closest('tr'); if (!tr) return;
+      const id = tr.dataset.id;
+      const act = e.target.getAttribute('data-act') || (e.target.type === 'checkbox' ? 'toggle' : '');
+      if (act === 'remove') {
+        goals = goals.filter(x => x.id !== id);
+        renderGoals();
+        ping();
+      } else if (act === 'toggle') {
+        const g = goals.find(x => x.id === id);
+        if (g) g.enabled = !g.enabled;
+        renderGoals();
+        ping();
+      }
+    });
+  }
+
+  // ===== payload/updates =====
   let lastForm = null;
+  function updateLabelsFromSliders() {
+    ageVal.textContent     = elAge.value;
+    expVal.textContent     = fmt(elExpMo.value);
+    postVal.textContent    = (+elPost.value).toFixed(1);
+    preVal.textContent     = (+elPre.value).toFixed(1);
+    saveVal.textContent    = fmt(elSaveMo.value);
+    assetsVal.textContent  = fmt(elAssets.value);
+    taxVal.textContent     = (+elTax.value).toFixed(1);
+    inflVal.textContent    = (+elInfl.value).toFixed(1);
+    lifeVal.textContent    = elLife.value;
+  }
 
   function collectParams() {
     const form = gatherForm();
-
-    // slider overrides
     form.retirement_age     = +elAge.value;
     form.annual_expense     = (+elExpMo.value) * 12;
     form.return_rate_after  = (+elPost.value) / 100;
     form.return_mean_after  = form.return_rate_after;
-
     form.return_rate        = (+elPre.value) / 100;
     form.return_mean        = form.return_rate;
-
     form.annual_saving      = (+elSaveMo.value) * 12;
     form.current_assets     = +elAssets.value;
     form.income_tax_rate    = (+elTax.value) / 100;
@@ -742,21 +739,15 @@
     form.inflation_mean     = form.inflation_rate;
     form.life_expectancy    = +elLife.value;
 
-    // include enabled goals only (strip UI-only fields)
-    form.goal_events = goals
-      .filter(g => g.enabled)
-      .map(({id, enabled, ...rest}) => rest);
+    // include enabled goals only
+    form.goal_events = goals.filter(g => g.enabled).map(({id, enabled, ...rest}) => rest);
 
     form.num_simulations    = 2000;
-
-    // reflect labels
     updateLabelsFromSliders();
-
     lastForm = form;
     return form;
   }
 
-  // =================== debounce + fetch ===================
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
   async function ping() {
@@ -795,24 +786,21 @@
 
   const send = debounce(ping, 120);
   [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
-    .forEach(el => { el.addEventListener('input', send); el.addEventListener('change', send); });
+    .forEach(el => { el?.addEventListener('input', send); el?.addEventListener('change', send); });
 
-  // --- RESET: snap sliders back to whatever the main form currently holds
-  document.getElementById('lw_reset').addEventListener('click', () => {
-    const f = gatherForm();           // read the *current* baseline from the page
-    setSlidersFromForm(f);            // write sliders
-    updateLabelsFromSliders();        // sync little value spans
-    ping();                           // redraw with baseline (goals remain as set)
+  document.getElementById('lw_reset')?.addEventListener('click', () => {
+    const f = gatherForm();
+    setSlidersFromForm(f);
+    updateLabelsFromSliders();
+    ping();
   });
 
-  console.log("Live What-If ready (form-derived, goals-enabled)");
-  window.__liveTest = { ping, collectParams };
-
-  // initial draw
+  // initial
   renderGoals();
   ping();
 })();
 </script>
+
 
 
 
