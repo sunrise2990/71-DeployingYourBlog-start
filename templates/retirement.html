@@ -603,24 +603,40 @@ function collectParams() {
   async function ping() {
     const payload = collectParams();
     const url = "{{ url_for('projects.live_update') }}";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) return;
-    const data = await res.json();
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        console.error("live-update failed", res.status, await res.text());
+        return;
+      }
+      const data = await res.json();
 
-    // X-axis = Age (compute from current_age + length)
-    const n = (data.p50?.length) || (data.deterministic?.length) || 0;
-    const startAge = (lastForm?.current_age) ?? payload.current_age ?? 0;
-    chart.data.labels = Array.from({length: n}, (_, i) => startAge + i);
+      // --- DEBUG: see exactly what the API used vs what we sent ---
+      if (data.debug) {
+        console.groupCollapsed("LIVE DEBUG");
+        console.table(data.debug.used_params || {});
+        console.log("Deterministic last:", data.debug?.derived?.deterministic_last);
+        console.log("SENT PAYLOAD", payload);
+        console.groupEnd();
+      }
 
-    chart.data.datasets[0].data = data.deterministic || [];
-    chart.data.datasets[1].data = data.p10 || [];
-    chart.data.datasets[2].data = data.p50 || [];
-    chart.data.datasets[3].data = data.p90 || [];
-    chart.update('none');
+      // X-axis = Age (compute from current_age + length)
+      const n = (data.p50?.length) || (data.deterministic?.length) || 0;
+      const startAge = (lastForm?.current_age) ?? payload.current_age ?? 0;
+      chart.data.labels = Array.from({ length: n }, (_, i) => startAge + i);
+
+      chart.data.datasets[0].data = data.deterministic || [];
+      chart.data.datasets[1].data = data.p10 || [];
+      chart.data.datasets[2].data = data.p50 || [];
+      chart.data.datasets[3].data = data.p90 || [];
+      chart.update('none');
+    } catch (err) {
+      console.error("live-update error", err);
+    }
   }
 
   const send = debounce(ping, 120);
@@ -632,6 +648,7 @@ function collectParams() {
 
   // initial draw
   ping();
+
 })();
 </script>
 
