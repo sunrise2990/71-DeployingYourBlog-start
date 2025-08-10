@@ -342,48 +342,80 @@
   const expVal = document.getElementById('lw_exp_val');
   const postVal= document.getElementById('lw_post_val');
 
-  // --- Initialize sliders from existing form fields on the page ---
-  function firstNumeric(ids, fallback) {
+  // ---- Robust initializer: read from form by id -> name -> label text ----
+  const $ = (sel, root=document) => root.querySelector(sel);
+
+  function findInput({ids=[], names=[], labelIncludes=[]}) {
     for (const id of ids) {
       const el = document.getElementById(id);
-      if (!el) continue;
-      const raw = (el.value ?? el.textContent ?? '').toString();
-      const n = Number(raw.replace(/[^\d.\-]/g, ''));
-      if (!Number.isNaN(n)) return n;
+      if (el) return el;
     }
-    return fallback;
+    for (const nm of names) {
+      const el = $(`[name="${nm}"]`);
+      if (el) return el;
+    }
+    // by label text (case-insensitive)
+    const labels = Array.from(document.getElementsByTagName('label'));
+    for (const want of labelIncludes) {
+      const w = want.toLowerCase();
+      const lab = labels.find(lb => (lb.textContent || '').toLowerCase().includes(w));
+      if (lab) {
+        if (lab.control) return lab.control;
+        const forId = lab.getAttribute('for');
+        if (forId) { const el = document.getElementById(forId); if (el) return el; }
+      }
+    }
+    return null;
   }
 
-  // Try your likely field IDs; adjust if yours differ.
-  const initAge = firstNumeric(
-    ['retirement_age', 'retire_age', 'input_retirement_age'],
-    65
-  );
+  function readNum(el) {
+    if (!el) return NaN;
+    const raw = (el.value ?? el.textContent ?? '').toString();
+    return Number(raw.replace(/[^\d.\-]/g, ''));
+  }
+  const numOr = (v, f) => (Number.isFinite(v) ? v : f);
 
-  // Prefer monthly from the form → convert to annual; else use annual if present
-  const monthlyExp = firstNumeric(
-    ['monthly_living_expense', 'living_expense', 'input_monthly_expense'],
-    NaN
-  );
-  const initAnnualExp = Number.isNaN(monthlyExp)
-    ? firstNumeric(['annual_expense', 'input_annual_expense'], 72000)
-    : monthlyExp * 12;
+  // Map to YOUR form:
+  const ageEl = findInput({
+    ids:   ['retirement_age','retire_age','input_retirement_age'],
+    names: ['retirement_age'],
+    labelIncludes: ['Retirement Age']
+  });
 
-  const initPostRatePct = firstNumeric(
-    ['post_retire_return_rate', 'post_return_rate', 'return_rate_after'],
-    4.5
-  );
+  const monthlyExpEl = findInput({
+    ids:   ['monthly_living_expense','living_expense','input_monthly_expense'],
+    names: ['monthly_living_expense','living_expense'],
+    labelIncludes: ['Monthly Living Expense']
+  });
+
+  const annualExpEl = findInput({
+    ids:   ['annual_expense','input_annual_expense'],
+    names: ['annual_expense'],
+    labelIncludes: ['Annual Expense']
+  });
+
+  const postRateEl = findInput({
+    ids:   ['post_retire_return_rate','post_return_rate','return_rate_after'],
+    names: ['post_retire_return_rate','post_return_rate','return_rate_after'],
+    labelIncludes: ['Post-Retire Return Rate']
+  });
+
+  const initAge          = numOr(readNum(ageEl), 65);
+  const initMonthlyExp   = readNum(monthlyExpEl);
+  const derivedAnnualExp = Number.isFinite(initMonthlyExp) ? initMonthlyExp * 12 : NaN;
+  const initAnnualExp    = numOr(derivedAnnualExp, numOr(readNum(annualExpEl), 72000));
+  const initPostRatePct  = numOr(readNum(postRateEl), 4.5);
 
   // Snap to slider steps and reflect labels
   elAge.value  = Math.round(initAge);
-  elExp.value  = Math.round(initAnnualExp / 1000) * 1000;    // step=1000
+  elExp.value  = Math.round(initAnnualExp / 1000) * 1000;  // step=1000
   elPost.value = initPostRatePct;
 
   ageVal.textContent  = elAge.value;
   expVal.textContent  = Number(elExp.value).toLocaleString();
   postVal.textContent = (+elPost.value).toFixed(1);
 
-  // Chart
+  // ---- Chart ----
   const ctx = document.getElementById('lw_assets_chart').getContext('2d');
   const chart = new Chart(ctx, {
     type: 'line',
@@ -397,9 +429,7 @@
       responsive: true,
       animation: false,
       interaction: { mode: 'index', intersect: false },
-      scales: {
-        y: { ticks: { callback: (v) => Number(v).toLocaleString() } }
-      }
+      scales: { y: { ticks: { callback: v => Number(v).toLocaleString() } } }
     }
   });
 
@@ -408,31 +438,26 @@
   function collectParams() {
     const retirement_age = +elAge.value;
     const annual_expense = +elExp.value;
-    const post_rate_pct  = +elPost.value;       // slider shows %
-    const post_rate      = post_rate_pct / 100; // convert to decimal
+    const post_rate_pct  = +elPost.value;
+    const post_rate      = post_rate_pct / 100;
 
-    // reflect live values
     ageVal.textContent = retirement_age;
     expVal.textContent = fmt(annual_expense);
     postVal.textContent = post_rate_pct.toFixed(1);
 
-    // Keys must match the API merge/mapping in routes.py
     return {
       retirement_age: retirement_age,
       annual_expense: annual_expense,
-      // deterministic uses return_rate_after; MC uses return_mean_after
-      return_rate_after: post_rate,
-      return_mean_after: post_rate,
+      return_rate_after: post_rate,   // deterministic
+      return_mean_after: post_rate,   // MC
       num_simulations: 2000
     };
   }
 
-  function debounce(fn, ms){
-    let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
-  }
+  function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
   async function ping() {
-    const url = "{{ url_for('projects.live_update') }}";  // projects_bp endpoint
+    const url = "{{ url_for('projects.live_update') }}";
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -440,8 +465,7 @@
     });
     if (!res.ok) return;
     const data = await res.json();
-
-    chart.data.labels = data.labels || [];
+    chart.data.labels           = data.labels || [];
     chart.data.datasets[0].data = data.deterministic || [];
     chart.data.datasets[1].data = data.p10 || [];
     chart.data.datasets[2].data = data.p50 || [];
@@ -455,13 +479,14 @@
     el.addEventListener('change', send);
   });
 
-  console.log("Live What-If ready");
+  console.log("Live What-If ready (form-derived)", {initAge, initAnnualExp, initPostRatePct});
   window.__liveTest = { ping, collectParams };
 
-  // initial draw (uses form-derived values)
+  // initial draw
   ping();
 })();
 </script>
+
 
 
 
