@@ -611,6 +611,13 @@
 
     form.num_simulations    = 2000;
 
+
+
+  // 🔗 attach goals (if the separate Goals module exists)
+  form.goal_events = (window.GoalsModule?.current() || []);
+
+
+
     // reflect labels
     updateLabelsFromSliders();
 
@@ -676,6 +683,193 @@
 
 
 
+
+<!-- ==== Goals (modular, optional) ==== -->
+<div class="card mt-3">
+  <div class="card-body">
+    <details open>
+      <summary class="h6 mb-3">🎯 Goals (beta) — extra expenses or inflows</summary>
+
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Name</label>
+          <input id="g_name" type="text" class="form-control" placeholder="college">
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Type</label>
+          <select id="g_type" class="form-select">
+            <option value="expense" selected>Expense (outflow)</option>
+            <option value="inflow">Inflow</option>
+          </select>
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label">Amount ($, today)</label>
+          <input id="g_amt" type="number" class="form-control" value="30000" min="0" step="100">
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label">Start age</label>
+          <input id="g_age" type="number" class="form-control" value="60" min="0" step="1">
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label">Recurrence</label>
+          <select id="g_rec" class="form-select">
+            <option value="once" selected>Once (at start age)</option>
+            <option value="annual">Annual (start→end)</option>
+            <option value="years">For N years</option>
+          </select>
+        </div>
+
+        <div class="col-md-2 d-none" id="g_years_wrap">
+          <label class="form-label">Years</label>
+          <input id="g_years" type="number" class="form-control" value="4" min="1" step="1">
+        </div>
+
+        <div class="col-md-2 d-none" id="g_endage_wrap">
+          <label class="form-label">End age</label>
+          <input id="g_endage" type="number" class="form-control" value="84" min="0" step="1">
+        </div>
+
+        <div class="col-md-3">
+          <div class="form-check mt-4">
+            <input class="form-check-input" type="checkbox" id="g_infl" checked>
+            <label class="form-check-label" for="g_infl">Inflation linked</label>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <button id="goal_add" type="button" class="btn btn-primary mt-3">+ Add Goal</button>
+        </div>
+      </div>
+
+      <hr class="my-3">
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th style="width:70px;">Enabled</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>When</th>
+              <th class="text-end">Amount</th>
+              <th>Infl.</th>
+              <th style="width:70px;"></th>
+            </tr>
+          </thead>
+          <tbody id="goal_rows"></tbody>
+        </table>
+      </div>
+
+      <p class="text-muted small mb-0">
+        Note: MVP routes convert goals to asset liquidations (post-tax). These don’t alter Living Expense (for taxes) yet—
+        that keeps the core calculators untouched.
+      </p>
+    </details>
+  </div>
+</div>
+
+
+<script>
+/* ---- GoalsModule: minimal state + wiring ---- */
+(function () {
+  const rows = document.getElementById('goal_rows');
+  const elName   = document.getElementById('g_name');
+  const elType   = document.getElementById('g_type');
+  const elAmt    = document.getElementById('g_amt');
+  const elAge    = document.getElementById('g_age');
+  const elRec    = document.getElementById('g_rec');
+  const elYearsW = document.getElementById('g_years_wrap');
+  const elYears  = document.getElementById('g_years');
+  const elEndW   = document.getElementById('g_endage_wrap');
+  const elEnd    = document.getElementById('g_endage');
+  const elInfl   = document.getElementById('g_infl');
+  const elAdd    = document.getElementById('goal_add');
+
+  let goals = []; // each: {enabled, name, start_age, amount, is_expense, inflation_linked, recurrence, years?, end_age?}
+
+  function usd(v){ return Number(v||0).toLocaleString(undefined,{maximumFractionDigits:0}); }
+  function whenTxt(g){
+    if (g.recurrence === 'once')   return `At ${g.start_age}`;
+    if (g.recurrence === 'years')  return `${g.start_age} for ${g.years||1}y`;
+    const end = g.end_age ?? g.start_age;
+    return `${g.start_age}–${end}`;
+  }
+
+  function render(){
+    rows.innerHTML = goals.map((g,i)=>`
+      <tr data-i="${i}">
+        <td><input type="checkbox" class="form-check-input goal-enable" ${g.enabled?'checked':''}></td>
+        <td>${g.name}</td>
+        <td>${g.is_expense ? 'Expense' : 'Inflow'}</td>
+        <td>${whenTxt(g)}</td>
+        <td class="text-end">$${usd(g.amount)}</td>
+        <td>${g.inflation_linked ? 'Yes' : 'No'}</td>
+        <td><button type="button" class="btn btn-sm btn-outline-danger goal-del">&times;</button></td>
+      </tr>`).join('');
+  }
+
+  function addGoal(){
+    const rec = elRec.value;
+    const g = {
+      enabled: true,
+      name: (elName.value || 'Goal').trim(),
+      start_age: +elAge.value || 0,
+      amount: +elAmt.value || 0,
+      is_expense: (elType.value === 'expense'),
+      inflation_linked: !!elInfl.checked,
+      recurrence: rec
+    };
+    if (rec === 'years')  g.years   = +elYears.value || 1;
+    if (rec === 'annual') g.end_age = +elEnd.value   || g.start_age;
+
+    goals.push(g);
+    render();
+    // nudge live update
+    window.__liveTest?.ping();
+  }
+
+  // toggle the extra inputs depending on recurrence
+  function recChanged(){
+    const v = elRec.value;
+    elYearsW.classList.toggle('d-none', v !== 'years');
+    elEndW.classList.toggle('d-none',   v !== 'annual');
+  }
+
+  // row events (enable/disable + delete)
+  rows.addEventListener('change', (e)=>{
+    if (!e.target.classList.contains('goal-enable')) return;
+    const i = +e.target.closest('tr').dataset.i;
+    goals[i].enabled = e.target.checked;
+    window.__liveTest?.ping();
+  });
+  rows.addEventListener('click', (e)=>{
+    const del = e.target.closest('.goal-del');
+    if (!del) return;
+    const i = +del.closest('tr').dataset.i;
+    goals.splice(i,1);
+    render();
+    window.__liveTest?.ping();
+  });
+
+  elAdd.addEventListener('click', addGoal);
+  elRec.addEventListener('change', recChanged);
+  recChanged(); // set correct visibility on load
+
+  // public API for the Live What-If block
+  window.GoalsModule = {
+    current(){
+      // return only enabled goals, and strip the 'enabled' flag
+      return goals.filter(g=>g.enabled).map(({enabled, ...rest}) => rest);
+    },
+    all(){ return goals.slice(); },
+    clear(){ goals = []; render(); window.__liveTest?.ping(); }
+  };
+})();
+</script>
 
 
 
