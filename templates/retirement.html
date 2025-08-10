@@ -405,7 +405,7 @@
   const inflVal  = document.getElementById('lw_infl_val');
   const lifeVal  = document.getElementById('lw_life_val');
 
-  // -------- helpers to read the existing form --------
+  // ---- helpers to read the existing form ----
   const $ = (sel, root=document) => root.querySelector(sel);
 
   function findByLabelText(text) {
@@ -442,21 +442,35 @@
   const nz = (v, f) => (Number.isFinite(v) ? v : f);
   const fmt = x => Number(x).toLocaleString();
 
-  // -------- snapshot the whole form --------
+  // ---- snapshot the whole form (includes CPP from Extended-Year fields) ----
   function gatherForm() {
     const current_age     = nz(numFrom(findInput({labelIncludes:['Current Age'], names:['current_age']})), 53);
     const retirement_age  = nz(numFrom(findInput({labelIncludes:['Retirement Age'], names:['retirement_age']})), 65);
 
-    // CPP window: read from form (ids, names, or labels), fall back to RA/LE if missing
+    // Lifespan (needed for fallback)
     const life_expectancy = nz(numFrom(findInput({labelIncludes:['Expected Lifespan'], names:['expected_lifespan']})), 90);
-    const cpp_start_age   = nz(numFrom(findInput({
-                              ids:['cpp_start_age'], names:['cpp_start_age'],
-                              labelIncludes:['CPP Start Age','Support Start Age']
-                            })), retirement_age);
-    const cpp_end_age     = nz(numFrom(findInput({
-                              ids:['cpp_end_age'], names:['cpp_end_age'],
-                              labelIncludes:['CPP End Age','Support End Age']
-                            })), life_expectancy);
+
+    // Map Extended-Year to CPP window: start = From, end = To - 1 (inclusive)
+    const ext_from = nz(
+      numFrom(findInput({
+        ids:['extended_year_from_age','extended_from_age'],
+        names:['extended_year_from_age'],
+        labelIncludes:['Extended Year From']
+      })),
+      retirement_age
+    );
+
+    const ext_to_raw = nz(
+      numFrom(findInput({
+        ids:['extended_year_to_age','extended_to_age'],
+        names:['extended_year_to_age'],
+        labelIncludes:['Extended Year To']
+      })),
+      life_expectancy + 1
+    );
+
+    const cpp_start_age = ext_from;
+    const cpp_end_age   = Math.max(ext_from, (Number.isFinite(ext_to_raw) ? (ext_to_raw - 1) : life_expectancy));
 
     const msav            = nz(numFrom(findInput({labelIncludes:['Monthly Savings'], names:['monthly_savings']})), 0);
     const annual_saving   = msav * 12;
@@ -503,14 +517,14 @@
       return_rate_after,
       annual_expense,
       cpp_monthly,
-      cpp_start_age,     // <-- from form
-      cpp_end_age,       // <-- from form
+      cpp_start_age,   // from Extended Year From
+      cpp_end_age,     // (Extended Year To - 1), inclusive
       asset_liquidations,
       inflation_rate,
       life_expectancy,
       income_tax_rate,
 
-      // MC mirrors deterministic inputs
+      // MC mirrors deterministic
       return_mean: return_rate,
       return_mean_after: return_rate_after,
       return_std,
@@ -519,10 +533,10 @@
     };
   }
 
-  // -------- initialize sliders from the form values --------
+  // ---- initialize sliders from the form values ----
   const base = gatherForm();
   elAge.value    = base.retirement_age;
-  elExpMo.value  = Math.round((base.annual_expense/12) / 50) * 50; // step 50
+  elExpMo.value  = Math.round((base.annual_expense/12) / 50) * 50;
   elPost.value   = Math.round((base.return_rate_after * 100) * 10) / 10;
 
   elPre.value    = Math.round((base.return_rate * 100) * 10) / 10;
@@ -542,7 +556,7 @@
   inflVal.textContent   = (+elInfl.value).toFixed(1);
   lifeVal.textContent   = elLife.value;
 
-  // -------- Chart --------
+  // ---- Chart ----
   const ctx = document.getElementById('lw_assets_chart').getContext('2d');
   const chart = new Chart(ctx, {
     type: 'line',
@@ -556,10 +570,8 @@
       responsive: true,
       animation: false,
       interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { title: { display: true, text: 'Age' } },
-        y: { ticks: { callback: v => Number(v).toLocaleString() } }
-      }
+      scales: { x: { title: { display: true, text: 'Age' } },
+               y: { ticks: { callback: v => Number(v).toLocaleString() } } }
     }
   });
 
@@ -568,36 +580,34 @@
   function collectParams() {
     const form = gatherForm();
 
-    // overrides coming from sliders
-    form.retirement_age      = +elAge.value;
-    form.annual_expense      = (+elExpMo.value) * 12;     // monthly → annual
-    form.return_rate_after   = (+elPost.value) / 100;     // deterministic
-    form.return_mean_after   = form.return_rate_after;    // MC
+    // slider overrides
+    form.retirement_age     = +elAge.value;
+    form.annual_expense     = (+elExpMo.value) * 12;
+    form.return_rate_after  = (+elPost.value) / 100;
+    form.return_mean_after  = form.return_rate_after;
 
-    form.return_rate         = (+elPre.value) / 100;
-    form.return_mean         = form.return_rate;
+    form.return_rate        = (+elPre.value) / 100;
+    form.return_mean        = form.return_rate;
 
-    form.annual_saving       = (+elSaveMo.value) * 12;
-    form.current_assets      = +elAssets.value;
-    form.income_tax_rate     = (+elTax.value) / 100;
-    form.inflation_rate      = (+elInfl.value) / 100;
-    form.inflation_mean      = form.inflation_rate;
-    form.life_expectancy     = +elLife.value;
+    form.annual_saving      = (+elSaveMo.value) * 12;
+    form.current_assets     = +elAssets.value;
+    form.income_tax_rate    = (+elTax.value) / 100;
+    form.inflation_rate     = (+elInfl.value) / 100;
+    form.inflation_mean     = form.inflation_rate;
+    form.life_expectancy    = +elLife.value;
 
-    // NOTE: cpp_start_age / cpp_end_age are taken directly from gatherForm()
-
-    form.num_simulations     = 2000;
+    form.num_simulations    = 2000;
 
     // reflect labels
-    ageVal.textContent       = form.retirement_age;
-    expVal.textContent       = Number(+elExpMo.value).toLocaleString();
-    postVal.textContent      = (+elPost.value).toFixed(1);
-    preVal.textContent       = (+elPre.value).toFixed(1);
-    saveVal.textContent      = Number(+elSaveMo.value).toLocaleString();
-    assetsVal.textContent    = Number(+elAssets.value).toLocaleString();
-    taxVal.textContent       = (+elTax.value).toFixed(1);
-    inflVal.textContent      = (+elInfl.value).toFixed(1);
-    lifeVal.textContent      = form.life_expectancy;
+    ageVal.textContent    = form.retirement_age;
+    expVal.textContent    = Number(+elExpMo.value).toLocaleString();
+    postVal.textContent   = (+elPost.value).toFixed(1);
+    preVal.textContent    = (+elPre.value).toFixed(1);
+    saveVal.textContent   = Number(+elSaveMo.value).toLocaleString();
+    assetsVal.textContent = Number(+elAssets.value).toLocaleString();
+    taxVal.textContent    = (+elTax.value).toFixed(1);
+    inflVal.textContent   = (+elInfl.value).toFixed(1);
+    lifeVal.textContent   = form.life_expectancy;
 
     lastForm = form;
     return form;
@@ -614,13 +624,9 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) {
-        console.error("live-update failed", res.status, await res.text());
-        return;
-      }
+      if (!res.ok) { console.error("live-update failed", res.status, await res.text()); return; }
       const data = await res.json();
 
-      // DEBUG
       if (data.debug) {
         console.groupCollapsed("LIVE DEBUG");
         console.table(data.debug.used_params || {});
@@ -629,7 +635,6 @@
         console.groupEnd();
       }
 
-      // X-axis = Age (compute from current_age + length)
       const n = (data.p50?.length) || (data.deterministic?.length) || 0;
       const startAge = (lastForm?.current_age) ?? payload.current_age ?? 0;
       chart.data.labels = Array.from({ length: n }, (_, i) => startAge + i);
@@ -655,6 +660,7 @@
   ping();
 })();
 </script>
+
 
 
 
