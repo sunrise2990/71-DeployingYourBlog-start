@@ -1,19 +1,26 @@
 # models/retirement/goals.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import List, Dict, Literal
+from typing import List, Dict, Literal, Optional, Union
 
 Recurrence = Literal["once", "annual", "years"]
+
 
 @dataclass
 class GoalEvent:
     """
     A goal is either an extra expense (is_expense=True) or extra inflow (False).
-    amount is in today's dollars; inflation_linked=True grows it by inflation each year.
+    amount is in today's dollars; if inflation_linked=True it grows by inflation
+    each year from start_age.
+
     recurrence:
-      - "once": applies in start_age only
+      - "once":   applies in start_age only
       - "annual": applies every year from start_age..end_age (inclusive)
-      - "years": applies for 'years' consecutive years starting at start_age
+      - "years":  applies for `years` consecutive years starting at start_age
+
+    NOTE (sign convention to match frontend & calculators):
+      - Expense/outflow  -> NEGATIVE liquidation (withdrawal)
+      - Inflow           -> POSITIVE liquidation (deposit)
     """
     name: str
     start_age: int
@@ -21,30 +28,38 @@ class GoalEvent:
     is_expense: bool = True
     inflation_linked: bool = True
     recurrence: Recurrence = "once"
-    end_age: int | None = None   # needed for "annual"
-    years: int | None = None     # needed for "years"
+    end_age: Optional[int] = None   # needed for "annual"
+    years: Optional[int] = None     # needed for "years"
+    enabled: bool = True            # optional; ignored if False
+
 
 def _inflated(base: float, years_since_start: int, inflation_rate: float, link: bool) -> float:
     if not link:
         return base
     return base * ((1 + inflation_rate) ** max(0, years_since_start))
 
+
 def expand_goals_to_per_age(
     *,
     current_age: int,
     life_expectancy: int,
     inflation_rate: float,
-    goals: List[dict | GoalEvent]
+    goals: List[Union[dict, GoalEvent]]
 ) -> Dict[int, Dict[str, float]]:
     """
     Returns {age: {'expense': sum_expenses, 'inflow': sum_inflows}} for ages within horizon.
+    Values are POSITIVE magnitudes in their respective buckets; sign is applied later.
     """
-    # normalize into GoalEvent
+    # normalize into GoalEvent; skip disabled items if present
     norm: List[GoalEvent] = []
     for g in goals or []:
         if isinstance(g, GoalEvent):
+            if g.enabled is False:
+                continue
             norm.append(g)
         else:
+            if g.get("enabled") is False:
+                continue
             norm.append(GoalEvent(
                 name=g.get("name", ""),
                 start_age=int(g["start_age"]),
@@ -75,12 +90,13 @@ def expand_goals_to_per_age(
             if age < a0 or age > a1:
                 continue
             yrs = age - ev.start_age
-            val = _inflated(ev.amount, yrs, inflation_rate, ev.inflation_linked)
+            val = _inflated(float(ev.amount), yrs, float(inflation_rate), bool(ev.inflation_linked))
             bucket = "expense" if ev.is_expense else "inflow"
             per_age.setdefault(age, {"expense": 0.0, "inflow": 0.0})
             per_age[age][bucket] += float(val)
 
     return per_age
+
 
 def goals_to_liquidations_adapter(
     *,
@@ -88,12 +104,11 @@ def goals_to_liquidations_adapter(
     per_age: Dict[int, Dict[str, float]]
 ) -> List[dict]:
     """
-    Convert goal cashflows into 'asset_liquidations' entries understood by the
-    calculators.
+    Convert goal cashflows into 'asset_liquidations' entries understood by the calculators.
 
-    CONVENTION (most calculators use this):
-      - Expense/outflow  -> positive liquidation (reduces portfolio)
-      - Inflow           -> negative liquidation (adds to portfolio)
+    SIGN CONVENTION (matches frontend):
+      - Expense/outflow  -> NEGATIVE liquidation (withdrawal)
+      - Inflow           -> POSITIVE liquidation (deposit)
 
     Notes
     -----
@@ -111,7 +126,7 @@ def goals_to_liquidations_adapter(
             continue
         agg[age] = agg.get(age, 0.0) + amt
 
-    # Fold in goals: +expense, -inflow
+    # Fold in goals: net = inflow (deposit, +) - expense (withdrawal, -)
     for age, vals in (per_age or {}).items():
         try:
             a = int(age)
@@ -119,11 +134,7 @@ def goals_to_liquidations_adapter(
             continue
         inflow  = float(vals.get("inflow", 0.0))
         expense = float(vals.get("expense", 0.0))
-        net = 0.0
-        if expense:
-            net += expense      # expense = withdrawal (+)
-        if inflow:
-            net -= inflow       # inflow  = deposit (-)
+        net = inflow - expense  # apply sign convention here
         if net:
             agg[a] = agg.get(a, 0.0) + net
 

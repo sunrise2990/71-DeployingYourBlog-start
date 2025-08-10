@@ -775,7 +775,7 @@ except NameError:
     from flask import Blueprint
     bp_for_live = Blueprint("live_whatif", __name__)
 
-# Seed wrapper
+# Seed wrapper from Step 1
 from models.retirement.retirement_calc import run_mc_with_seed
 
 # --- 🔁 USE YOUR REAL FUNCTION NAMES & MODULE PATH ---
@@ -840,9 +840,8 @@ def _harmonize(params: dict) -> dict:
     return params
 
 
-# Goals helpers
+# Update GoalEvents
 from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
-
 
 @bp_for_live.post("/api/live-update")
 def live_update():
@@ -852,43 +851,40 @@ def live_update():
     goal_events = params.get("goal_events") or []
 
     # ---- Expand goals to per-age cashflows (MVP post-tax via liquidations) ----
-    per_age = {}
-    goals_error = None
     try:
-        already_merged = bool(params.get("asset_liquidations"))
-        if goal_events and not already_merged:
-            per_age = expand_goals_to_per_age(
-                current_age=int(params["current_age"]),
-                life_expectancy=int(params["life_expectancy"]),
-                inflation_rate=float(params.get("inflation_rate", 0.0)),
-                goals=goal_events,
-            )
+        per_age = expand_goals_to_per_age(
+            current_age=int(params["current_age"]),
+            life_expectancy=int(params["life_expectancy"]),
+            inflation_rate=float(params.get("inflation_rate", 0.0)),
+            goals=goal_events,
+        )
 
-            # Convert to signed liquidations (expense -> negative, inflow -> positive)
-            liqs = goals_to_liquidations_adapter(
-                current_liqs=list(params.get("asset_liquidations") or []),
-                per_age=per_age,
-            )
+        # Adapt into (positive/negative) liquidations without touching calculators
+        liqs = goals_to_liquidations_adapter(
+            current_liqs=list(params.get("asset_liquidations") or []),
+            per_age=per_age,
+        )
 
-            # Sort + coalesce by age, round to cents, drop ~zero
-            liqs.sort(key=lambda r: int(r.get("age", 0)))
-            coalesced: list[dict] = []
-            i = 0
-            while i < len(liqs):
-                age_i = int(liqs[i]["age"])
-                amt = 0.0
-                while i < len(liqs) and int(liqs[i]["age"]) == age_i:
-                    amt += float(liqs[i]["amount"])
-                    i += 1
-                amt = round(amt, 2)
-                if abs(amt) >= 0.005:
-                    coalesced.append({"age": age_i, "amount": amt})
+        # Optional safety: sort + coalesce same-age liquidations
+        liqs.sort(key=lambda r: int(r.get("age", 0)))
+        coalesced: list[dict] = []
+        i = 0
+        while i < len(liqs):
+            age_i = int(liqs[i]["age"])
+            amt = 0.0
+            while i < len(liqs) and int(liqs[i]["age"]) == age_i:
+                amt += float(liqs[i]["amount"])
+                i += 1
+            if amt != 0.0:
+                coalesced.append({"age": age_i, "amount": amt})
 
-            params["asset_liquidations"] = coalesced
+        params["asset_liquidations"] = coalesced
+        goals_error = None
     except Exception as e:
-        goals_error = str(e)
         # Fall back cleanly if the payload for goals is malformed
+        per_age = {}
         params["asset_liquidations"] = list(params.get("asset_liquidations") or [])
+        goals_error = str(e)
 
     # ✅ Pass ONLY the args that run_retirement_projection expects
     det_keys = [
@@ -971,7 +967,6 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
-
 
 
 

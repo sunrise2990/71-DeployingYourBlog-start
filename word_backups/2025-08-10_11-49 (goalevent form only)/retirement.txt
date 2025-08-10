@@ -299,7 +299,7 @@
 
 <!-- ==== Live What-If (beta) – append-only block ==== -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <div class="card mt-4">
   <div class="card-body">
@@ -412,9 +412,6 @@
   const taxVal   = document.getElementById('lw_tax_val');
   const inflVal  = document.getElementById('lw_infl_val');
   const lifeVal  = document.getElementById('lw_life_val');
-
-  // 👉 CSRF token for JSON POST (safe if undefined)
-  const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
 
   // ---- helpers to read the existing form ----
   const $ = (sel, root=document) => root.querySelector(sel);
@@ -542,33 +539,6 @@
     };
   }
 
-  // ---- Goals → asset_liquidations (client-side) ----
-  function goalsToLiquidations(goals, base){
-    const out = [];
-    const infl = base.inflation_rate || 0;
-    const currAge = base.current_age || 0;
-    for (const g of goals || []) {
-      if (!g || g.enabled === false) continue;
-      let ages = [];
-      if (g.recurrence === 'once') {
-        ages = [g.start_age];
-      } else if (g.recurrence === 'years') {
-        const n = Math.max(1, g.years || 1);
-        ages = Array.from({length:n}, (_,i)=>g.start_age + i);
-      } else if (g.recurrence === 'annual') {
-        const end = (g.end_age ?? g.start_age);
-        const n = Math.max(0, end - g.start_age + 1);
-        ages = Array.from({length:n}, (_,i)=>g.start_age + i);
-      }
-      for (const age of ages) {
-        const yrs  = Math.max(0, age - currAge);
-        const amt  = g.amount * (g.inflation_linked ? Math.pow(1 + infl, yrs) : 1);
-        out.push({ age: Math.round(age), amount: g.is_expense ? -amt : amt });
-      }
-    }
-    return out;
-  }
-
   // ---- initialize sliders from the form values ----
   const base = gatherForm();
   setSlidersFromForm(base);
@@ -641,12 +611,8 @@
 
     form.num_simulations    = 2000;
 
-    // 🔗 attach goals and merge into asset_liquidations
-    const goals = (window.GoalsModule?.current() || []);
-    form.goal_events = goals;
-
-    const fromGoals = goalsToLiquidations(goals, form);
-    form.asset_liquidations = [...(form.asset_liquidations || []), ...fromGoals];
+    // 🔗 attach goals (if the separate Goals module exists)
+    form.goal_events = (window.GoalsModule?.current() || []);
 
     // reflect labels
     updateLabelsFromSliders();
@@ -663,10 +629,7 @@
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(CSRF ? {"X-CSRFToken": CSRF} : {})
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       if (!res.ok) { console.error("live-update failed", res.status, await res.text()); return; }
@@ -910,12 +873,12 @@
 </script>
 
       <p class="text-muted small mb-0">
-        Note: For MVP, goals are merged client-side into asset liquidations (post-tax) before the live update call. They don’t alter Living Expense (for taxes) yet—keeping the core calculators untouched.
+        Note: MVP routes convert goals to asset liquidations (post-tax). These don’t alter Living Expense (for taxes) yet—
+        that keeps the core calculators untouched.
       </p>
     </details>
   </div>
 </div>
-
 
 
 
