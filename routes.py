@@ -842,7 +842,7 @@ def _harmonize(params: dict) -> dict:
 
 # Goals helpers
 from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
-# Coach helpers
+# Coach helpers (supports prefs for targeted solve)
 from models.retirement.coach import coach_suggestions
 
 
@@ -997,6 +997,7 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 

@@ -574,7 +574,6 @@
       for (const age of ages) {
         const yrs  = Math.max(0, age - currAge);
         const amt  = g.amount * (g.inflation_linked ? Math.pow(1 + infl, yrs) : 1);
-        // Keep your current sign convention (works with your calculators)
         out.push({ age: Math.round(age), amount: g.is_expense ? -amt : amt });
       }
     }
@@ -721,7 +720,7 @@
     payload.mode = mode;
     payload.coach_prefs = window.__coach_prefs || {};  // reserved for future UI
 
-    const url = "{{ url_for('projects.live_update') }}";  /* change to live_whatif.live_update if you used the fallback blueprint */
+    const url = "{{ url_for('projects.live_update') }}"; /* or url_for('live_whatif.live_update') if you mounted fallback BP */
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -981,8 +980,6 @@
     </details>
   </div>
 </div>
-
-
 
 
 
