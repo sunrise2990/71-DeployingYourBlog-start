@@ -651,7 +651,6 @@
     form.inflation_mean     = form.inflation_rate;
     form.life_expectancy    = +elLife.value;
 
-    // default sims; server will downshift in lite mode
     form.num_simulations    = 2000;
 
     // 🔗 attach goals (table + coach) and merge into asset_liquidations
@@ -670,7 +669,6 @@
     return form;
   }
 
-  // --- debounce helpers ---
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
   // ---- Coach UI helpers ----
@@ -687,7 +685,7 @@
     }
 
     updateLabelsFromSliders();
-    sendFull();
+    send();
   }
 
   function renderCoach(list){
@@ -715,12 +713,8 @@
     });
   }
 
-  // ---- network call with mode ----
-  async function ping(mode = 'full') {
+  async function ping() {
     const payload = collectParams();
-    payload.mode = mode;
-    payload.coach_prefs = window.__coach_prefs || {};  // reserved for future UI
-
     const url = "{{ url_for('projects.live_update') }}";  /* change to live_whatif.live_update if you used the fallback blueprint */
     try {
       const res = await fetch(url, {
@@ -752,26 +746,24 @@
       chart.data.datasets[3].data = data.p90 || [];
       chart.update('none');
 
-      // 🧭 render Coach suggestions (only present on full calls)
+      // 🧭 render Coach suggestions
       renderCoach(data.coach || []);
     } catch (err) {
       console.error("live-update error", err);
     }
   }
 
-  // faster while dragging, solid after pause
-  const sendLite = debounce(() => ping('lite'), 80);
-  const sendFull = debounce(() => ping('full'), 400);
+  const send = debounce(ping, 120);
 
   [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
     .forEach(el => {
-      el.addEventListener('input', () => { sendLite(); sendFull(); });
-      el.addEventListener('change', () => { ping('full'); });
+      el.addEventListener('input', send);
+      el.addEventListener('change', send);
     });
 
   // Make goal edits trigger a live update too (works if GoalsModule is already loaded)
   if (window.GoalsModule?.onChange) {
-    window.GoalsModule.onChange(() => { ping('full'); });
+    window.GoalsModule.onChange(() => { send(); });
   }
 
   // --- RESET: snap sliders back to whatever the main form currently holds
@@ -779,14 +771,14 @@
     const f = gatherForm();
     setSlidersFromForm(f);
     updateLabelsFromSliders();
-    ping('full');
+    ping();
   });
 
   console.log("Live What-If ready (form-derived)");
   window.__liveTest = { ping, collectParams };
 
   // initial draw
-  ping('full');
+  ping();
 })();
 </script>
 
@@ -968,7 +960,7 @@
       let t;
       onChange(() => {
         clearTimeout(t);
-        t = setTimeout(() => window.__liveTest.ping('full'), 120);
+        t = setTimeout(() => window.__liveTest.ping(), 120);
       });
     }
   } catch {}
@@ -981,7 +973,6 @@
     </details>
   </div>
 </div>
-
 
 
 

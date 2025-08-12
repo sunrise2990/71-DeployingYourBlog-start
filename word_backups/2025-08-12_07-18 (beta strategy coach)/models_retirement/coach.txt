@@ -45,14 +45,10 @@ def _quick_mc(params: Dict[str, Any], n_sims: int = 600, seed: int = 12345) -> D
     out = run_mc_with_seed(seed, _MC, **mc_params)
     return out.get("percentiles", {})
 
-def coach_suggestions(
-    params: Dict[str, Any],
-    percentiles: Dict[str, List[float]],
-    prefs: Optional[Dict[str, Any]] = None,   # <- new optional arg (unused for now)
-) -> List[Dict[str, Any]]:
+def coach_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[float]]) -> List[Dict[str, Any]]:
     """
     Return ranked suggestions with minimal patches aiming for p10>0 through horizon.
-    `prefs` (optional) will carry user targets/levers later; safe to ignore for now.
+    Patches are client-friendly deltas you can apply to sliders/goals.
     """
     start_age = int(params.get("current_age", 50))
     p10 = percentiles.get("p10") or []
@@ -131,4 +127,3 @@ def coach_suggestions(
         })
 
     return suggestions
-

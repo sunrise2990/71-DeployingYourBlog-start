@@ -845,19 +845,9 @@ from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidatio
 # Coach helpers
 from models.retirement.coach import coach_suggestions
 
-
 @bp_for_live.post("/api/live-update")
 def live_update():
-    payload = request.get_json(silent=True) or {}
-
-    # speed mode: "lite" while dragging, "full" after user pauses or presses Solve
-    mode = payload.get("mode", "full")
-    is_lite = (mode == "lite")
-
-    # optional target/lever preferences for the coach (client may omit)
-    coach_prefs = payload.get("coach_prefs", {}) or {}
-
-    params = _merge(payload)
+    params = _merge(request.get_json(silent=True) or {})
     params = _harmonize(params)  # keep CPP window aligned with main calculator
 
     goal_events = params.get("goal_events") or []
@@ -875,6 +865,7 @@ def live_update():
                 goals=goal_events,
             )
 
+            # Convert to signed liquidations (expense -> negative, inflow -> positive)
             liqs = goals_to_liquidations_adapter(
                 current_liqs=list(params.get("asset_liquidations") or []),
                 per_age=per_age,
@@ -932,10 +923,7 @@ def live_update():
         cpp_end_age=params["cpp_end_age"],
         asset_liquidations=params["asset_liquidations"],
         life_expectancy=params["life_expectancy"],
-        # 👇 fewer sims in lite mode for responsiveness
-        num_simulations=(
-            500 if is_lite else params.get("num_simulations", params.get("n_sims", 2000))
-        ),
+        num_simulations=params.get("num_simulations", params.get("n_sims", 2000)),
         income_tax_rate=params["income_tax_rate"],
     )
 
@@ -945,14 +933,13 @@ def live_update():
     pct = mc_out.get("percentiles", {})
     det_last = det_curve[-1] if det_curve else None
 
-    # Strategy Coach (beta) — only on FULL calls
-    coach = []
-    if not is_lite:
-        try:
-            # coach accepts optional prefs; safe if coach ignores them
-            coach = coach_suggestions(params, pct, prefs=coach_prefs)
-        except Exception as e:
-            coach = [{"type": "status", "title": "Coach unavailable", "detail": str(e)}]
+
+    # Strategy Coach (beta)
+    try:
+        coach = coach_suggestions(params, pct)
+    except Exception as e:
+        coach = [{"type": "status", "title": "Coach unavailable", "detail": str(e)}]
+
 
     # Keep a rich (but compact) debug payload for browser-side inspection
     debug = {
@@ -975,8 +962,6 @@ def live_update():
             "inflation_std": params["inflation_std"],
             "asset_liquidations": params["asset_liquidations"],
             "goal_events_count": len(goal_events),
-            "mode": mode,
-            "num_simulations": mc_params["num_simulations"],
         },
         "goals": {
             "per_age": per_age,            # expanded view: {age: {expense, inflow}}
@@ -984,7 +969,6 @@ def live_update():
         },
         "mc": {"seed": seed},
         "derived": {"deterministic_last": det_last},
-        "coach_prefs": coach_prefs if not is_lite else {},
     }
 
     out = {
@@ -993,11 +977,10 @@ def live_update():
         "p10": pct.get("p10", []),
         "p50": pct.get("p50", []),
         "p90": pct.get("p90", []),
-        **({"coach": coach} if not is_lite else {}),  # include only on full
+        "coach": coach,  # 👈 added
         "debug": debug,
     }
     return jsonify(out), 200
-
 
 
 
