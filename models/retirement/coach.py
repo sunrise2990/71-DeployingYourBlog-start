@@ -1,17 +1,15 @@
 # models/retirement/coach.py
 from __future__ import annotations
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
-# Keep routes.py thin; import here
 from models.retirement.retirement_calc import (
     run_mc_with_seed,
     run_monte_carlo_simulation_locked_inputs as _MC,
 )
 
-# ---------------------- helpers ----------------------
+# ---------- helpers ----------
 
 def _first_depletion_age(series: Optional[List[float]], start_age: int) -> Optional[int]:
-    """Return the first age where assets fall <= 0 (None if never)."""
     if not series:
         return None
     for i, v in enumerate(series):
@@ -22,19 +20,7 @@ def _first_depletion_age(series: Optional[List[float]], start_age: int) -> Optio
             continue
     return None
 
-def _value_at_age(series: Optional[List[float]], start_age: int, age: int) -> Optional[float]:
-    if not series:
-        return None
-    idx = int(age) - int(start_age)
-    if 0 <= idx < len(series):
-        try:
-            return float(series[idx])
-        except Exception:
-            return None
-    return None
-
-def _quick_mc(params: Dict[str, Any], n_sims: int = 400, seed: int = 12345) -> Dict[str, List[float]]:
-    """Fast MC for testing patches. Returns percentiles dict."""
+def _quick_mc(params: Dict[str, Any], n_sims: int = 500, seed: int = 12345) -> Dict[str, List[float]]:
     mc_params = dict(
         current_age=int(params["current_age"]),
         retirement_age=int(params["retirement_age"]),
@@ -58,180 +44,35 @@ def _quick_mc(params: Dict[str, Any], n_sims: int = 400, seed: int = 12345) -> D
     out = run_mc_with_seed(seed, _MC, **mc_params)
     return out.get("percentiles", {})
 
-# ---------------- targeted solver --------------------
-
-def _meets_success_target(pct: Dict[str, List[float]], start_age: int, target_age: int) -> bool:
-    """p10 never drops <= 0 through target_age."""
+def _p10_gap_to_age(pct: Dict[str, List[float]], start_age: int, target_age: int) -> float:
+    """Negative gap means failure (needs improvement). We want gap >= 0."""
     p10 = pct.get("p10") or []
-    fa = _first_depletion_age(p10, start_age)
-    return fa is None or fa > int(target_age)
+    if not p10:
+        return -1e12
+    last_i = max(0, min(len(p10) - 1, target_age - start_age))
+    floor_val = min(float(v or 0.0) for v in p10[: last_i + 1])
+    return floor_val  # >=0 means OK; <0 means shortfall
 
-def _meets_assets_target(
-    pct: Dict[str, List[float]], start_age: int, target_age: int, target_amount: float, series: str
-) -> bool:
-    seq = (pct.get(series) or []) if series in ("p10", "p50", "p90") else (pct.get("p50") or [])
-    val = _value_at_age(seq, start_age, target_age)
-    return (val is not None) and (val >= float(target_amount))
+def _p50_final_gap(pct: Dict[str, List[float]], start_age: int, target_age: int, min_amount: float) -> float:
+    """Positive gap means we already meet/exceed the target."""
+    p50 = pct.get("p50") or []
+    if not p50:
+        return -1e12
+    i = max(0, min(len(p50) - 1, target_age - start_age))
+    return float(p50[i]) - float(min_amount)
 
-def _apply_goal_patch_if_needed(working: Dict[str, Any], add_pt_income: bool, amount: float = 6000.0, years: int = 3):
-    if not add_pt_income:
-        return
-    ra = int(working["retirement_age"])
-    # Ensure we have a goals list to carry later (client merges to liquidations)
-    goals = list(working.get("goal_events") or [])
-    goals.append({
-        "name": "part-time",
-        "is_expense": False,
-        "amount": float(amount),
-        "start_age": ra,
-        "recurrence": "years",
-        "years": int(years),
-        "inflation_linked": True,
-        "enabled": True,
-    })
-    working["goal_events"] = goals
-
-def coach_solve(params: Dict[str, Any], prefs: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Targeted solver. Caller supplies:
-      prefs = {
-        "target": "success" | "assets",
-        "target_age": 85,                      # required
-        "target_amount": 2000000,              # for assets target
-        "series": "p50",                       # p10|p50|p90 (assets target)
-        "levers": ["retirement_age","annual_expense","annual_saving","part_time_income"]
-      }
-    Returns a single concrete 'action' patch (plus a status header).
-    """
-    start_age = int(params.get("current_age", 50))
-    target = (prefs or {}).get("target", "success")
-    target_age = int((prefs or {}).get("target_age", params.get("life_expectancy", start_age + 30)))
-    series = (prefs or {}).get("series", "p50")
-    target_amount = float((prefs or {}).get("target_amount", 0))
-    levers = set((prefs or {}).get("levers") or [])
-
-    # Evaluate current plan quickly
-    base_pct = _quick_mc(params, n_sims=400)
-    ok_now = False
-    if target == "success":
-        ok_now = _meets_success_target(base_pct, start_age, target_age)
-    else:
-        ok_now = _meets_assets_target(base_pct, start_age, target_age, target_amount, series)
-
-    suggestions: List[Dict[str, Any]] = []
-    status_txt = "Already meets target" if ok_now else "Does not meet target"
-    suggestions.append({"type": "status", "title": "Solver status", "detail": status_txt})
-
-    if ok_now:
-        return suggestions
-
-    # Greedy/stepwise solver with small caps (keeps it fast + understandable)
-    working = dict(params)
-    patch: Dict[str, Any] = {}
-    added_pt = False
-    max_iters = 30
-
-    # step sizes / bounds
-    retire_max_delta = 5
-    retire_used = 0
-
-    spend_step, spend_cap = 3000.0, 15000.0
-    spend_used = 0.0
-
-    save_step, save_cap = 2000.0, 20000.0
-    save_used = 0.0
-
-    for _ in range(max_iters):
-        pct = _quick_mc(working, n_sims=400)
-        if target == "success":
-            if _meets_success_target(pct, start_age, target_age):
-                break
+def _apply_patch(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(base)
+    for k, v in (patch or {}).items():
+        if k == "goal_events":
+            out["goal_events"] = list(out.get("goal_events") or []) + list(v or [])
         else:
-            if _meets_assets_target(pct, start_age, target_age, target_amount, series):
-                break
+            out[k] = v
+    return out
 
-        # Try retirement_age +1 first (if allowed)
-        if "retirement_age" in levers and retire_used < retire_max_delta and (working["retirement_age"] < target_age):
-            working["retirement_age"] = int(working["retirement_age"]) + 1
-            retire_used += 1
-            patch["retirement_age"] = int(working["retirement_age"])
-            continue
+# ---------- heuristic (fallback) ----------
 
-        # Then trim spending a bit (if allowed)
-        if "annual_expense" in levers and spend_used < spend_cap:
-            working["annual_expense"] = max(0.0, float(working["annual_expense"]) - spend_step)
-            spend_used += spend_step
-            patch["annual_expense"] = float(working["annual_expense"])
-            continue
-
-        # Then increase saving (if allowed)
-        if "annual_saving" in levers and save_used < save_cap:
-            working["annual_saving"] = float(working["annual_saving"]) + save_step
-            save_used += save_step
-            patch["annual_saving"] = float(working["annual_saving"])
-            continue
-
-        # Finally add part-time income (once) if allowed
-        if "part_time_income" in levers and not added_pt:
-            _apply_goal_patch_if_needed(working, True, amount=6000.0, years=3)
-            added_pt = True
-            # encode the same goal in the client-friendly patch
-            patch.setdefault("goal_events", []).append({
-                "name": "part-time",
-                "is_expense": False,
-                "amount": 6000.0,
-                "start_age": int(working["retirement_age"]),
-                "recurrence": "years",
-                "years": 3,
-                "inflation_linked": True
-            })
-            continue
-
-        # If we ran out of levers/caps, stop
-        break
-
-    # Recheck final
-    final_pct = _quick_mc(working, n_sims=400)
-    solved = False
-    if target == "success":
-        solved = _meets_success_target(final_pct, start_age, target_age)
-    else:
-        solved = _meets_assets_target(final_pct, start_age, target_age, target_amount, series)
-
-    # Build the suggestion/action
-    if patch:
-        why_bits = []
-        if "retirement_age" in patch:  why_bits.append(f"retire at {patch['retirement_age']}")
-        if "annual_expense" in patch:  why_bits.append(f"spending → ${patch['annual_expense']:,.0f}/yr")
-        if "annual_saving" in patch:   why_bits.append(f"saving → ${patch['annual_saving']:,.0f}/yr")
-        if patch.get("goal_events"):    why_bits.append("add part-time income 3 yrs")
-        goal = "Target reached" if solved else "Closer to target"
-        suggestions.append({
-            "type": "action",
-            "title": f"{goal}: " + ", ".join(why_bits) if why_bits else goal,
-            "why": "Solver applied the smallest steps across your chosen levers to hit the target.",
-            "patch": patch
-        })
-    else:
-        suggestions.append({
-            "type": "status",
-            "title": "No feasible change within caps",
-            "detail": "Try enabling more levers or widening caps."
-        })
-
-    return suggestions
-
-# --------------- legacy/heuristic coach ----------------
-
-def coach_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[float]], prefs: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """
-    If prefs['target'] provided → run targeted solver.
-    Otherwise return lightweight heuristic ideas (backwards compatible).
-    """
-    prefs = prefs or {}
-    if prefs.get("target"):
-        return coach_solve(params, prefs)
-
+def _heuristic_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[float]]) -> List[Dict[str, Any]]:
     start_age = int(params.get("current_age", 50))
     p10 = percentiles.get("p10") or []
     horizon_ok = _first_depletion_age(p10, start_age) is None
@@ -246,12 +87,11 @@ def coach_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[float]
     })
 
     if not horizon_ok:
-        # Simple one-offs
+        # delay retirement suggestion
         base = dict(params)
-        # Delay 1–5 years: first that works
         for d in range(1, 6):
             try_params = dict(base, retirement_age=int(base["retirement_age"]) + d)
-            pct_try = _quick_mc(try_params, n_sims=400)
+            pct_try = _quick_mc(try_params, n_sims=500)
             if _first_depletion_age(pct_try.get("p10") or [], start_age) is None:
                 suggestions.append({
                     "type": "action",
@@ -261,11 +101,11 @@ def coach_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[float]
                 })
                 break
 
-        # Trim spending up to $12k/yr
+        # trim spending
         step, max_cut = 3000, 12000
         for cut in range(step, max_cut + step, step):
             try_params = dict(params, annual_expense=max(0, float(params["annual_expense"]) - cut))
-            pct_try = _quick_mc(try_params, n_sims=400)
+            pct_try = _quick_mc(try_params, n_sims=500)
             if _first_depletion_age(pct_try.get("p10") or [], start_age) is None:
                 suggestions.append({
                     "type": "action",
@@ -275,15 +115,20 @@ def coach_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[float]
                 })
                 break
 
-        # Part-time income
+        # part-time inflow
         ra = int(params["retirement_age"])
         suggestions.append({
             "type": "action",
             "title": "Add part-time income $6,000/yr for 3 years post-retirement",
             "why": "Offsets early sequence risk in initial retirement years.",
             "patch": {"goal_events": [{
-                "name": "part-time", "is_expense": False, "amount": 6000.0,
-                "start_age": ra, "recurrence": "years", "years": 3, "inflation_linked": True
+                "name": "part-time",
+                "is_expense": False,
+                "amount": 6000.0,
+                "start_age": ra,
+                "recurrence": "years",
+                "years": 3,
+                "inflation_linked": True
             }]}
         })
     else:
@@ -298,7 +143,162 @@ def coach_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[float]
                 "return_mean_after": max(0.0, float(params.get("return_mean_after", params["return_rate_after"])) - 0.01),
             }
         })
-
     return suggestions
+
+# ---------- targeted solver ----------
+
+def _solve_target(params: Dict[str, Any], target: Dict[str, Any], levers: List[str]) -> List[Dict[str, Any]]:
+    """
+    Greedy coordinate search over allowed levers to meet a user target.
+    Targets:
+      - {"type":"p10_nonneg", "age": 85}
+      - {"type":"final_assets_min", "age": 84, "amount": 2_000_000}
+    Levers may include: "retirement_age", "annual_expense", "annual_saving", "part_time_income".
+    """
+    start_age = int(params["current_age"])
+    ra0 = int(params["retirement_age"])
+    allowed = set(levers or [])
+    steps: List[Tuple[str, Dict[str, Any], float]] = []  # (desc, patch, score_improvement)
+
+    # base score/gap
+    pct0 = _quick_mc(params, n_sims=400)
+    if target["type"] == "p10_nonneg":
+        gap = _p10_gap_to_age(pct0, start_age, int(target["age"]))  # want >= 0
+        goal_met = gap >= 0
+    elif target["type"] == "final_assets_min":
+        gap = _p50_final_gap(pct0, start_age, int(target["age"]), float(target["amount"]))
+        goal_met = gap >= 0
+    else:
+        return [{"type": "status", "title": "Unknown target", "detail": str(target)}]
+
+    if goal_met:
+        return [{
+            "type": "status",
+            "title": "Target already satisfied",
+            "detail": "No changes needed."
+        }]
+
+    # search
+    patch_total: Dict[str, Any] = {}
+    MAX_ITERS = 12
+    for _ in range(MAX_ITERS):
+        best: Tuple[str, Dict[str, Any], float] | None = None
+
+        # candidate: delay retirement age by +1 (cap +10)
+        if "retirement_age" in allowed and int(params["retirement_age"]) < ra0 + 10:
+            cand = {"retirement_age": int(params["retirement_age"]) + 1}
+            pct = _quick_mc(_apply_patch(params, _apply_patch(patch_total, cand)), n_sims=350)
+            new_gap = (_p10_gap_to_age(pct, start_age, int(target["age"]))
+                       if target["type"] == "p10_nonneg"
+                       else _p50_final_gap(pct, start_age, int(target["age"]), float(target["amount"])))
+            imp = (new_gap - gap)
+            if best is None or imp > best[2]:
+                best = (f"Delay retirement to {cand['retirement_age']}", cand, imp)
+
+        # candidate: cut spending by $1k/yr (cap $15k)
+        if "annual_expense" in allowed and float(params["annual_expense"]) > 1000:
+            cut = 1000.0
+            cand = {"annual_expense": max(0.0, float(params["annual_expense"]) - cut)}
+            pct = _quick_mc(_apply_patch(params, _apply_patch(patch_total, cand)), n_sims=350)
+            new_gap = (_p10_gap_to_age(pct, start_age, int(target["age"]))
+                       if target["type"] == "p10_nonneg"
+                       else _p50_final_gap(pct, start_age, int(target["age"]), float(target["amount"])))
+            imp = (new_gap - gap)
+            if best is None or imp > best[2]:
+                best = (f"Trim spending to ${cand['annual_expense']:,.0f}/yr", cand, imp)
+
+        # candidate: add $1k/yr saving (pre-ret only effect, but simple)
+        if "annual_saving" in allowed:
+            bump = 1000.0
+            cand = {"annual_saving": float(params["annual_saving"]) + bump}
+            pct = _quick_mc(_apply_patch(params, _apply_patch(patch_total, cand)), n_sims=350)
+            new_gap = (_p10_gap_to_age(pct, start_age, int(target["age"]))
+                       if target["type"] == "p10_nonneg"
+                       else _p50_final_gap(pct, start_age, int(target["age"]), float(target["amount"])))
+            imp = (new_gap - gap)
+            if best is None or imp > best[2]:
+                best = (f"Increase saving to ${cand['annual_saving']:,.0f}/yr", cand, imp)
+
+        # candidate: part-time income $6k/yr for 3 years after retirement
+        if "part_time_income" in allowed:
+            ra = int((_apply_patch(params, patch_total)).get("retirement_age", ra0))
+            cand = {"goal_events": [{
+                "name": "part-time",
+                "is_expense": False,
+                "amount": 6000.0,
+                "start_age": ra,
+                "recurrence": "years",
+                "years": 3,
+                "inflation_linked": True
+            }]}
+            pct = _quick_mc(_apply_patch(params, _apply_patch(patch_total, cand)), n_sims=350)
+            new_gap = (_p10_gap_to_age(pct, start_age, int(target["age"]))
+                       if target["type"] == "p10_nonneg"
+                       else _p50_final_gap(pct, start_age, int(target["age"]), float(target["amount"])))
+            imp = (new_gap - gap)
+            if best is None or imp > best[2]:
+                best = (f"Add part-time income $6k/yr ×3y", cand, imp)
+
+        if best is None or best[2] <= 0:
+            break  # no improvement from any lever
+
+        # accept best step
+        desc, cand_patch, _ = best
+        patch_total = _apply_patch(patch_total, cand_patch)
+        steps.append(best)
+        # update gap baseline
+        pct_after = _quick_mc(_apply_patch(params, patch_total), n_sims=350)
+        gap = (_p10_gap_to_age(pct_after, start_age, int(target["age"]))
+               if target["type"] == "p10_nonneg"
+               else _p50_final_gap(pct_after, start_age, int(target["age"]), float(target["amount"])))
+        if (target["type"] == "p10_nonneg" and gap >= 0) or (target["type"] == "final_assets_min" and gap >= 0):
+            break
+
+    # build response
+    out: List[Dict[str, Any]] = []
+    final_pct = _quick_mc(_apply_patch(params, patch_total), n_sims=500)
+    final_ok = (_p10_gap_to_age(final_pct, start_age, int(target.get("age", start_age))) >= 0
+                if target["type"] == "p10_nonneg"
+                else _p50_final_gap(final_pct, start_age, int(target["age"]), float(target["amount"])) >= 0)
+
+    title = "Solution found" if final_ok else "Best effort (not fully met)"
+    detail = (f"Applied {len(steps)} step(s)."
+              + ("" if final_ok else " You can add more levers or widen bounds."))
+
+    out.append({"type": "status", "title": title, "detail": detail})
+
+    if patch_total:
+        out.append({
+            "type": "action",
+            "title": "Apply full solution",
+            "why": "Apply all steps in one click.",
+            "patch": patch_total
+        })
+
+    # also list step-by-step patches
+    for desc, cand_patch, _imp in steps:
+        out.append({"type": "action", "title": desc, "patch": cand_patch})
+
+    if not steps:
+        out.append({"type": "status", "title": "No improving move with chosen levers", "detail": ""})
+
+    return out
+
+# ---------- public entry ----------
+
+def coach_suggestions(params: Dict[str, Any],
+                      percentiles: Dict[str, List[float]],
+                      prefs: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """
+    If prefs contains a 'target' and optional 'levers', run targeted solver.
+    Otherwise, fall back to lightweight heuristic suggestions.
+    """
+    prefs = prefs or {}
+    target = prefs.get("target")
+    levers = prefs.get("levers") or []
+    if target:
+        return _solve_target(params, target, levers)
+    return _heuristic_suggestions(params, percentiles)
+
 
 

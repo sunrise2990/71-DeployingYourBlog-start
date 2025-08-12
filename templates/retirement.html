@@ -391,6 +391,53 @@
     <div class="card mt-3">
       <div class="card-body">
         <h6 class="mb-2">🧭 Strategy Coach (beta)</h6>
+
+        <!-- Targeted solver controls -->
+        <div class="border rounded p-2 mb-3">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+              <label class="form-label mb-1">Target</label>
+              <div class="d-flex gap-2">
+                <select id="sc_target" class="form-select">
+                  <option value="p10_horizon" selected>Keep worst-case (p10) > $0 through age…</option>
+                  <option value="final_assets">Final assets ≥ amount at age…</option>
+                </select>
+                <input id="sc_age" type="number" class="form-control" min="60" max="105" step="1" value="90" style="max-width:90px">
+              </div>
+            </div>
+            <div class="col-md-3" id="sc_amt_wrap" style="display:none;">
+              <label class="form-label mb-1">Target amount ($)</label>
+              <input id="sc_amt" type="number" class="form-control" min="0" step="10000" value="2000000">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label mb-1">Levers (what can change?)</label>
+              <div class="d-flex flex-wrap gap-3 small">
+                <label class="form-check">
+                  <input id="sc_l_ret" class="form-check-input me-1" type="checkbox" checked> Retire age
+                </label>
+                <label class="form-check">
+                  <input id="sc_l_exp" class="form-check-input me-1" type="checkbox" checked> Expense
+                </label>
+                <label class="form-check">
+                  <input id="sc_l_save" class="form-check-input me-1" type="checkbox"> Savings
+                </label>
+                <label class="form-check">
+                  <input id="sc_l_pt" class="form-check-input me-1" type="checkbox"> Part-time income
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="mt-2 d-flex gap-2">
+            <button id="sc_solve" type="button" class="btn btn-primary btn-sm">
+              Solve target
+            </button>
+            <button id="sc_clear" type="button" class="btn btn-outline-secondary btn-sm">
+              Clear coach goals
+            </button>
+            <span id="sc_status" class="text-muted small ms-2" style="display:none;">Solving…</span>
+          </div>
+        </div>
+
         <div id="coach_area" class="vstack gap-2"></div>
       </div>
     </div>
@@ -421,8 +468,23 @@
   const inflVal  = document.getElementById('lw_infl_val');
   const lifeVal  = document.getElementById('lw_life_val');
 
+  // Coach-target UI
+  const scTarget   = document.getElementById('sc_target');
+  const scAge      = document.getElementById('sc_age');
+  const scAmtWrap  = document.getElementById('sc_amt_wrap');
+  const scAmt      = document.getElementById('sc_amt');
+  const scSolveBtn = document.getElementById('sc_solve');
+  const scClearBtn = document.getElementById('sc_clear');
+  const scStatus   = document.getElementById('sc_status');
+  const scLeverRet = document.getElementById('sc_l_ret');
+  const scLeverExp = document.getElementById('sc_l_exp');
+  const scLeverSav = document.getElementById('sc_l_save');
+  const scLeverPT  = document.getElementById('sc_l_pt');
+
   // 👉 stash for coach-suggested goals (not persisted)
   window.__coach_goals = window.__coach_goals || [];
+  // 👉 prefs the server can use to run a targeted solve
+  window.__coach_prefs = window.__coach_prefs || null;
 
   // 👉 CSRF token for JSON POST (safe if undefined)
   const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
@@ -714,11 +776,29 @@
     });
   }
 
+  // Build prefs from the Targeted Solver UI
+  function readCoachPrefs(){
+    const t = scTarget.value;
+    const age = +scAge.value || (+elLife.value);
+    const prefs = {
+      target: (t === 'final_assets')
+        ? { type: 'final_assets', age, amount: numFrom(scAmt) || 0 }
+        : { type: 'p10_horizon', age },
+      levers: {
+        retirement_age: !!scLeverRet.checked,
+        annual_expense: !!scLeverExp.checked,
+        annual_saving:  !!scLeverSav.checked,
+        part_time_income: !!scLeverPT.checked
+      }
+    };
+    return prefs;
+  }
+
   // ---- network call with mode ----
   async function ping(mode = 'full') {
     const payload = collectParams();
     payload.mode = mode;
-    payload.coach_prefs = window.__coach_prefs || {};  // reserved for future UI
+    payload.coach_prefs = window.__coach_prefs || null;
 
     const url = "{{ url_for('projects.live_update') }}"; /* or url_for('live_whatif.live_update') if you mounted fallback BP */
     try {
@@ -737,7 +817,7 @@
         console.groupCollapsed("LIVE DEBUG");
         console.table(data.debug.used_params || {});
         console.log("Deterministic last:", data.debug?.derived?.deterministic_last);
-        console.log("SENT PAYLOAD", payload);
+        console.log("coach_prefs echo:", data.debug?.coach_prefs || null);
         console.groupEnd();
       }
 
@@ -755,6 +835,9 @@
       renderCoach(data.coach || []);
     } catch (err) {
       console.error("live-update error", err);
+    } finally {
+      scSolveBtn.disabled = false;
+      scStatus.style.display = 'none';
     }
   }
 
@@ -778,6 +861,24 @@
     const f = gatherForm();
     setSlidersFromForm(f);
     updateLabelsFromSliders();
+    window.__coach_goals = [];  // reset ephemeral coach goals on hard reset
+    ping('full');
+  });
+
+  // --- Targeted solver wiring
+  scTarget.addEventListener('change', () => {
+    scAmtWrap.style.display = (scTarget.value === 'final_assets') ? '' : 'none';
+  });
+
+  scSolveBtn.addEventListener('click', () => {
+    window.__coach_prefs = readCoachPrefs();
+    scSolveBtn.disabled = true;
+    scStatus.style.display = '';
+    ping('full');
+  });
+
+  scClearBtn.addEventListener('click', () => {
+    window.__coach_goals = [];
     ping('full');
   });
 
