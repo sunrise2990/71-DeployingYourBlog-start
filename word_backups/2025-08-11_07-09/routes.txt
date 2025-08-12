@@ -842,8 +842,7 @@ def _harmonize(params: dict) -> dict:
 
 # Goals helpers
 from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
-# Coach helpers
-from models.retirement.coach import coach_suggestions
+
 
 @bp_for_live.post("/api/live-update")
 def live_update():
@@ -933,14 +932,6 @@ def live_update():
     pct = mc_out.get("percentiles", {})
     det_last = det_curve[-1] if det_curve else None
 
-
-    # Strategy Coach (beta)
-    try:
-        coach = coach_suggestions(params, pct)
-    except Exception as e:
-        coach = [{"type": "status", "title": "Coach unavailable", "detail": str(e)}]
-
-
     # Keep a rich (but compact) debug payload for browser-side inspection
     debug = {
         "used_params": {
@@ -977,10 +968,10 @@ def live_update():
         "p10": pct.get("p10", []),
         "p50": pct.get("p50", []),
         "p90": pct.get("p90", []),
-        "coach": coach,  # 👈 added
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 

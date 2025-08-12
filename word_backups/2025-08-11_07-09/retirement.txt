@@ -386,14 +386,6 @@
     </details>
 
     <canvas id="lw_assets_chart" class="mt-4"></canvas>
-
-    <!-- 🧭 Strategy Coach (beta) -->
-    <div class="card mt-3">
-      <div class="card-body">
-        <h6 class="mb-2">🧭 Strategy Coach (beta)</h6>
-        <div id="coach_area" class="vstack gap-2"></div>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -420,9 +412,6 @@
   const taxVal   = document.getElementById('lw_tax_val');
   const inflVal  = document.getElementById('lw_infl_val');
   const lifeVal  = document.getElementById('lw_life_val');
-
-  // 👉 stash for coach-suggested goals (not persisted)
-  window.__coach_goals = window.__coach_goals || [];
 
   // 👉 CSRF token for JSON POST (safe if undefined)
   const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
@@ -537,8 +526,8 @@
       return_rate_after,
       annual_expense,
       cpp_monthly,
-      cpp_start_age,
-      cpp_end_age,
+      cpp_start_age,   // from Extended Year From
+      cpp_end_age,     // (Extended Year To - 1), inclusive
       asset_liquidations,
       inflation_rate,
       life_expectancy,
@@ -574,7 +563,6 @@
       for (const age of ages) {
         const yrs  = Math.max(0, age - currAge);
         const amt  = g.amount * (g.inflation_linked ? Math.pow(1 + infl, yrs) : 1);
-        // Keep your current sign convention (works with your calculators)
         out.push({ age: Math.round(age), amount: g.is_expense ? -amt : amt });
       }
     }
@@ -653,13 +641,11 @@
 
     form.num_simulations    = 2000;
 
-    // 🔗 attach goals (table + coach) and merge into asset_liquidations
-    const goalsTable = (window.GoalsModule?.current() || []);
-    const coachGoals = (window.__coach_goals || []);
-    const allGoals   = goalsTable.concat(coachGoals);
+    // 🔗 attach goals and merge into asset_liquidations
+    const goals = (window.GoalsModule?.current() || []);
+    form.goal_events = goals;
 
-    form.goal_events = allGoals;  // send for server visibility/debug
-    const fromGoals  = goalsToLiquidations(allGoals, form);
+    const fromGoals = goalsToLiquidations(goals, form);
     form.asset_liquidations = [...(form.asset_liquidations || []), ...fromGoals];
 
     // reflect labels
@@ -671,51 +657,9 @@
 
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
-  // ---- Coach UI helpers ----
-  function applyPatch(patch){
-    if (!patch) return;
-
-    if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
-    if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
-    if (patch.return_rate != null) elPre.value = (+patch.return_rate*100).toFixed(1);
-    if (patch.return_rate_after != null) elPost.value = (+patch.return_rate_after*100).toFixed(1);
-
-    if (Array.isArray(patch.goal_events) && patch.goal_events.length){
-      window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
-    }
-
-    updateLabelsFromSliders();
-    send();
-  }
-
-  function renderCoach(list){
-    const area = document.getElementById('coach_area');
-    if (!area) return;
-    area.innerHTML = '';
-    (list || []).forEach(s => {
-      const row = document.createElement('div');
-      if (s.type === 'status') {
-        row.className = 'alert alert-secondary py-2 mb-0';
-        row.textContent = s.detail || s.title || 'Status';
-      } else {
-        row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
-        row.innerHTML = `
-          <div>
-            <div class="fw-semibold">${s.title || 'Suggestion'}</div>
-            <div class="text-muted small">${s.why || ''}</div>
-          </div>
-          <div class="d-flex gap-2">
-            <button type="button" class="btn btn-sm btn-primary">Try it</button>
-          </div>`;
-        row.querySelector('button').addEventListener('click', () => applyPatch(s.patch));
-      }
-      area.appendChild(row);
-    });
-  }
-
   async function ping() {
     const payload = collectParams();
-    const url = "{{ url_for('projects.live_update') }}";  /* change to live_whatif.live_update if you used the fallback blueprint */
+    const url = "{{ url_for('projects.live_update') }}";
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -745,9 +689,6 @@
       chart.data.datasets[2].data = data.p50 || [];
       chart.data.datasets[3].data = data.p90 || [];
       chart.update('none');
-
-      // 🧭 render Coach suggestions
-      renderCoach(data.coach || []);
     } catch (err) {
       console.error("live-update error", err);
     }
@@ -880,6 +821,7 @@
   const inflEl   = document.getElementById('g_infl');
 
   // ---- tiny state + pub/sub
+  // each row: {enabled, name, is_expense, amount, start_age, recurrence, years?, end_age?, inflation_linked}
   let rows = [];
   const subs = new Set();
   const notify = () => subs.forEach(fn => { try { fn(); } catch {} });
@@ -968,12 +910,11 @@
 </script>
 
       <p class="text-muted small mb-0">
-        Note: For MVP, goals (including any Coach suggestions you "Try") are merged client-side into asset liquidations (post-tax) before the live update call. They don’t alter Living Expense (for taxes) yet—keeping the core calculators untouched.
+        Note: For MVP, goals are merged client-side into asset liquidations (post-tax) before the live update call. They don’t alter Living Expense (for taxes) yet—keeping the core calculators untouched.
       </p>
     </details>
   </div>
 </div>
-
 
 
 
