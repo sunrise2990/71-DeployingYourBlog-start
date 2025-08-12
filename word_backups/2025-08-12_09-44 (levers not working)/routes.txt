@@ -762,3 +762,246 @@ def compare_retirement():
 
 
 
+
+
+# ==== Live-WhatIf: minimal POST endpoint (append-only) ====
+from flask import request, session, jsonify
+import secrets
+
+# Reuse your projects blueprint if it exists; otherwise create a tiny one.
+try:
+    bp_for_live = projects_bp
+except NameError:
+    from flask import Blueprint
+    bp_for_live = Blueprint("live_whatif", __name__)
+
+# Seed wrapper
+from models.retirement.retirement_calc import run_mc_with_seed
+
+# --- 🔁 USE YOUR REAL FUNCTION NAMES & MODULE PATH ---
+from models.retirement.retirement_calc import run_retirement_projection as _DET
+from models.retirement.retirement_calc import run_monte_carlo_simulation_locked_inputs as _MC
+# ----------------------------------------------------
+
+def _get_or_create_seed():
+    if "mc_seed" not in session:
+        session["mc_seed"] = secrets.randbits(32)
+    return int(session["mc_seed"])
+
+def _defaults():
+    # Must include required params for BOTH deterministic + MC
+    return dict(
+        # shared
+        current_age=53,
+        retirement_age=65,
+        annual_saving=48000,
+        saving_increase_rate=0.02,
+        current_assets=850000,
+        annual_expense=72000,
+        cpp_monthly=1200,
+        cpp_start_age=65,
+        cpp_end_age=70,
+        asset_liquidations=[],           # e.g. [{"age": 60, "amount": 100000}]
+        inflation_rate=0.025,
+        life_expectancy=92,
+        income_tax_rate=0.15,
+
+        # deterministic-specific
+        return_rate=0.065,
+        return_rate_after=0.045,
+
+        # MC-specific (mapped below)
+        return_mean=0.065,
+        return_mean_after=0.045,
+        return_std=0.10,
+        inflation_mean=0.025,
+        inflation_std=0.01,
+        num_simulations=2000,
+    )
+
+def _merge(d):
+    base = _defaults()
+    for k, v in (d or {}).items():
+        if k in base:
+            base[k] = v
+    return base
+
+def _harmonize(params: dict) -> dict:
+    """
+    If the UI doesn't provide an explicit CPP window, infer a window that
+    matches the main app semantics: start at retirement, end at life expectancy.
+    """
+    ra = int(params.get("retirement_age", 65))
+    le = int(params.get("life_expectancy", ra + 30))
+    if "cpp_start_age" not in params or params.get("cpp_start_age") is None:
+        params["cpp_start_age"] = ra
+    if "cpp_end_age" not in params or params.get("cpp_end_age") is None:
+        params["cpp_end_age"] = le
+    return params
+
+
+
+
+# Goals helpers
+from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
+# Coach helpers (supports prefs for targeted solve)
+from models.retirement.coach import coach_suggestions
+
+
+@bp_for_live.post("/api/live-update")
+def live_update():
+    payload = request.get_json(silent=True) or {}
+
+    # speed mode: "lite" while dragging, "full" after user pauses or presses Solve
+    mode = payload.get("mode", "full")
+    is_lite = (mode == "lite")
+
+    # optional target/lever preferences for the coach (client may omit)
+    coach_prefs = payload.get("coach_prefs", {}) or {}
+
+    params = _merge(payload)
+    params = _harmonize(params)  # keep CPP window aligned with main calculator
+
+    goal_events = params.get("goal_events") or []
+
+    # ---- Expand goals to per-age cashflows (MVP post-tax via liquidations) ----
+    per_age = {}
+    goals_error = None
+    try:
+        already_merged = bool(params.get("asset_liquidations"))
+        if goal_events and not already_merged:
+            per_age = expand_goals_to_per_age(
+                current_age=int(params["current_age"]),
+                life_expectancy=int(params["life_expectancy"]),
+                inflation_rate=float(params.get("inflation_rate", 0.0)),
+                goals=goal_events,
+            )
+
+            liqs = goals_to_liquidations_adapter(
+                current_liqs=list(params.get("asset_liquidations") or []),
+                per_age=per_age,
+            )
+
+            # Sort + coalesce by age, round to cents, drop ~zero
+            liqs.sort(key=lambda r: int(r.get("age", 0)))
+            coalesced: list[dict] = []
+            i = 0
+            while i < len(liqs):
+                age_i = int(liqs[i]["age"])
+                amt = 0.0
+                while i < len(liqs) and int(liqs[i]["age"]) == age_i:
+                    amt += float(liqs[i]["amount"])
+                    i += 1
+                amt = round(amt, 2)
+                if abs(amt) >= 0.005:
+                    coalesced.append({"age": age_i, "amount": amt})
+
+            params["asset_liquidations"] = coalesced
+    except Exception as e:
+        goals_error = str(e)
+        # Fall back cleanly if the payload for goals is malformed
+        params["asset_liquidations"] = list(params.get("asset_liquidations") or [])
+
+    # ✅ Pass ONLY the args that run_retirement_projection expects
+    det_keys = [
+        "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
+        "current_assets", "return_rate", "return_rate_after", "annual_expense",
+        "cpp_monthly", "cpp_start_age", "cpp_end_age",
+        "asset_liquidations", "inflation_rate", "life_expectancy", "income_tax_rate",
+    ]
+    det_params = {k: params[k] for k in det_keys if k in params}
+    det_out = _DET(**det_params)
+
+    det_table = det_out.get("table", [])
+    labels = [row.get("Year") for row in det_table]
+    det_curve = [row.get("Asset") for row in det_table]
+
+    # MC mapping
+    mc_params = dict(
+        current_age=params["current_age"],
+        retirement_age=params["retirement_age"],
+        annual_saving=params["annual_saving"],
+        saving_increase_rate=params["saving_increase_rate"],
+        current_assets=params["current_assets"],
+        return_mean=params.get("return_mean", params["return_rate"]),
+        return_mean_after=params.get("return_mean_after", params["return_rate_after"]),
+        return_std=params["return_std"],
+        annual_expense=params["annual_expense"],
+        inflation_mean=params.get("inflation_mean", params["inflation_rate"]),
+        inflation_std=params["inflation_std"],
+        cpp_monthly=params["cpp_monthly"],
+        cpp_start_age=params["cpp_start_age"],
+        cpp_end_age=params["cpp_end_age"],
+        asset_liquidations=params["asset_liquidations"],
+        life_expectancy=params["life_expectancy"],
+        # 👇 fewer sims in lite mode for responsiveness
+        num_simulations=(
+            500 if is_lite else params.get("num_simulations", params.get("n_sims", 2000))
+        ),
+        income_tax_rate=params["income_tax_rate"],
+    )
+
+    seed = _get_or_create_seed()
+    mc_out = run_mc_with_seed(seed, _MC, **mc_params)
+
+    pct = mc_out.get("percentiles", {})
+    det_last = det_curve[-1] if det_curve else None
+
+    # Strategy Coach (beta) — only on FULL calls
+    coach = []
+    if not is_lite:
+        try:
+            # coach accepts optional prefs; safe if coach ignores them
+            coach = coach_suggestions(params, pct, prefs=coach_prefs)
+        except Exception as e:
+            coach = [{"type": "status", "title": "Coach unavailable", "detail": str(e)}]
+
+    # Keep a rich (but compact) debug payload for browser-side inspection
+    debug = {
+        "used_params": {
+            "current_age": params["current_age"],
+            "retirement_age": params["retirement_age"],
+            "life_expectancy": params["life_expectancy"],
+            "annual_saving": params["annual_saving"],
+            "saving_increase_rate": params["saving_increase_rate"],
+            "current_assets": params["current_assets"],
+            "annual_expense": params["annual_expense"],
+            "income_tax_rate": params["income_tax_rate"],
+            "inflation_rate": params["inflation_rate"],
+            "cpp_monthly": params["cpp_monthly"],
+            "cpp_start_age": params["cpp_start_age"],
+            "cpp_end_age": params["cpp_end_age"],
+            "return_rate": params["return_rate"],
+            "return_rate_after": params["return_rate_after"],
+            "return_std": params["return_std"],
+            "inflation_std": params["inflation_std"],
+            "asset_liquidations": params["asset_liquidations"],
+            "goal_events_count": len(goal_events),
+            "mode": mode,
+            "num_simulations": mc_params["num_simulations"],
+        },
+        "goals": {
+            "per_age": per_age,            # expanded view: {age: {expense, inflow}}
+            "error": goals_error,          # None if OK
+        },
+        "mc": {"seed": seed},
+        "derived": {"deterministic_last": det_last},
+        "coach_prefs": coach_prefs if not is_lite else {},
+    }
+
+    out = {
+        "labels": labels,
+        "deterministic": det_curve,
+        "p10": pct.get("p10", []),
+        "p50": pct.get("p50", []),
+        "p90": pct.get("p90", []),
+        **({"coach": coach} if not is_lite else {}),  # include only on full
+        "debug": debug,
+    }
+    return jsonify(out), 200
+
+
+
+
+
+

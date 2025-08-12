@@ -158,6 +158,8 @@
         </div>
         {% endif %}
 
+
+
         {% if chart_data %}
         <div class="mt-5">
             <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
@@ -292,6 +294,802 @@
             </p>
         </div>
         {% endif %}
+
+
+
+<!-- ==== Live What-If (beta) – append-only block ==== -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3"></script>
+
+<div class="card mt-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">⚡ Live What-If</h5>
+
+    <!-- Top quick controls -->
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Retirement Age:
+          <span id="lw_age_val" class="fw-semibold">65</span>
+        </label>
+        <input type="range" id="lw_ret_age" class="form-range" min="55" max="75" step="1" value="65">
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">Monthly Expense ($/mo):
+          <span id="lw_exp_val" class="fw-semibold">6,900</span>
+        </label>
+        <input type="range" id="lw_expense_mo" class="form-range" min="2000" max="20000" step="50" value="6900">
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">Post-Ret Return (%):
+          <span id="lw_post_val" class="fw-semibold">6.0</span>
+        </label>
+        <input type="range" id="lw_mu_post" class="form-range" min="0" max="12" step="0.1" value="6.0">
+      </div>
+    </div>
+
+    <!-- Reset toolbar -->
+    <div class="d-flex align-items-center gap-2 mt-2">
+      <button id="lw_reset" type="button" class="btn btn-sm btn-outline-secondary">
+        ⟲ Reset to form values
+      </button>
+      <span class="text-muted small">Restore sliders from the current inputs above.</span>
+    </div>
+
+    <!-- More controls -->
+    <details class="mt-3">
+      <summary class="h6 mb-2">More controls</summary>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Pre-Ret Return (%):
+            <span id="lw_pre_val" class="fw-semibold">8.0</span>
+          </label>
+          <input type="range" id="lw_mu_pre" class="form-range" min="0" max="12" step="0.1" value="8.0">
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Monthly Savings ($/mo):
+            <span id="lw_save_val" class="fw-semibold">7,100</span>
+          </label>
+          <input type="range" id="lw_saving_mo" class="form-range" min="0" max="20000" step="100" value="7100">
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Current Assets ($):
+            <span id="lw_assets_val" class="fw-semibold">1,000,000</span>
+          </label>
+          <input type="range" id="lw_assets" class="form-range" min="0" max="5000000" step="50000" value="1000000">
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Income Tax Rate (%):
+            <span id="lw_tax_val" class="fw-semibold">12.0</span>
+          </label>
+          <input type="range" id="lw_tax" class="form-range" min="0" max="50" step="0.5" value="12">
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Inflation Rate (%):
+            <span id="lw_infl_val" class="fw-semibold">2.0</span>
+          </label>
+          <input type="range" id="lw_infl" class="form-range" min="0" max="10" step="0.1" value="2.0">
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Expected Lifespan (Age):
+            <span id="lw_life_val" class="fw-semibold">84</span>
+          </label>
+          <input type="range" id="lw_life" class="form-range" min="70" max="105" step="1" value="84">
+        </div>
+      </div>
+    </details>
+
+    <canvas id="lw_assets_chart" class="mt-4"></canvas>
+
+    <!-- 🧭 Strategy Coach (beta) -->
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="mb-2">🧭 Strategy Coach (beta)</h6>
+
+        <!-- Targeted Solve panel -->
+        <div class="border rounded p-2 mb-3">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label mb-1">Target</label>
+              <select id="sc_target" class="form-select form-select-sm">
+                <option value="prob" selected>Success probability ≥</option>
+                <option value="assets">Final assets ≥</option>
+              </select>
+            </div>
+
+            <div class="col-md-3" id="sc_prob_wrap">
+              <label class="form-label mb-1">Probability (%)</label>
+              <input id="sc_prob" type="number" class="form-control form-control-sm" value="90" min="50" max="100" step="1">
+            </div>
+
+            <div class="col-md-3 d-none" id="sc_assets_wrap">
+              <label class="form-label mb-1">Assets ($)</label>
+              <input id="sc_assets" type="number" class="form-control form-control-sm" value="2000000" min="0" step="10000">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label mb-1">At (age)</label>
+              <input id="sc_age" type="number" class="form-control form-control-sm" value="90" min="60" max="105" step="1">
+            </div>
+          </div>
+
+          <div class="row g-3 mt-2">
+            <div class="col-md-9">
+              <div class="small text-muted mb-1">Levers (what can change)</div>
+              <div class="d-flex flex-wrap gap-3">
+                <label class="form-check small"><input class="form-check-input" type="checkbox" id="sc_lev_ret_age" checked> Retirement age</label>
+                <label class="form-check small"><input class="form-check-input" type="checkbox" id="sc_lev_spend" checked> Spending</label>
+                <label class="form-check small"><input class="form-check-input" type="checkbox" id="sc_lev_save" checked> Savings</label>
+                <label class="form-check small"><input class="form-check-input" type="checkbox" id="sc_lev_inflow"> Part-time inflow</label>
+              </div>
+            </div>
+            <div class="col-md-3 d-flex justify-content-end gap-2">
+              <button id="sc_clear_goals" type="button" class="btn btn-sm btn-outline-secondary">Clear coach goals</button>
+              <button id="sc_solve" type="button" class="btn btn-sm btn-primary">Solve</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Server suggestions render here -->
+        <div id="coach_area" class="vstack gap-2"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Sliders + value spans
+  const elAge   = document.getElementById('lw_ret_age');
+  const elExpMo = document.getElementById('lw_expense_mo');
+  const elPost  = document.getElementById('lw_mu_post');
+
+  const elPre   = document.getElementById('lw_mu_pre');
+  const elSaveMo= document.getElementById('lw_saving_mo');
+  const elAssets= document.getElementById('lw_assets');
+  const elTax   = document.getElementById('lw_tax');
+  const elInfl  = document.getElementById('lw_infl');
+  const elLife  = document.getElementById('lw_life');
+
+  const ageVal   = document.getElementById('lw_age_val');
+  const expVal   = document.getElementById('lw_exp_val');
+  const postVal  = document.getElementById('lw_post_val');
+  const preVal   = document.getElementById('lw_pre_val');
+  const saveVal  = document.getElementById('lw_save_val');
+  const assetsVal= document.getElementById('lw_assets_val');
+  const taxVal   = document.getElementById('lw_tax_val');
+  const inflVal  = document.getElementById('lw_infl_val');
+  const lifeVal  = document.getElementById('lw_life_val');
+
+  // 👉 Coach Target UI elements
+  const scTarget   = document.getElementById('sc_target');
+  const scProbWrap = document.getElementById('sc_prob_wrap');
+  const scAssetsWrap = document.getElementById('sc_assets_wrap');
+  const scProb   = document.getElementById('sc_prob');
+  const scAssets = document.getElementById('sc_assets');
+  const scAge    = document.getElementById('sc_age');
+  const scSolve  = document.getElementById('sc_solve');
+  const scClearGoals = document.getElementById('sc_clear_goals');
+  const levRetAge = document.getElementById('sc_lev_ret_age');
+  const levSpend  = document.getElementById('sc_lev_spend');
+  const levSave   = document.getElementById('sc_lev_save');
+  const levInflow = document.getElementById('sc_lev_inflow');
+
+  // 👉 stash for coach-suggested goals (not persisted)
+  window.__coach_goals = window.__coach_goals || [];
+  // 👉 stash for coach prefs (sent to server on Solve)
+  window.__coach_prefs = window.__coach_prefs || null;
+
+  // 👉 CSRF token for JSON POST (safe if undefined)
+  const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
+
+  // ---- helpers to read the existing form ----
+  const $ = (sel, root=document) => root.querySelector(sel);
+
+  function findByLabelText(text) {
+    const labels = Array.from(document.querySelectorAll('label'));
+    const t = (text || '').toLowerCase();
+    const lab = labels.find(lb => (lb.textContent || '').toLowerCase().includes(t));
+    if (!lab) return null;
+    if (lab.control) return lab.control;
+    const forId = lab.getAttribute('for');
+    if (forId) { const el = document.getElementById(forId); if (el) return el; }
+    const col = lab.closest('.col-md-4, .col, .form-group, .mb-3') || lab.parentElement;
+    return col ? col.querySelector('input,select,textarea') : null;
+  }
+
+  function findInput({ids=[], names=[], labelIncludes=[]}) {
+    for (const id of ids)   { const el = document.getElementById(id); if (el) return el; }
+    for (const nm of names) { const el = $(`[name="${nm}"]`);         if (el) return el; }
+    for (const txt of labelIncludes) { const el = findByLabelText(txt); if (el) return el; }
+    return null;
+  }
+
+  function numFrom(el) {
+    if (!el) return NaN;
+    if (el.tagName === 'SELECT') {
+      const opt = el.options[el.selectedIndex];
+      const txt = (opt && opt.text) || el.value || '';
+      const m = txt.toString().match(/[\d.]+/);
+      return m ? Number(m[0]) : NaN;
+    }
+    const raw = (el.value ?? el.textContent ?? '').toString();
+    return Number(raw.replace(/[^\d.\-]/g, ''));
+  }
+  const toDec = x => (Number.isFinite(x) ? x/100 : NaN);
+  const nz = (v, f) => (Number.isFinite(v) ? v : f);
+  const fmt = x => Number(x).toLocaleString();
+
+  // ---- snapshot the whole form (includes CPP from Extended-Year fields) ----
+  function gatherForm() {
+    const current_age     = nz(numFrom(findInput({labelIncludes:['Current Age'], names:['current_age']})), 53);
+    const retirement_age  = nz(numFrom(findInput({labelIncludes:['Retirement Age'], names:['retirement_age']})), 65);
+
+    // Lifespan (needed for fallback)
+    const life_expectancy = nz(numFrom(findInput({labelIncludes:['Expected Lifespan'], names:['expected_lifespan']})), 90);
+
+    // Map Extended-Year to CPP window: start = From, end = To - 1 (inclusive)
+    const ext_from = nz(
+      numFrom(findInput({
+        ids:['extended_year_from_age','extended_from_age'],
+        names:['extended_year_from_age'],
+        labelIncludes:['Extended Year From']
+      })), retirement_age
+    );
+
+    const ext_to_raw = nz(
+      numFrom(findInput({
+        ids:['extended_year_to_age','extended_to_age'],
+        names:['extended_year_to_age'],
+        labelIncludes:['Extended Year To']
+      })), life_expectancy + 1
+    );
+
+    const cpp_start_age = ext_from;
+    const cpp_end_age   = Math.max(ext_from, (Number.isFinite(ext_to_raw) ? (ext_to_raw - 1) : life_expectancy));
+
+    const msav            = nz(numFrom(findInput({labelIncludes:['Monthly Savings'], names:['monthly_savings']})), 0);
+    const annual_saving   = msav * 12;
+
+    const inc_rate_pct    = nz(numFrom(findInput({labelIncludes:['Annual Saving Increase Rate'], names:['annual_saving_increase_rate']})), 0);
+    const saving_increase_rate = toDec(inc_rate_pct);
+
+    const pre_ret_pct     = nz(numFrom(findInput({labelIncludes:['Pre-Retire Return Rate'], names:['pre_retire_return_rate']})), 6);
+    const post_ret_pct    = nz(numFrom(findInput({labelIncludes:['Post-Retire Return Rate'], names:['post_retire_return_rate']})), 4.5);
+    const return_rate     = toDec(pre_ret_pct);
+    const return_rate_after = toDec(post_ret_pct);
+
+    const mexp            = nz(numFrom(findInput({labelIncludes:['Monthly Living Expense'], names:['monthly_living_expense','living_expense']})), 0);
+    const annual_expense  = mexp * 12;
+
+    const tax_pct         = nz(numFrom(findInput({labelIncludes:['Income Tax Rate'], names:['income_tax_rate']})), 15);
+    const inflation_pct   = nz(numFrom(findInput({labelIncludes:['Inflation Rate'], names:['inflation_rate']})), 2.5);
+    const income_tax_rate = toDec(tax_pct);
+    const inflation_rate  = toDec(inflation_pct);
+
+    const current_assets  = nz(numFrom(findInput({labelIncludes:['Current Assets'], names:['current_assets']})), 0);
+    const cpp_monthly     = nz(numFrom(findInput({labelIncludes:['Living Expense Support','CPP'], names:['cpp_monthly','living_expense_support']})), 0);
+
+    const ret_std_pct     = nz(numFrom(findInput({labelIncludes:['Return Std Dev'], names:['return_std_dev']})), 8);
+    const infl_std_pct    = nz(numFrom(findInput({labelIncludes:['Inflation Std Dev'], names:['inflation_std_dev']})), 0.5);
+    const return_std      = toDec(ret_std_pct);
+    const inflation_std   = toDec(infl_std_pct);
+
+    // optional liquidations (1..3)
+    function liq(n){
+      const amt = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation ${n}`], names:[`asset_liquidation_${n}`]})), 0);
+      const age = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation Age ${n}`], names:[`asset_liquidation_age_${n}`]})), NaN);
+      return (amt>0 && Number.isFinite(age)) ? {amount: amt, age: Math.round(age)} : null;
+    }
+    const asset_liquidations = [liq(1), liq(2), liq(3)].filter(Boolean);
+
+    return {
+      current_age,
+      retirement_age,
+      annual_saving,
+      saving_increase_rate,
+      current_assets,
+      return_rate,
+      return_rate_after,
+      annual_expense,
+      cpp_monthly,
+      cpp_start_age,
+      cpp_end_age,
+      asset_liquidations,
+      inflation_rate,
+      life_expectancy,
+      income_tax_rate,
+
+      // MC mirrors deterministic
+      return_mean: return_rate,
+      return_mean_after: return_rate_after,
+      return_std,
+      inflation_mean: inflation_rate,
+      inflation_std,
+    };
+  }
+
+  // ---- Goals → asset_liquidations (client-side) ----
+  function goalsToLiquidations(goals, base){
+    const out = [];
+    const infl = base.inflation_rate || 0;
+    const currAge = base.current_age || 0;
+    for (const g of goals || []) {
+      if (!g || g.enabled === false) continue;
+      let ages = [];
+      if (g.recurrence === 'once') {
+        ages = [g.start_age];
+      } else if (g.recurrence === 'years') {
+        const n = Math.max(1, g.years || 1);
+        ages = Array.from({length:n}, (_,i)=>g.start_age + i);
+      } else if (g.recurrence === 'annual') {
+        const end = (g.end_age ?? g.start_age);
+        const n = Math.max(0, end - g.start_age + 1);
+        ages = Array.from({length:n}, (_,i)=>g.start_age + i);
+      }
+      for (const age of ages) {
+        const yrs  = Math.max(0, age - currAge);
+        const amt  = g.amount * (g.inflation_linked ? Math.pow(1 + infl, yrs) : 1);
+        out.push({ age: Math.round(age), amount: g.is_expense ? -amt : amt });
+      }
+    }
+    return out;
+  }
+
+  // ---- initialize sliders from the form values ----
+  const base = gatherForm();
+  setSlidersFromForm(base);
+  updateLabelsFromSliders();
+
+  // ---- Chart ----
+  const ctx = document.getElementById('lw_assets_chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'Deterministic', data: [] },
+      { label: 'MC P10', data: [] },
+      { label: 'MC Median', data: [] },
+      { label: 'MC P90', data: [] },
+    ]},
+    options: {
+      responsive: true,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { title: { display: true, text: 'Age' } },
+               y: { ticks: { callback: v => Number(v).toLocaleString() } } }
+    }
+  });
+
+  // Helpers to write sliders/labels from a form snapshot
+  function setSlidersFromForm(f) {
+    elAge.value     = f.retirement_age;
+    elExpMo.value   = Math.round((f.annual_expense/12) / 50) * 50;
+    elPost.value    = Math.round((f.return_rate_after * 100) * 10) / 10;
+
+    elPre.value     = Math.round((f.return_rate * 100) * 10) / 10;
+    elSaveMo.value  = Math.round((f.annual_saving/12) / 100) * 100;
+    elAssets.value  = f.current_assets;
+    elTax.value     = Math.round((f.income_tax_rate * 100) * 2) / 2;
+    elInfl.value    = Math.round((f.inflation_rate * 100) * 10) / 10;
+    elLife.value    = f.life_expectancy;
+  }
+  function updateLabelsFromSliders() {
+    ageVal.textContent     = elAge.value;
+    expVal.textContent     = fmt(elExpMo.value);
+    postVal.textContent    = (+elPost.value).toFixed(1);
+    preVal.textContent     = (+elPre.value).toFixed(1);
+    saveVal.textContent    = fmt(elSaveMo.value);
+    assetsVal.textContent  = fmt(elAssets.value);
+    taxVal.textContent     = (+elTax.value).toFixed(1);
+    inflVal.textContent    = (+elInfl.value).toFixed(1);
+    lifeVal.textContent    = elLife.value;
+  }
+
+  // send ALL form values + slider overrides
+  let lastForm = null;
+  function collectParams() {
+    const form = gatherForm();
+
+    // slider overrides
+    form.retirement_age     = +elAge.value;
+    form.annual_expense     = (+elExpMo.value) * 12;
+    form.return_rate_after  = (+elPost.value) / 100;
+    form.return_mean_after  = form.return_rate_after;
+
+    form.return_rate        = (+elPre.value) / 100;
+    form.return_mean        = form.return_rate;
+
+    form.annual_saving      = (+elSaveMo.value) * 12;
+    form.current_assets     = +elAssets.value;
+    form.income_tax_rate    = (+elTax.value) / 100;
+    form.inflation_rate     = (+elInfl.value) / 100;
+    form.inflation_mean     = form.inflation_rate;
+    form.life_expectancy    = +elLife.value;
+
+    // default sims; server will downshift in lite mode
+    form.num_simulations    = 2000;
+
+    // 🔗 attach goals (table + coach) and merge into asset_liquidations
+    const goalsTable = (window.GoalsModule?.current() || []);
+    const coachGoals = (window.__coach_goals || []);
+    const allGoals   = goalsTable.concat(coachGoals);
+
+    form.goal_events = allGoals;  // send for server visibility/debug
+    const fromGoals  = goalsToLiquidations(allGoals, form);
+    form.asset_liquidations = [...(form.asset_liquidations || []), ...fromGoals];
+
+    // reflect labels
+    updateLabelsFromSliders();
+
+    lastForm = form;
+    return form;
+  }
+
+  // --- debounce helpers ---
+  function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+
+  // ---- Coach prefs read + UI toggles ----
+  function readCoachPrefs(){
+    const target = scTarget.value;
+    const prefs = {
+      target: { type: target, age: +scAge.value },
+      levers: {
+        retirement_age: !!levRetAge.checked,
+        spending: !!levSpend.checked,
+        saving: !!levSave.checked,
+        part_time: !!levInflow.checked
+      }
+    };
+    if (target === 'prob') {
+      prefs.target.prob = +scProb.value;
+    } else {
+      prefs.target.assets = +scAssets.value;
+    }
+    return prefs;
+  }
+  function updateTargetVisibility(){
+    const t = scTarget.value;
+    scProbWrap.classList.toggle('d-none', t !== 'prob');
+    scAssetsWrap.classList.toggle('d-none', t !== 'assets');
+  }
+  scTarget.addEventListener('change', updateTargetVisibility);
+  updateTargetVisibility();
+
+  // ---- Coach UI helpers ----
+  function applyPatch(patch){
+    if (!patch) return;
+
+    if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
+    if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
+    if (patch.return_rate != null) elPre.value = (+patch.return_rate*100).toFixed(1);
+    if (patch.return_rate_after != null) elPost.value = (+patch.return_rate_after*100).toFixed(1);
+
+    if (Array.isArray(patch.goal_events) && patch.goal_events.length){
+      window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
+    }
+
+    updateLabelsFromSliders();
+    sendFull();
+  }
+
+  function renderCoach(list){
+    const area = document.getElementById('coach_area');
+    if (!area) return;
+    area.innerHTML = '';
+    (list || []).forEach(s => {
+      const row = document.createElement('div');
+      if (s.type === 'status') {
+        row.className = 'alert alert-secondary py-2 mb-0';
+        row.textContent = s.detail || s.title || 'Status';
+      } else {
+        row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
+        row.innerHTML = `
+          <div>
+            <div class="fw-semibold">${s.title || 'Suggestion'}</div>
+            <div class="text-muted small">${s.why || ''}</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-primary">Try it</button>
+          </div>`;
+        row.querySelector('button').addEventListener('click', () => applyPatch(s.patch));
+      }
+      area.appendChild(row);
+    });
+  }
+
+  // ---- network call with mode ----
+  async function ping(mode = 'full') {
+    const payload = collectParams();
+    payload.mode = mode;
+    payload.coach_prefs = window.__coach_prefs || null;
+
+    const url = "{{ url_for('projects.live_update') }}"; /* or url_for('live_whatif.live_update') if you mounted fallback BP */
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(CSRF ? {"X-CSRFToken": CSRF} : {})
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) { console.error("live-update failed", res.status, await res.text()); return; }
+      const data = await res.json();
+
+      if (data.debug) {
+        console.groupCollapsed("LIVE DEBUG");
+        console.table(data.debug.used_params || {});
+        console.log("Deterministic last:", data.debug?.derived?.deterministic_last);
+        console.log("SENT PAYLOAD", payload);
+        console.groupEnd();
+      }
+
+      const n = (data.p50?.length) || (data.deterministic?.length) || 0;
+      const startAge = (lastForm?.current_age) ?? payload.current_age ?? 0;
+      chart.data.labels = Array.from({ length: n }, (_, i) => startAge + i);
+
+      chart.data.datasets[0].data = data.deterministic || [];
+      chart.data.datasets[1].data = data.p10 || [];
+      chart.data.datasets[2].data = data.p50 || [];
+      chart.data.datasets[3].data = data.p90 || [];
+      chart.update('none');
+
+      // 🧭 render Coach suggestions (only present on full calls)
+      renderCoach(data.coach || []);
+    } catch (err) {
+      console.error("live-update error", err);
+    }
+  }
+
+  // faster while dragging, solid after pause
+  const sendLite = debounce(() => ping('lite'), 80);
+  const sendFull = debounce(() => ping('full'), 400);
+
+  [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
+    .forEach(el => {
+      el.addEventListener('input', () => { sendLite(); sendFull(); });
+      el.addEventListener('change', () => { ping('full'); });
+    });
+
+  // “Solve” => set prefs, do a FULL call
+  scSolve.addEventListener('click', () => {
+    window.__coach_prefs = readCoachPrefs();
+    ping('full');
+  });
+
+  // Clear any coach-added temporary goals
+  scClearGoals.addEventListener('click', () => {
+    window.__coach_goals = [];
+    ping('full');
+  });
+
+  // Make goal edits trigger a live update too (works if GoalsModule is already loaded)
+  if (window.GoalsModule?.onChange) {
+    window.GoalsModule.onChange(() => { ping('full'); });
+  }
+
+  // --- RESET: snap sliders back to whatever the main form currently holds
+  document.getElementById('lw_reset').addEventListener('click', () => {
+    const f = gatherForm();
+    setSlidersFromForm(f);
+    updateLabelsFromSliders();
+    ping('full');
+  });
+
+  console.log("Live What-If ready (form-derived)");
+  window.__liveTest = { ping, collectParams };
+
+  // initial draw
+  ping('full');
+})();
+</script>
+
+<!-- ==== Goals (modular, optional) ==== -->
+<div class="card mt-3">
+  <div class="card-body">
+    <details open>
+      <summary class="h6 mb-3">🎯 Goals (beta) — extra expenses or inflows</summary>
+
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Name</label>
+          <input id="g_name" type="text" class="form-control" placeholder="college">
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Type</label>
+          <select id="g_type" class="form-select">
+            <option value="expense" selected>Expense (outflow)</option>
+            <option value="inflow">Inflow</option>
+          </select>
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label">Amount ($, today)</label>
+          <input id="g_amt" type="number" class="form-control" value="30000" min="0" step="100">
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label">Start age</label>
+          <input id="g_age" type="number" class="form-control" value="60" min="0" step="1">
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label">Recurrence</label>
+          <select id="g_rec" class="form-select">
+            <option value="once" selected>Once (at start age)</option>
+            <option value="annual">Annual (start→end)</option>
+            <option value="years">For N years</option>
+          </select>
+        </div>
+
+        <div class="col-md-2 d-none" id="g_years_wrap">
+          <label class="form-label">Years</label>
+          <input id="g_years" type="number" class="form-control" value="4" min="1" step="1">
+        </div>
+
+        <div class="col-md-2 d-none" id="g_endage_wrap">
+          <label class="form-label">End age</label>
+          <input id="g_endage" type="number" class="form-control" value="84" min="0" step="1">
+        </div>
+
+        <div class="col-md-3">
+          <div class="form-check mt-4">
+            <input class="form-check-input" type="checkbox" id="g_infl" checked>
+            <label class="form-check-label" for="g_infl">Inflation linked</label>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <button id="goal_add" type="button" class="btn btn-primary mt-3">+ Add Goal</button>
+        </div>
+      </div>
+
+      <hr class="my-3">
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th style="width:70px;">Enabled</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>When</th>
+              <th class="text-end">Amount</th>
+              <th>Infl.</th>
+              <th style="width:70px;"></th>
+            </tr>
+          </thead>
+          <tbody id="goal_rows"></tbody>
+        </table>
+      </div>
+
+<script id="goals-module">
+(() => {
+  // ---- grab elements
+  const rowsEl   = document.getElementById('goal_rows');
+  const addBtn   = document.getElementById('goal_add');
+
+  const nameEl   = document.getElementById('g_name');
+  const typeEl   = document.getElementById('g_type');     // expense | inflow
+  const amtEl    = document.getElementById('g_amt');
+  const ageEl    = document.getElementById('g_age');
+  const recEl    = document.getElementById('g_rec');      // once | annual | years
+  const yearsWrap= document.getElementById('g_years_wrap');
+  const yearsEl  = document.getElementById('g_years');
+  const endWrap  = document.getElementById('g_endage_wrap');
+  const endEl    = document.getElementById('g_endage');
+  const inflEl   = document.getElementById('g_infl');
+
+  // ---- tiny state + pub/sub
+  let rows = [];
+  const subs = new Set();
+  const notify = () => subs.forEach(fn => { try { fn(); } catch {} });
+  const onChange = fn => (subs.add(fn), () => subs.delete(fn));
+  const current = () => rows.filter(r => r.enabled !== false);
+
+  // ---- helpers
+  function esc(s){ return (s ?? '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function whenText(r){
+    if (r.recurrence === 'annual') return `Age ${r.start_age}–${r.end_age ?? ''}`;
+    if (r.recurrence === 'years')  return `Age ${r.start_age} × ${r.years}`;
+    return `At ${r.start_age}`;
+  }
+  function render(){
+    rowsEl.innerHTML = '';
+    rows.forEach((r,i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input class="form-check-input g-en" type="checkbox" data-i="${i}" ${r.enabled !== false ? 'checked' : ''}></td>
+        <td>${esc(r.name || 'Goal')}</td>
+        <td>${r.is_expense ? 'Expense' : 'Inflow'}</td>
+        <td>${whenText(r)}</td>
+        <td class="text-end">$${(+r.amount).toLocaleString()}</td>
+        <td>${r.inflation_linked ? 'Yes' : 'No'}</td>
+        <td><button class="btn btn-sm btn-outline-danger g-del" data-i="${i}">×</button></td>`;
+      rowsEl.appendChild(tr);
+    });
+  }
+  function readNew(){
+    return {
+      enabled: true,
+      name: (nameEl.value || 'Goal').trim(),
+      is_expense: (typeEl.value !== 'inflow'),
+      amount: +amtEl.value || 0,
+      start_age: parseInt(ageEl.value, 10) || 0,
+      recurrence: recEl.value,
+      years: recEl.value === 'years'  ? (parseInt(yearsEl.value, 10) || 1) : undefined,
+      end_age: recEl.value === 'annual' ? (parseInt(endEl.value, 10) || undefined) : undefined,
+      inflation_linked: !!inflEl.checked
+    };
+  }
+
+  // ---- UI wiring
+  recEl.addEventListener('change', () => {
+    yearsWrap.classList.toggle('d-none', recEl.value !== 'years');
+    endWrap.classList.toggle('d-none',   recEl.value !== 'annual');
+  });
+
+  addBtn.addEventListener('click', () => {
+    rows.push(readNew());
+    render();
+    notify();
+  });
+
+  rowsEl.addEventListener('click', e => {
+    const i = e.target.getAttribute('data-i');
+    if (i == null) return;
+    if (e.target.classList.contains('g-del')) {
+      rows.splice(+i, 1);
+      render();
+      notify();
+    }
+  });
+  rowsEl.addEventListener('change', e => {
+    if (e.target.classList.contains('g-en')) {
+      const i = +e.target.getAttribute('data-i');
+      rows[i].enabled = e.target.checked;
+      notify();
+    }
+  });
+
+  // ---- expose API
+  window.GoalsModule = { current, onChange };
+
+  // ---- late-bind Live What-If recalc (in case Live block ran earlier)
+  try {
+    if (window.__liveTest?.ping) {
+      let t;
+      onChange(() => {
+        clearTimeout(t);
+        t = setTimeout(() => window.__liveTest.ping('full'), 120);
+      });
+    }
+  } catch {}
+})();
+</script>
+
+      <p class="text-muted small mb-0">
+        Note: For MVP, goals (including any Coach suggestions you "Try") are merged client-side into asset liquidations (post-tax) before the live update call. They don’t alter Living Expense (for taxes) yet—keeping the core calculators untouched.
+      </p>
+    </details>
+  </div>
+</div>
+
+
+
+
+
+
+
+
+
 
 
 {% if sensitivities %}
@@ -690,7 +1488,21 @@
       if (B) B.splice(raIdx, 1);
     }
 
-    const coreLabels = vars.map(v => v.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));
+
+    // Core labels → match table wording
+    const LABELS = {
+      current_assets:        'Current Assets',
+      return_rate:           'Pre-Retire Return Rate',
+      return_rate_after:     'Post-Retire Return Rate',
+      annual_saving:         'Annual Saving',
+      annual_expense:        'Annual Expense',
+      saving_increase_rate:  'Saving Increase Rate',
+      inflation_rate:        'Inflation Rate',
+      income_tax_rate:       'Income Tax Rate',
+      retirement_age:        'Retirement Age'
+    };
+
+    const coreLabels = vars.map(v => LABELS[v] ?? v.replace(/_/g, ' ').replace(/\b\w/g,c=>c.toUpperCase()));
     const coreA = A.map(Number);
     const coreB = B ? B.map(Number) : null;
 
@@ -1015,6 +1827,9 @@
   }
 </script>
 
-{% endblock %}
 
+
+
+
+{% endblock %}
 
