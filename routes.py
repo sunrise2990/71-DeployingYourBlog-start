@@ -847,7 +847,53 @@ from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidatio
 # Coach helpers (still available, optional)
 from models.retirement.coach import coach_suggestions
 
-# --- tiny helpers for the solver ---
+# ---------- shared helpers (coalesce + goal merge) ----------
+
+def _coalesce_liqs(liqs: list[dict]) -> list[dict]:
+    """Coalesce liquidations by age exactly like live_update already does."""
+    if not liqs:
+        return []
+    liqs = sorted(liqs, key=lambda r: int(r.get("age", 0)))
+    out: list[dict] = []
+    i = 0
+    while i < len(liqs):
+        age_i = int(liqs[i]["age"])
+        amt = 0.0
+        while i < len(liqs) and int(liqs[i]["age"]) == age_i:
+            amt += float(liqs[i]["amount"])
+            i += 1
+        amt = round(amt, 2)
+        if abs(amt) >= 0.005:
+            out.append({"age": age_i, "amount": amt})
+    return out
+
+
+def _merge_goals_into_liqs(params: dict) -> list[dict]:
+    """
+    Expand params['goal_events'] to per-age and merge into existing
+    params['asset_liquidations'], returning a coalesced list.
+    Safe to call even if there are no goals.
+    """
+    base_liqs = list(params.get("asset_liquidations") or [])
+    goals = list(params.get("goal_events") or [])
+    if not goals:
+        return base_liqs
+    try:
+        per_age = expand_goals_to_per_age(
+            current_age=int(params["current_age"]),
+            life_expectancy=int(params["life_expectancy"]),
+            inflation_rate=float(params.get("inflation_rate", 0.0)),
+            goals=goals,
+        )
+        merged = goals_to_liquidations_adapter(current_liqs=base_liqs, per_age=per_age)
+        return _coalesce_liqs(merged)
+    except Exception:
+        # Never fail hard on goal merge during solver/live calc
+        return base_liqs
+
+
+# --- tiny helpers for the solver & sims ---
+
 def _build_det_args(p):
     keys = [
         "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
@@ -880,12 +926,20 @@ def _build_mc_args(p, n_sims):
     )
 
 def _series_value_for(metric, det_curve, pct, idx):
-    if idx < 0: return None
+    """Safe value lookup: clamp idx to the last known point to avoid None when target age > horizon."""
+    if idx < 0:
+        return None
     if metric == "det":
-        return None if idx >= len(det_curve) else det_curve[idx]
+        if not det_curve:
+            return None
+        i = min(idx, len(det_curve) - 1)
+        return det_curve[i]
     key = {"p10":"p10", "p50":"p50", "p90":"p90"}[metric]
     seq = pct.get(key) or []
-    return None if idx >= len(seq) else seq[idx]
+    if not seq:
+        return None
+    i = min(idx, len(seq) - 1)
+    return seq[i]
 
 def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     """
@@ -898,24 +952,31 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     target = (prefs or {}).get("target") or {}
     metric = target.get("metric") or "p50"
     want_assets = float(target.get("assets") or 0.0)
-    target_age = int(target.get("age") or int(p0["life_expectancy"]))
+
+    # Clamp target age to horizon so asking for age 90 with life=84 doesn't read as None/0
+    start_age = int(p0["current_age"])
+    life = int(p0["life_expectancy"])
+    req_age = int(target.get("age") or life)
+    target_age = max(start_age, min(req_age, life))
+
     lever = (prefs or {}).get("lever") or "retirement_age"
 
-    # Guardrails
-    start_age = int(p0["current_age"])
-    idx = target_age - start_age
-    if idx < 0:
-        return {"error": "Target age must be ≥ current age."}
-
-    # Build a quick evaluator
+    # Build a quick evaluator (mirrors server live path + goal merge)
     def eval_assets(p):
+        # Ensure any goal_events are reflected as liquidations for the sim
+        p_eval = dict(p)
+        p_eval["asset_liquidations"] = _merge_goals_into_liqs(p_eval)
+
         # deterministic
-        det_out = _DET(**_build_det_args(p))
+        det_out = _DET(**_build_det_args(p_eval))
         det_tbl = det_out.get("table", [])
         det_curve = [row.get("Asset") for row in det_tbl]
+
         # fast MC
-        mc = run_mc_with_seed(seed, _MC, **_build_mc_args(p, n_sims=700))
+        mc = run_mc_with_seed(seed, _MC, **_build_mc_args(p_eval, n_sims=700))
         pct = mc.get("percentiles", {})
+
+        idx = target_age - start_age
         return _series_value_for(metric, det_curve, pct, idx)
 
     base_val = eval_assets(dict(p0))
@@ -930,6 +991,7 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
 
     # Define ranges & direction per lever (monotonic assumptions)
     low, high, inc = None, None, +1
+
     def apply_lever(p, x):
         if lever == "retirement_age":
             p["retirement_age"] = int(round(x))
@@ -949,13 +1011,12 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
                 "years": 3,
                 "inflation_linked": True
             }]
-            # merge into liquidations client-side anyway; we only need it for MC on server
-            # keep annual_expense etc. unchanged
         return p
 
     if lever == "retirement_age":
+        # Honor horizon and current age; never allow retiring at/after life expectancy
         low  = max(int(p0["current_age"]), 50)
-        high = min(80, int(p0["life_expectancy"]))
+        high = min(80, max(int(p0["current_age"]) + 1, life - 1))
         inc  = +1  # increasing age increases assets
     elif lever == "annual_expense":
         low, high, inc = 0.0, float(p0["annual_expense"]) * 1.5, -1  # more spend ↓ assets
@@ -976,50 +1037,64 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     def below(v): return (v is None) or (v < want_assets)
     def above(v): return (v is not None) and (v >= want_assets)
 
+    feasible = True
     if inc > 0:
         if above(v_low):   # already enough at low bound
             high = low
         elif not above(v_high):
-            return {"error": "Target not reachable with chosen lever range."}
+            feasible = False
     else:
         # decreasing lever value improves assets (spending)
         if above(v_high):  # already enough at higher spend (unlikely)
             low = high
         elif not above(v_low):
-            return {"error": "Target not reachable with chosen lever range."}
+            feasible = False
+
+    if not feasible:
+        # pick closer bound
+        pick = (high if (abs((v_high or 0) - want_assets) <= abs((v_low or 0) - want_assets)) else low)
+        ach = eval_assets(apply_lever(dict(p0), pick))
+        return {"patch": apply_lever({}, pick), "achieved": float(ach or 0.0),
+                "lever_value": pick, "summary": "Target not reachable within bounds; using nearest bound."}
 
     # Binary search
     best_x, best_v = None, None
-    for _ in range(16):
-        mid = (low + high) / 2.0
-        p_try = apply_lever(dict(p0), mid)
-        v = eval_assets(p_try)
-        if above(v):
-            best_x, best_v = mid, v
-            # tighten toward feasibility boundary
-            if inc > 0:
-                high = mid
-            else:
-                low = mid
+    max_iter = 16
+    tolX = (0.25 if lever == "retirement_age" else 50.0)  # quarter-year or ~$50
+    tolF = 500.0  # $500 tolerance on assets
+
+    lo, hi = low, high
+    while max_iter > 0 and abs(hi - lo) > tolX:
+        max_iter -= 1
+        mid = (lo + hi) / 2.0
+        v_mid = eval_assets(apply_lever(dict(p0), mid))
+        if (v_mid is not None) and (v_mid >= want_assets):
+            best_x, best_v = mid, v_mid
+            if inc > 0: hi = mid
+            else:       lo = mid
         else:
-            if inc > 0:
-                low = mid
-            else:
-                high = mid
+            if inc > 0: lo = mid
+            else:       hi = mid
+        if v_mid is not None and abs(v_mid - want_assets) < tolF:
+            lo = hi = mid
+            break
+
+    xStar = (best_x if best_x is not None else (hi if inc > 0 else lo))
+    vStar = (best_v if best_v is not None else eval_assets(apply_lever(dict(p0), xStar)))
 
     # Round/format lever value
     patch = {}
     if lever == "retirement_age":
-        patch["retirement_age"] = int(round(best_x or low))
+        patch["retirement_age"] = int(round(xStar))
     elif lever == "annual_expense":
-        patch["annual_expense"] = round(float(best_x or low), 2)
+        patch["annual_expense"] = round(float(xStar), 2)
     elif lever == "annual_saving":
-        patch["annual_saving"] = round(float(best_x or low), 2)
+        patch["annual_saving"] = round(float(xStar), 2)
     elif lever == "inflow":
         patch["goal_events"] = [{
             "name": "solve_inflow",
             "is_expense": False,
-            "amount": round(float(best_x or low), 2),
+            "amount": round(float(xStar), 2),
             "start_age": int(p0["retirement_age"]),
             "recurrence": "years",
             "years": 3,
@@ -1028,9 +1103,9 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
 
     return {
         "patch": patch,
-        "achieved": float(best_v or 0.0),
+        "achieved": float(vStar or 0.0),
         "lever_value": (patch.get(lever) if lever != "inflow" else patch["goal_events"][0]["amount"]),
-        "summary": f"{lever.replace('_',' ')} → {patch.get(lever, 'goal_events')} gives {metric} @ {target_age} ≈ ${best_v:,.0f}"
+        "summary": f"{lever.replace('_',' ')} → {patch.get(lever, 'goal_events')} gives {metric} @ {target_age} ≈ ${float(vStar or 0.0):,.0f}"
     }
 
 
@@ -1056,29 +1131,8 @@ def live_update():
     try:
         already_merged = bool(params.get("asset_liquidations"))
         if goal_events and not already_merged:
-            per_age = expand_goals_to_per_age(
-                current_age=int(params["current_age"]),
-                life_expectancy=int(params["life_expectancy"]),
-                inflation_rate=float(params.get("inflation_rate", 0.0)),
-                goals=goal_events,
-            )
-            liqs = goals_to_liquidations_adapter(
-                current_liqs=list(params.get("asset_liquidations") or []),
-                per_age=per_age,
-            )
-            liqs.sort(key=lambda r: int(r.get("age", 0)))
-            coalesced: list[dict] = []
-            i = 0
-            while i < len(liqs):
-                age_i = int(liqs[i]["age"])
-                amt = 0.0
-                while i < len(liqs) and int(liqs[i]["age"]) == age_i:
-                    amt += float(liqs[i]["amount"])
-                    i += 1
-                amt = round(amt, 2)
-                if abs(amt) >= 0.005:
-                    coalesced.append({"age": age_i, "amount": amt})
-            params["asset_liquidations"] = coalesced
+            # Use the same merge+coalesce the coach uses
+            params["asset_liquidations"] = _merge_goals_into_liqs(params)
     except Exception as e:
         goals_error = str(e)
         params["asset_liquidations"] = list(params.get("asset_liquidations") or [])
@@ -1103,12 +1157,7 @@ def live_update():
     solution = {}
     if not is_lite and coach_prefs:
         try:
-            # reshape UI prefs: accept either old {target:{type:prob,prob:..}} or new {target:{metric,..}}
-            tp = coach_prefs.get("target") or {}
-            if "type" in tp:  # legacy (probabiliy style)
-                # map to a metric & asset floor (keep backward compatibility if needed)
-                pass
-            # expected new schema: {"target":{"metric":"det|p10|p50|p90","assets":..., "age":...}, "lever":"retirement_age|annual_expense|annual_saving|inflow"}
+            # expected schema: {"target":{"metric":"det|p10|p50|p90","assets":..., "age":...}, "lever":...}
             solution = _solve_single_lever(params, coach_prefs, seed, _DET, _MC, run_mc_with_seed)
         except Exception as e:
             solution = {"error": str(e)}

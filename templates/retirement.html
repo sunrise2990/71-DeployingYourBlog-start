@@ -1020,10 +1020,21 @@
 
   // --- Client-side solver (binary search, uses lite evals) ---
   async function evalWithOverrides(overrides){
+    // Start from a fresh snapshot so we can recompute asset_liquidations if overrides add goals
     const payload = collectParams();
     Object.assign(payload, overrides || {});
+
+    // If overrides introduced goal_events, rebuild asset_liquidations from goals
+    if (overrides && Array.isArray(overrides.goal_events)) {
+      const manualLiqs = (gatherForm().asset_liquidations || []);
+      const allGoals = (payload.goal_events || []);
+      const fromGoals = goalsToLiquidations(allGoals, payload);
+      payload.asset_liquidations = [...manualLiqs, ...fromGoals];
+    }
+
     payload.mode = 'lite';
     payload.coach_prefs = null;
+
     const url = "{{ url_for('projects.live_update') }}";
     const res = await fetch(url, {
       method: "POST",
@@ -1045,7 +1056,8 @@
     return data.p50 || [];
   }
   function valueAtAge(curve, startAge, age){
-    const idx = Math.max(0, Math.round(age - startAge));
+    // ✅ clamp index to curve to avoid 0 when target age > horizon
+    const idx = Math.max(0, Math.min(curve.length - 1, Math.round(age - startAge)));
     return Number(curve[idx] ?? 0);
   }
 
@@ -1054,7 +1066,13 @@
 
     const metric = scMetric.value;
     const targetAssets = Math.max(0, +scAssets.value || 0);
-    const targetAge = +scAge.value || (lastForm?.life_expectancy ?? 90);
+
+    // ✅ clamp solver's target age to [current_age, life_expectancy]
+    const life = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
+    const cur  = lastForm?.current_age ?? gatherForm().current_age ?? 50;
+    let targetAge = +scAge.value || life;
+    targetAge = Math.min(Math.max(targetAge, cur), life);
+
     const lever = getLever();
 
     // bounds from UI
@@ -1124,14 +1142,15 @@
     }
 
     if (!feasible) {
-      const pick = (inc ? (fhi >= flo ? hi : lo) : (flo >= fhi ? lo : hi));
+      const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
+                        : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
       scResult.textContent = "Target not achievable within bounds; using nearest bound.";
       finalizePatch(pick);
       return;
     }
 
     for (let k=0; k<maxIter && Math.abs(hi-lo)>tolX; k++){
-      const mid = inc ? (lo+hi)/2 : (lo+hi)/2;
+      const mid = (lo+hi)/2;
       const fmid = await f(mid);
       if (inc) {
         if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; }
@@ -1165,7 +1184,7 @@
       // Show result
       const pretty = (v) => (lever==='retirement_age' ? Math.round(v) : '$'+Math.round(v).toLocaleString());
       const leverName = {retirement_age:'Retirement age', annual_expense:'Spending (annual)', annual_saving:'Savings (annual)', inflow:'Part-time inflow (annual)'}[lever];
-      scResult.textContent = `${leverName}: ${pretty(x)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${+scAge.value})`;
+      scResult.textContent = `${leverName}: ${pretty(x)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
       // Apply to UI and do a full recalc
       applyPatch(patch);
