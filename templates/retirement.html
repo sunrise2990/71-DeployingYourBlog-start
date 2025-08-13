@@ -1034,213 +1034,210 @@ try {
       el.addEventListener('change', () => { ping('full'); });
     });
 
-  // --- Client-side solver (binary search, uses lite evals) ---
-  async function evalWithOverrides(overrides){
-    // Start from a fresh snapshot so we can recompute asset_liquidations if overrides add goals
-    const payload = collectParams();
-    Object.assign(payload, overrides || {});
 
-    // If overrides introduced goal_events, rebuild asset_liquidations from goals
-    if (overrides && Array.isArray(overrides.goal_events)) {
-      const manualLiqs = (gatherForm().asset_liquidations || []);
-      const allGoals = (payload.goal_events || []);
-      const fromGoals = goalsToLiquidations(allGoals, payload);
-      payload.asset_liquidations = [...manualLiqs, ...fromGoals];
-    }
+// --- Client-side solver (binary search, uses lite evals) ---
+async function evalWithOverrides(overrides){
+  const payload = collectParams();
+  Object.assign(payload, overrides || {});
 
-    payload.mode = 'lite';
-    payload.coach_prefs = null;
-
-    const url = "{{ url_for('projects.live_update') }}";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(CSRF ? {"X-CSRFToken": CSRF} : {})
-      },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    drawFromData(data, payload.current_age);
-    return { data, startAge: payload.current_age };
+  // If overrides introduced goal_events, rebuild asset_liquidations from goals
+  if (overrides && Array.isArray(overrides.goal_events)) {
+    const manualLiqs = (gatherForm().asset_liquidations || []);
+    const allGoals = (payload.goal_events || []);
+    const fromGoals = goalsToLiquidations(allGoals, payload);
+    payload.asset_liquidations = [...manualLiqs, ...fromGoals];
   }
 
-  function curveByMetric(data, metric){
-    if (metric === 'det') return data.deterministic || [];
-    if (metric === 'p10') return data.p10 || [];
-    if (metric === 'p90') return data.p90 || [];
-    return data.p50 || [];
-  }
-  function valueAtAge(curve, startAge, age){
-    // ✅ clamp index to curve to avoid 0 when target age > horizon
-    const idx = Math.max(0, Math.min(curve.length - 1, Math.round(age - startAge)));
-    return Number(curve[idx] ?? 0);
-  }
+  payload.mode = 'lite';
+  payload.coach_prefs = null;
 
-  async function solve(){
-    scResult.textContent = 'Solving…';
-
-    const metric = scMetric.value;
-    const targetAssets = Math.max(0, +scAssets.value || 0);
-
-    // ✅ clamp solver's target age to [current_age, life_expectancy]
-    const life = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
-    const cur  = lastForm?.current_age ?? gatherForm().current_age ?? 50;
-    let targetAge = +scAge.value || life;
-    targetAge = Math.min(Math.max(targetAge, cur), life);
-
-    const lever = getLever();
-
-    // bounds from UI
-    const bounds = {
-      retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
-      annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
-      annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
-      inflow:         [ 0, 30000 ]
-    };
-    const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, inflow:true };
-
-    const [lo0, hi0] = bounds[lever];
-    const inc = increasing[lever];
-
-    function buildOverrides(x, basePayload){
-      if (lever === 'retirement_age') return { retirement_age: Math.round(x) };
-      if (lever === 'annual_expense')  return { annual_expense: x };
-      if (lever === 'annual_saving')   return { annual_saving: x };
-      if (lever === 'inflow') {
-        // append a 3-year part-time inflow starting at retirement age
-        const form = lastForm || gatherForm();
-        const ra = Math.round(+elAge.value || form.retirement_age || 65);
-        const inflowEvent = {
-          name: "part-time",
-          is_expense: false,
-          amount: x,
-          start_age: ra,
-          recurrence: "years",
-          years: 3,
-          inflation_linked: true
-        };
-        return { goal_events: (form.goal_events || []).concat(window.GoalsModule?.current() || [], window.__coach_goals || [], [inflowEvent]) };
-      }
-      return {};
-    }
-
-    async function f(x){
-      const { data, startAge } = await evalWithOverrides(buildOverrides(x));
-      const curve = curveByMetric(data, metric);
-      return valueAtAge(curve, startAge, targetAge) - targetAssets; // want >= 0
-    }
-
-    // bracket
-    let lo = lo0, hi = hi0;
-    let flo = await f(lo);
-    let fhi = await f(hi);
-
-    // adjust goal: for decreasing lever (spending), we want the largest x with f(x)>=0.
-    // for increasing levers, we want the smallest x with f(x)>=0.
-
-    const maxIter = 14;
-    const tolX = (lever==='retirement_age') ? 0.25 : 50; // ~$50 or quarter year
-    const tolF = 500; // $500 tolerance on assets
-
-    // If already satisfied at best (depending on direction), keep that edge.
-    // If impossible, we'll pick the closest edge.
-
-    let feasible = false;
-    if (inc) {
-      // f increases with x
-      if (flo >= 0) { feasible = true; hi = lo; fhi = flo; }
-      else if (fhi < 0) { feasible = false; } else feasible = true;
-    } else {
-      // f decreases with x
-      if (fhi >= 0) { feasible = true; lo = hi; flo = fhi; }
-      else if (flo < 0) { feasible = false; } else feasible = true;
-    }
-
-    if (!feasible) {
-      const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
-                        : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
-      scResult.textContent = "Target not achievable within bounds; using nearest bound.";
-      finalizePatch(pick);
-      return;
-    }
-
-    for (let k=0; k<maxIter && Math.abs(hi-lo)>tolX; k++){
-      const mid = (lo+hi)/2;
-      const fmid = await f(mid);
-      if (inc) {
-        if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; }
-      } else {
-        if (fmid >= 0) { lo = mid; flo = fmid; } else { hi = mid; fhi = fmid; }
-      }
-      if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
-    }
-
-
-const xStar = inc ? hi : lo;
-
-// --- NEW: estimate fractional retirement age for display only ---
-let xDisplay = xStar;
-if (lever === 'retirement_age') {
-  // clamp within allowed/realistic bounds
-  const life = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
-  const cur  = lastForm?.current_age ?? gatherForm().current_age ?? 50;
-  const minA = Math.max(cur, (+elAge.min || 55));
-  const maxA = Math.min(life - 1, (+elAge.max || 75));
-
-  // neighbor integers
-  const r0 = Math.max(minA, Math.min(Math.floor(xStar), maxA));
-  const r1 = Math.max(minA, Math.min(r0 + 1, maxA));
-
-  if (r1 > r0) {
-    // f(x) returns (assets - targetAssets), zero-crossing between r0 and r1
-    const [f0, f1] = await Promise.all([f(r0), f(r1)]);
-    if (Number.isFinite(f0) && Number.isFinite(f1) && Math.abs(f1 - f0) > 1e-9) {
-      const frac = r0 + (0 - f0) / (f1 - f0);
-      xDisplay = Math.max(minA, Math.min(frac, maxA));
-    }
-  }
+  const url = "{{ url_for('projects.live_update') }}";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(CSRF ? {"X-CSRFToken": CSRF} : {})
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  drawFromData(data, payload.current_age);
+  return { data, startAge: payload.current_age };
 }
 
-finalizePatch(xStar, xDisplay);
+function curveByMetric(data, metric){
+  if (metric === 'det') return data.deterministic || [];
+  if (metric === 'p10') return data.p10 || [];
+  if (metric === 'p90') return data.p90 || [];
+  return data.p50 || [];
+}
+function valueAtAge(curve, startAge, age){
+  const idx = Math.max(0, Math.min(curve.length - 1, Math.round(age - startAge)));
+  return Number(curve[idx] ?? 0);
+}
 
-function finalizePatch(x, xDisp){
-  let patch;
-  if (lever === 'retirement_age') patch = { retirement_age: Math.round(x) };
-  else if (lever === 'annual_expense') patch = { annual_expense: x };
-  else if (lever === 'annual_saving')  patch = { annual_saving: x };
-  else if (lever === 'inflow') {
-    const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
-    patch = { goal_events: [{
-      name: "part-time",
-      is_expense: false,
-      amount: Math.round(x),
-      start_age: ra,
-      recurrence: "years",
-      years: 3,
-      inflation_linked: true
-    }]};
+async function solve(){
+  scResult.textContent = 'Solving…';
+
+  const metric = scMetric.value;
+  const targetAssets = Math.max(0, +scAssets.value || 0);
+
+  // clamp solver's target age to [current_age, life_expectancy]
+  const life = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
+  const cur  = lastForm?.current_age ?? gatherForm().current_age ?? 50;
+  let targetAge = +scAge.value || life;
+  targetAge = Math.min(Math.max(targetAge, cur), life);
+
+  const lever = getLever();
+
+  // bounds from UI
+  const bounds = {
+    retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
+    annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
+    annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
+    inflow:         [ 0, 30000 ]
+  };
+  const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, inflow:true };
+
+  const [lo0, hi0] = bounds[lever];
+  const inc = increasing[lever];
+
+  function buildOverrides(x){
+    if (lever === 'retirement_age') return { retirement_age: Math.round(x) };
+    if (lever === 'annual_expense')  return { annual_expense: x };
+    if (lever === 'annual_saving')   return { annual_saving: x };
+    if (lever === 'inflow') {
+      const form = lastForm || gatherForm();
+      const ra = Math.round(+elAge.value || form.retirement_age || 65);
+      const inflowEvent = {
+        name: "part-time",
+        is_expense: false,
+        amount: x,
+        start_age: ra,
+        recurrence: "years",
+        years: 3,
+        inflation_linked: true
+      };
+      return {
+        goal_events: (form.goal_events || []).concat(
+          window.GoalsModule?.current() || [],
+          window.__coach_goals || [],
+          [inflowEvent]
+        )
+      };
+    }
+    return {};
   }
 
-  // Show result (use fractional display for retirement age)
-  const pretty = (v) =>
-    (lever === 'retirement_age'
-      ? Number(v).toFixed(1)               // e.g., "58.6"
-      : '$' + Math.round(v).toLocaleString());
+  async function f(x){
+    const { data, startAge } = await evalWithOverrides(buildOverrides(x));
+    const curve = curveByMetric(data, metric);
+    return valueAtAge(curve, startAge, targetAge) - targetAssets; // want >= 0
+  }
 
-  const leverName = {
-    retirement_age:'Retirement age',
-    annual_expense:'Spending (annual)',
-    annual_saving:'Savings (annual)',
-    inflow:'Part-time inflow (annual)'
-  }[lever];
+  // bracket
+  let lo = lo0, hi = hi0;
+  let flo = await f(lo);
+  let fhi = await f(hi);
 
-  const shown = (lever === 'retirement_age') ? xDisp : x;
-  scResult.textContent =
-    `${leverName}: ${pretty(shown)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
+  const maxIter = 14;
+  const tolX = (lever==='retirement_age') ? 0.25 : 50; // ~$50 or quarter year
+  const tolF = 500; // $500 tolerance on assets
 
-  // Apply integer patch to the UI and recalc
-  applyPatch(patch);
+  // feasibility
+  let feasible = false;
+  if (inc) {
+    if (flo >= 0) { feasible = true; hi = lo; fhi = flo; }
+    else if (fhi < 0) { feasible = false; } else feasible = true;
+  } else {
+    if (fhi >= 0) { feasible = true; lo = hi; flo = fhi; }
+    else if (flo < 0) { feasible = false; } else feasible = true;
+  }
+
+  if (!feasible) {
+    const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
+                      : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
+    scResult.textContent = "Target not achievable within bounds; using nearest bound.";
+    finalizePatch(pick, pick);
+    return;
+  }
+
+  // bisection
+  for (let k=0; k<maxIter && Math.abs(hi-lo)>tolX; k++){
+    const mid = (lo+hi)/2;
+    const fmid = await f(mid);
+    if (inc) {
+      if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; }
+    } else {
+      if (fmid >= 0) { lo = mid; flo = fmid; } else { hi = mid; fhi = fmid; }
+    }
+    if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
+  }
+
+  const xStar = inc ? hi : lo;
+
+  // --- NEW: estimate fractional retirement age for display only ---
+  let xDisplay = xStar;
+  if (lever === 'retirement_age') {
+    // clamp within allowed/realistic bounds
+    const minA = Math.max(cur, (+elAge.min || 55));
+    const maxA = Math.min(life - 1, (+elAge.max || 75));
+
+    // neighbor integers
+    const r0 = Math.max(minA, Math.min(Math.floor(xStar), maxA));
+    const r1 = Math.max(minA, Math.min(r0 + 1, maxA));
+
+    if (r1 > r0) {
+      // f(x) returns (assets - targetAssets), zero-crossing between r0 and r1
+      const [f0, f1] = await Promise.all([f(r0), f(r1)]);
+      if (Number.isFinite(f0) && Number.isFinite(f1) && Math.abs(f1 - f0) > 1e-9) {
+        const frac = r0 + (0 - f0) / (f1 - f0);
+        xDisplay = Math.max(minA, Math.min(frac, maxA));
+      }
+    }
+    if (!Number.isFinite(xDisplay)) xDisplay = xStar;
+  }
+
+  finalizePatch(xStar, xDisplay);
+
+  function finalizePatch(x, xDisp){
+    let patch;
+    if (lever === 'retirement_age') patch = { retirement_age: Math.round(x) };
+    else if (lever === 'annual_expense') patch = { annual_expense: x };
+    else if (lever === 'annual_saving')  patch = { annual_saving: x };
+    else if (lever === 'inflow') {
+      const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
+      patch = { goal_events: [{
+        name: "part-time",
+        is_expense: false,
+        amount: Math.round(x),
+        start_age: ra,
+        recurrence: "years",
+        years: 3,
+        inflation_linked: true
+      }]};
+    }
+
+    // Show result (use fractional display for retirement age)
+    const pretty = (v) =>
+      (lever === 'retirement_age'
+        ? (+Number(v).toFixed(1)).toString()       // "58.6" (no trailing .0)
+        : '$' + Math.round(v).toLocaleString());
+
+    const leverName = {
+      retirement_age:'Retirement age',
+      annual_expense:'Spending (annual)',
+      annual_saving:'Savings (annual)',
+      inflow:'Part-time inflow (annual)'
+    }[lever];
+
+    const shown = (lever === 'retirement_age') ? xDisp : x;
+    scResult.textContent =
+      `${leverName}: ${pretty(shown)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
+
+    // Apply integer patch to the UI and do a full recalc
+    applyPatch(patch);
+  }
 }
 
 
