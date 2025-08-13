@@ -386,60 +386,251 @@
     </details>
 
     <canvas id="lw_assets_chart" class="mt-4"></canvas>
+  </div>
+</div>
 
-    <!-- 🧭 Strategy Coach (beta) -->
-    <div class="card mt-3">
-      <div class="card-body">
-        <h6 class="mb-2">🧭 Strategy Coach (beta)</h6>
+<!-- ==== Goals (modular, optional) – moved ABOVE Strategy Coach ==== -->
+<div class="card mt-3">
+  <div class="card-body">
+    <details open>
+      <summary class="h6 mb-3">🎯 Goals (beta) — extra expenses or inflows</summary>
 
-        <!-- Targeted Solve panel -->
-        <div class="border rounded p-2 mb-3">
-          <div class="row g-2 align-items-end">
-            <div class="col-md-3">
-              <label class="form-label mb-1">Target</label>
-              <select id="sc_target" class="form-select form-select-sm">
-                <option value="prob" selected>Success probability ≥</option>
-                <option value="assets">Final assets ≥</option>
-              </select>
-            </div>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Name</label>
+          <input id="g_name" type="text" class="form-control" placeholder="college">
+        </div>
 
-            <div class="col-md-3" id="sc_prob_wrap">
-              <label class="form-label mb-1">Probability (%)</label>
-              <input id="sc_prob" type="number" class="form-control form-control-sm" value="90" min="50" max="100" step="1">
-            </div>
+        <div class="col-md-3">
+          <label class="form-label">Type</label>
+          <select id="g_type" class="form-select">
+            <option value="expense" selected>Expense (outflow)</option>
+            <option value="inflow">Inflow</option>
+          </select>
+        </div>
 
-            <div class="col-md-3 d-none" id="sc_assets_wrap">
-              <label class="form-label mb-1">Assets ($)</label>
-              <input id="sc_assets" type="number" class="form-control form-control-sm" value="2000000" min="0" step="10000">
-            </div>
+        <div class="col-md-2">
+          <label class="form-label">Amount ($, today)</label>
+          <input id="g_amt" type="number" class="form-control" value="30000" min="0" step="100">
+        </div>
 
-            <div class="col-md-3">
-              <label class="form-label mb-1">At (age)</label>
-              <input id="sc_age" type="number" class="form-control form-control-sm" value="90" min="60" max="105" step="1">
-            </div>
-          </div>
+        <div class="col-md-2">
+          <label class="form-label">Start age</label>
+          <input id="g_age" type="number" class="form-control" value="60" min="0" step="1">
+        </div>
 
-          <div class="row g-3 mt-2">
-            <div class="col-md-9">
-              <div class="small text-muted mb-1">Levers (what can change)</div>
-              <div class="d-flex flex-wrap gap-3">
-                <label class="form-check small"><input class="form-check-input" type="checkbox" id="sc_lev_ret_age" checked> Retirement age</label>
-                <label class="form-check small"><input class="form-check-input" type="checkbox" id="sc_lev_spend" checked> Spending</label>
-                <label class="form-check small"><input class="form-check-input" type="checkbox" id="sc_lev_save" checked> Savings</label>
-                <label class="form-check small"><input class="form-check-input" type="checkbox" id="sc_lev_inflow"> Part-time inflow</label>
-              </div>
-            </div>
-            <div class="col-md-3 d-flex justify-content-end gap-2">
-              <button id="sc_clear_goals" type="button" class="btn btn-sm btn-outline-secondary">Clear coach goals</button>
-              <button id="sc_solve" type="button" class="btn btn-sm btn-primary">Solve</button>
-            </div>
+        <div class="col-md-2">
+          <label class="form-label">Recurrence</label>
+          <select id="g_rec" class="form-select">
+            <option value="once" selected>Once (at start age)</option>
+            <option value="annual">Annual (start→end)</option>
+            <option value="years">For N years</option>
+          </select>
+        </div>
+
+        <div class="col-md-2 d-none" id="g_years_wrap">
+          <label class="form-label">Years</label>
+          <input id="g_years" type="number" class="form-control" value="4" min="1" step="1">
+        </div>
+
+        <div class="col-md-2 d-none" id="g_endage_wrap">
+          <label class="form-label">End age</label>
+          <input id="g_endage" type="number" class="form-control" value="84" min="0" step="1">
+        </div>
+
+        <div class="col-md-3">
+          <div class="form-check mt-4">
+            <input class="form-check-input" type="checkbox" id="g_infl" checked>
+            <label class="form-check-label" for="g_infl">Inflation linked</label>
           </div>
         </div>
 
-        <!-- Server suggestions render here -->
-        <div id="coach_area" class="vstack gap-2"></div>
+        <div class="col-md-3">
+          <button id="goal_add" type="button" class="btn btn-primary mt-3">+ Add Goal</button>
+        </div>
       </div>
+
+      <hr class="my-3">
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th style="width:70px;">Enabled</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>When</th>
+              <th class="text-end">Amount</th>
+              <th>Infl.</th>
+              <th style="width:70px;"></th>
+            </tr>
+          </thead>
+          <tbody id="goal_rows"></tbody>
+        </table>
+      </div>
+
+<script id="goals-module">
+(() => {
+  // ---- grab elements
+  const rowsEl   = document.getElementById('goal_rows');
+  const addBtn   = document.getElementById('goal_add');
+
+  const nameEl   = document.getElementById('g_name');
+  const typeEl   = document.getElementById('g_type');     // expense | inflow
+  const amtEl    = document.getElementById('g_amt');
+  const ageEl    = document.getElementById('g_age');
+  const recEl    = document.getElementById('g_rec');      // once | annual | years
+  const yearsWrap= document.getElementById('g_years_wrap');
+  const yearsEl  = document.getElementById('g_years');
+  const endWrap  = document.getElementById('g_endage_wrap');
+  const endEl    = document.getElementById('g_endage');
+  const inflEl   = document.getElementById('g_infl');
+
+  // ---- tiny state + pub/sub
+  let rows = [];
+  const subs = new Set();
+  const notify = () => subs.forEach(fn => { try { fn(); } catch {} });
+  const onChange = fn => (subs.add(fn), () => subs.delete(fn));
+  const current = () => rows.filter(r => r.enabled !== false);
+
+  // ---- helpers
+  function esc(s){ return (s ?? '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function whenText(r){
+    if (r.recurrence === 'annual') return `Age ${r.start_age}–${r.end_age ?? ''}`;
+    if (r.recurrence === 'years')  return `Age ${r.start_age} × ${r.years}`;
+    return `At ${r.start_age}`;
+  }
+  function render(){
+    rowsEl.innerHTML = '';
+    rows.forEach((r,i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input class="form-check-input g-en" type="checkbox" data-i="${i}" ${r.enabled !== false ? 'checked' : ''}></td>
+        <td>${esc(r.name || 'Goal')}</td>
+        <td>${r.is_expense ? 'Expense' : 'Inflow'}</td>
+        <td>${whenText(r)}</td>
+        <td class="text-end">$${(+r.amount).toLocaleString()}</td>
+        <td>${r.inflation_linked ? 'Yes' : 'No'}</td>
+        <td><button class="btn btn-sm btn-outline-danger g-del" data-i="${i}">×</button></td>`;
+      rowsEl.appendChild(tr);
+    });
+  }
+  function readNew(){
+    return {
+      enabled: true,
+      name: (nameEl.value || 'Goal').trim(),
+      is_expense: (typeEl.value !== 'inflow'),
+      amount: +amtEl.value || 0,
+      start_age: parseInt(ageEl.value, 10) || 0,
+      recurrence: recEl.value,
+      years: recEl.value === 'years'  ? (parseInt(yearsEl.value, 10) || 1) : undefined,
+      end_age: recEl.value === 'annual' ? (parseInt(endEl.value, 10) || undefined) : undefined,
+      inflation_linked: !!inflEl.checked
+    };
+  }
+
+  // ---- UI wiring
+  recEl.addEventListener('change', () => {
+    yearsWrap.classList.toggle('d-none', recEl.value !== 'years');
+    endWrap.classList.toggle('d-none',   recEl.value !== 'annual');
+  });
+
+  addBtn.addEventListener('click', () => {
+    rows.push(readNew());
+    render();
+    notify();
+  });
+
+  rowsEl.addEventListener('click', e => {
+    const i = e.target.getAttribute('data-i');
+    if (i == null) return;
+    if (e.target.classList.contains('g-del')) {
+      rows.splice(+i, 1);
+      render();
+      notify();
+    }
+  });
+  rowsEl.addEventListener('change', e => {
+    if (e.target.classList.contains('g-en')) {
+      const i = +e.target.getAttribute('data-i');
+      rows[i].enabled = e.target.checked;
+      notify();
+    }
+  });
+
+  // ---- expose API
+  window.GoalsModule = { current, onChange };
+
+  // ---- late-bind Live What-If recalc (in case Live block ran earlier)
+  try {
+    if (window.__liveTest?.ping) {
+      let t;
+      onChange(() => {
+        clearTimeout(t);
+        t = setTimeout(() => window.__liveTest.ping('full'), 120);
+      });
+    }
+  } catch {}
+})();
+</script>
+
+      <p class="text-muted small mb-0">
+        Note: For MVP, goals (including any Coach suggestions you "Try") are merged client-side into asset liquidations (post-tax) before the live update call. They don’t alter Living Expense (for taxes) yet—keeping the core calculators untouched.
+      </p>
+    </details>
+  </div>
+</div>
+
+<!-- 🧭 Strategy Coach (beta) – now AFTER Goals -->
+<div class="card mt-3">
+  <div class="card-body">
+    <h6 class="mb-2">🧭 Strategy Coach (beta)</h6>
+
+    <!-- Targeted Solve panel -->
+    <div class="border rounded p-2 mb-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label mb-1">Metric</label>
+          <select id="sc_metric" class="form-select form-select-sm">
+            <option value="det">Deterministic</option>
+            <option value="p10">MC p10</option>
+            <option value="p50" selected>MC Median</option>
+            <option value="p90">MC p90</option>
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label mb-1">Final assets ≥ ($)</label>
+          <input id="sc_assets" type="number" class="form-control form-control-sm" value="2000000" min="0" step="10000">
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label mb-1">At age</label>
+          <input id="sc_age" type="number" class="form-control form-control-sm" value="90" min="60" max="105" step="1">
+        </div>
+      </div>
+
+      <div class="row g-3 mt-2">
+        <div class="col-md-9">
+          <div class="small text-muted mb-1">Lever (choose one)</div>
+          <div class="d-flex flex-wrap gap-4">
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="retirement_age" checked> Retirement age</label>
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_expense"> Spending</label>
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_saving"> Savings</label>
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="inflow"> Part-time inflow (3 yrs)</label>
+          </div>
+        </div>
+        <div class="col-md-3 d-flex justify-content-end gap-2">
+          <button id="sc_clear_goals" type="button" class="btn btn-sm btn-outline-secondary">Clear coach goals</button>
+          <button id="sc_solve" type="button" class="btn btn-sm btn-primary">Solve</button>
+        </div>
+      </div>
+
+      <div id="sc_result" class="small text-muted mt-2"></div>
     </div>
+
+    <!-- Server suggestions render here (optional) -->
+    <div id="coach_area" class="vstack gap-2"></div>
   </div>
 </div>
 
@@ -467,24 +658,19 @@
   const inflVal  = document.getElementById('lw_infl_val');
   const lifeVal  = document.getElementById('lw_life_val');
 
-  // 👉 Coach Target UI elements
-  const scTarget   = document.getElementById('sc_target');
-  const scProbWrap = document.getElementById('sc_prob_wrap');
-  const scAssetsWrap = document.getElementById('sc_assets_wrap');
-  const scProb   = document.getElementById('sc_prob');
-  const scAssets = document.getElementById('sc_assets');
-  const scAge    = document.getElementById('sc_age');
-  const scSolve  = document.getElementById('sc_solve');
-  const scClearGoals = document.getElementById('sc_clear_goals');
-  const levRetAge = document.getElementById('sc_lev_ret_age');
-  const levSpend  = document.getElementById('sc_lev_spend');
-  const levSave   = document.getElementById('sc_lev_save');
-  const levInflow = document.getElementById('sc_lev_inflow');
+  // Strategy Coach UI
+  const scMetric   = document.getElementById('sc_metric');
+  const scAssets   = document.getElementById('sc_assets');
+  const scAge      = document.getElementById('sc_age');
+  const scSolve    = document.getElementById('sc_solve');
+  const scClear    = document.getElementById('sc_clear_goals');
+  const scResult   = document.getElementById('sc_result');
+
+  // levers (radio)
+  const getLever = () => (document.querySelector('input[name="sc_lever"]:checked') || {}).value || 'retirement_age';
 
   // 👉 stash for coach-suggested goals (not persisted)
   window.__coach_goals = window.__coach_goals || [];
-  // 👉 stash for coach prefs (sent to server on Solve)
-  window.__coach_prefs = window.__coach_prefs || null;
 
   // 👉 CSRF token for JSON POST (safe if undefined)
   const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
@@ -734,41 +920,13 @@
   // --- debounce helpers ---
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
-  // ---- Coach prefs read + UI toggles ----
-  function readCoachPrefs(){
-    const target = scTarget.value;
-    const prefs = {
-      target: { type: target, age: +scAge.value },
-      levers: {
-        retirement_age: !!levRetAge.checked,
-        spending: !!levSpend.checked,
-        saving: !!levSave.checked,
-        part_time: !!levInflow.checked
-      }
-    };
-    if (target === 'prob') {
-      prefs.target.prob = +scProb.value;
-    } else {
-      prefs.target.assets = +scAssets.value;
-    }
-    return prefs;
-  }
-  function updateTargetVisibility(){
-    const t = scTarget.value;
-    scProbWrap.classList.toggle('d-none', t !== 'prob');
-    scAssetsWrap.classList.toggle('d-none', t !== 'assets');
-  }
-  scTarget.addEventListener('change', updateTargetVisibility);
-  updateTargetVisibility();
-
   // ---- Coach UI helpers ----
   function applyPatch(patch){
     if (!patch) return;
 
     if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
     if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
-    if (patch.return_rate != null) elPre.value = (+patch.return_rate*100).toFixed(1);
-    if (patch.return_rate_after != null) elPost.value = (+patch.return_rate_after*100).toFixed(1);
+    if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
 
     if (Array.isArray(patch.goal_events) && patch.goal_events.length){
       window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
@@ -803,13 +961,25 @@
     });
   }
 
+  // ---- draw helper (lets the solver show intermediate results) ----
+  function drawFromData(data, startAge){
+    const n = (data.p50?.length) || (data.deterministic?.length) || 0;
+    const sa = startAge ?? (lastForm?.current_age) ?? 0;
+    chart.data.labels = Array.from({ length: n }, (_, i) => sa + i);
+    chart.data.datasets[0].data = data.deterministic || [];
+    chart.data.datasets[1].data = data.p10 || [];
+    chart.data.datasets[2].data = data.p50 || [];
+    chart.data.datasets[3].data = data.p90 || [];
+    chart.update('none');
+  }
+
   // ---- network call with mode ----
   async function ping(mode = 'full') {
     const payload = collectParams();
     payload.mode = mode;
-    payload.coach_prefs = window.__coach_prefs || null;
+    payload.coach_prefs = null; // client-side solver handles target; keep server suggestions simple
 
-    const url = "{{ url_for('projects.live_update') }}"; /* or url_for('live_whatif.live_update') if you mounted fallback BP */
+    const url = "{{ url_for('projects.live_update') }}";
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -826,21 +996,12 @@
         console.groupCollapsed("LIVE DEBUG");
         console.table(data.debug.used_params || {});
         console.log("Deterministic last:", data.debug?.derived?.deterministic_last);
-        console.log("SENT PAYLOAD", payload);
         console.groupEnd();
       }
 
-      const n = (data.p50?.length) || (data.deterministic?.length) || 0;
-      const startAge = (lastForm?.current_age) ?? payload.current_age ?? 0;
-      chart.data.labels = Array.from({ length: n }, (_, i) => startAge + i);
+      drawFromData(data, payload.current_age);
 
-      chart.data.datasets[0].data = data.deterministic || [];
-      chart.data.datasets[1].data = data.p10 || [];
-      chart.data.datasets[2].data = data.p50 || [];
-      chart.data.datasets[3].data = data.p90 || [];
-      chart.update('none');
-
-      // 🧭 render Coach suggestions (only present on full calls)
+      // 🧭 render Server suggestions (optional)
       renderCoach(data.coach || []);
     } catch (err) {
       console.error("live-update error", err);
@@ -857,22 +1018,167 @@
       el.addEventListener('change', () => { ping('full'); });
     });
 
-  // “Solve” => set prefs, do a FULL call
-  scSolve.addEventListener('click', () => {
-    window.__coach_prefs = readCoachPrefs();
-    ping('full');
-  });
-
-  // Clear any coach-added temporary goals
-  scClearGoals.addEventListener('click', () => {
-    window.__coach_goals = [];
-    ping('full');
-  });
-
-  // Make goal edits trigger a live update too (works if GoalsModule is already loaded)
-  if (window.GoalsModule?.onChange) {
-    window.GoalsModule.onChange(() => { ping('full'); });
+  // --- Client-side solver (binary search, uses lite evals) ---
+  async function evalWithOverrides(overrides){
+    const payload = collectParams();
+    Object.assign(payload, overrides || {});
+    payload.mode = 'lite';
+    payload.coach_prefs = null;
+    const url = "{{ url_for('projects.live_update') }}";
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(CSRF ? {"X-CSRFToken": CSRF} : {})
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    drawFromData(data, payload.current_age);
+    return { data, startAge: payload.current_age };
   }
+
+  function curveByMetric(data, metric){
+    if (metric === 'det') return data.deterministic || [];
+    if (metric === 'p10') return data.p10 || [];
+    if (metric === 'p90') return data.p90 || [];
+    return data.p50 || [];
+  }
+  function valueAtAge(curve, startAge, age){
+    const idx = Math.max(0, Math.round(age - startAge));
+    return Number(curve[idx] ?? 0);
+  }
+
+  async function solve(){
+    scResult.textContent = 'Solving…';
+
+    const metric = scMetric.value;
+    const targetAssets = Math.max(0, +scAssets.value || 0);
+    const targetAge = +scAge.value || (lastForm?.life_expectancy ?? 90);
+    const lever = getLever();
+
+    // bounds from UI
+    const bounds = {
+      retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
+      annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
+      annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
+      inflow:         [ 0, 30000 ]
+    };
+    const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, inflow:true };
+
+    const [lo0, hi0] = bounds[lever];
+    const inc = increasing[lever];
+
+    function buildOverrides(x, basePayload){
+      if (lever === 'retirement_age') return { retirement_age: Math.round(x) };
+      if (lever === 'annual_expense')  return { annual_expense: x };
+      if (lever === 'annual_saving')   return { annual_saving: x };
+      if (lever === 'inflow') {
+        // append a 3-year part-time inflow starting at retirement age
+        const form = lastForm || gatherForm();
+        const ra = Math.round(+elAge.value || form.retirement_age || 65);
+        const inflowEvent = {
+          name: "part-time",
+          is_expense: false,
+          amount: x,
+          start_age: ra,
+          recurrence: "years",
+          years: 3,
+          inflation_linked: true
+        };
+        return { goal_events: (form.goal_events || []).concat(window.GoalsModule?.current() || [], window.__coach_goals || [], [inflowEvent]) };
+      }
+      return {};
+    }
+
+    async function f(x){
+      const { data, startAge } = await evalWithOverrides(buildOverrides(x));
+      const curve = curveByMetric(data, metric);
+      return valueAtAge(curve, startAge, targetAge) - targetAssets; // want >= 0
+    }
+
+    // bracket
+    let lo = lo0, hi = hi0;
+    let flo = await f(lo);
+    let fhi = await f(hi);
+
+    // adjust goal: for decreasing lever (spending), we want the largest x with f(x)>=0.
+    // for increasing levers, we want the smallest x with f(x)>=0.
+
+    const maxIter = 14;
+    const tolX = (lever==='retirement_age') ? 0.25 : 50; // ~$50 or quarter year
+    const tolF = 500; // $500 tolerance on assets
+
+    // If already satisfied at best (depending on direction), keep that edge.
+    // If impossible, we'll pick the closest edge.
+
+    let feasible = false;
+    if (inc) {
+      // f increases with x
+      if (flo >= 0) { feasible = true; hi = lo; fhi = flo; }
+      else if (fhi < 0) { feasible = false; } else feasible = true;
+    } else {
+      // f decreases with x
+      if (fhi >= 0) { feasible = true; lo = hi; flo = fhi; }
+      else if (flo < 0) { feasible = false; } else feasible = true;
+    }
+
+    if (!feasible) {
+      const pick = (inc ? (fhi >= flo ? hi : lo) : (flo >= fhi ? lo : hi));
+      scResult.textContent = "Target not achievable within bounds; using nearest bound.";
+      finalizePatch(pick);
+      return;
+    }
+
+    for (let k=0; k<maxIter && Math.abs(hi-lo)>tolX; k++){
+      const mid = inc ? (lo+hi)/2 : (lo+hi)/2;
+      const fmid = await f(mid);
+      if (inc) {
+        if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; }
+      } else {
+        if (fmid >= 0) { lo = mid; flo = fmid; } else { hi = mid; fhi = fmid; }
+      }
+      if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
+    }
+
+    const xStar = inc ? hi : lo;
+    finalizePatch(xStar);
+
+    function finalizePatch(x){
+      let patch;
+      if (lever === 'retirement_age') patch = { retirement_age: Math.round(x) };
+      else if (lever === 'annual_expense') patch = { annual_expense: x };
+      else if (lever === 'annual_saving')  patch = { annual_saving: x };
+      else if (lever === 'inflow') {
+        const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
+        patch = { goal_events: [{
+          name: "part-time",
+          is_expense: false,
+          amount: Math.round(x),
+          start_age: ra,
+          recurrence: "years",
+          years: 3,
+          inflation_linked: true
+        }]};
+      }
+
+      // Show result
+      const pretty = (v) => (lever==='retirement_age' ? Math.round(v) : '$'+Math.round(v).toLocaleString());
+      const leverName = {retirement_age:'Retirement age', annual_expense:'Spending (annual)', annual_saving:'Savings (annual)', inflow:'Part-time inflow (annual)'}[lever];
+      scResult.textContent = `${leverName}: ${pretty(x)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${+scAge.value})`;
+
+      // Apply to UI and do a full recalc
+      applyPatch(patch);
+    }
+  }
+
+  // buttons
+  scSolve.addEventListener('click', solve);
+  scClear.addEventListener('click', () => {
+    window.__coach_goals = [];
+    scResult.textContent = '';
+    ping('full');
+  });
 
   // --- RESET: snap sliders back to whatever the main form currently holds
   document.getElementById('lw_reset').addEventListener('click', () => {
@@ -889,198 +1195,6 @@
   ping('full');
 })();
 </script>
-
-<!-- ==== Goals (modular, optional) ==== -->
-<div class="card mt-3">
-  <div class="card-body">
-    <details open>
-      <summary class="h6 mb-3">🎯 Goals (beta) — extra expenses or inflows</summary>
-
-      <div class="row g-2 align-items-end">
-        <div class="col-md-3">
-          <label class="form-label">Name</label>
-          <input id="g_name" type="text" class="form-control" placeholder="college">
-        </div>
-
-        <div class="col-md-3">
-          <label class="form-label">Type</label>
-          <select id="g_type" class="form-select">
-            <option value="expense" selected>Expense (outflow)</option>
-            <option value="inflow">Inflow</option>
-          </select>
-        </div>
-
-        <div class="col-md-2">
-          <label class="form-label">Amount ($, today)</label>
-          <input id="g_amt" type="number" class="form-control" value="30000" min="0" step="100">
-        </div>
-
-        <div class="col-md-2">
-          <label class="form-label">Start age</label>
-          <input id="g_age" type="number" class="form-control" value="60" min="0" step="1">
-        </div>
-
-        <div class="col-md-2">
-          <label class="form-label">Recurrence</label>
-          <select id="g_rec" class="form-select">
-            <option value="once" selected>Once (at start age)</option>
-            <option value="annual">Annual (start→end)</option>
-            <option value="years">For N years</option>
-          </select>
-        </div>
-
-        <div class="col-md-2 d-none" id="g_years_wrap">
-          <label class="form-label">Years</label>
-          <input id="g_years" type="number" class="form-control" value="4" min="1" step="1">
-        </div>
-
-        <div class="col-md-2 d-none" id="g_endage_wrap">
-          <label class="form-label">End age</label>
-          <input id="g_endage" type="number" class="form-control" value="84" min="0" step="1">
-        </div>
-
-        <div class="col-md-3">
-          <div class="form-check mt-4">
-            <input class="form-check-input" type="checkbox" id="g_infl" checked>
-            <label class="form-check-label" for="g_infl">Inflation linked</label>
-          </div>
-        </div>
-
-        <div class="col-md-3">
-          <button id="goal_add" type="button" class="btn btn-primary mt-3">+ Add Goal</button>
-        </div>
-      </div>
-
-      <hr class="my-3">
-
-      <div class="table-responsive">
-        <table class="table table-sm align-middle">
-          <thead>
-            <tr>
-              <th style="width:70px;">Enabled</th>
-              <th>Name</th>
-              <th>Type</th>
-              <th>When</th>
-              <th class="text-end">Amount</th>
-              <th>Infl.</th>
-              <th style="width:70px;"></th>
-            </tr>
-          </thead>
-          <tbody id="goal_rows"></tbody>
-        </table>
-      </div>
-
-<script id="goals-module">
-(() => {
-  // ---- grab elements
-  const rowsEl   = document.getElementById('goal_rows');
-  const addBtn   = document.getElementById('goal_add');
-
-  const nameEl   = document.getElementById('g_name');
-  const typeEl   = document.getElementById('g_type');     // expense | inflow
-  const amtEl    = document.getElementById('g_amt');
-  const ageEl    = document.getElementById('g_age');
-  const recEl    = document.getElementById('g_rec');      // once | annual | years
-  const yearsWrap= document.getElementById('g_years_wrap');
-  const yearsEl  = document.getElementById('g_years');
-  const endWrap  = document.getElementById('g_endage_wrap');
-  const endEl    = document.getElementById('g_endage');
-  const inflEl   = document.getElementById('g_infl');
-
-  // ---- tiny state + pub/sub
-  let rows = [];
-  const subs = new Set();
-  const notify = () => subs.forEach(fn => { try { fn(); } catch {} });
-  const onChange = fn => (subs.add(fn), () => subs.delete(fn));
-  const current = () => rows.filter(r => r.enabled !== false);
-
-  // ---- helpers
-  function esc(s){ return (s ?? '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-  function whenText(r){
-    if (r.recurrence === 'annual') return `Age ${r.start_age}–${r.end_age ?? ''}`;
-    if (r.recurrence === 'years')  return `Age ${r.start_age} × ${r.years}`;
-    return `At ${r.start_age}`;
-  }
-  function render(){
-    rowsEl.innerHTML = '';
-    rows.forEach((r,i) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><input class="form-check-input g-en" type="checkbox" data-i="${i}" ${r.enabled !== false ? 'checked' : ''}></td>
-        <td>${esc(r.name || 'Goal')}</td>
-        <td>${r.is_expense ? 'Expense' : 'Inflow'}</td>
-        <td>${whenText(r)}</td>
-        <td class="text-end">$${(+r.amount).toLocaleString()}</td>
-        <td>${r.inflation_linked ? 'Yes' : 'No'}</td>
-        <td><button class="btn btn-sm btn-outline-danger g-del" data-i="${i}">×</button></td>`;
-      rowsEl.appendChild(tr);
-    });
-  }
-  function readNew(){
-    return {
-      enabled: true,
-      name: (nameEl.value || 'Goal').trim(),
-      is_expense: (typeEl.value !== 'inflow'),
-      amount: +amtEl.value || 0,
-      start_age: parseInt(ageEl.value, 10) || 0,
-      recurrence: recEl.value,
-      years: recEl.value === 'years'  ? (parseInt(yearsEl.value, 10) || 1) : undefined,
-      end_age: recEl.value === 'annual' ? (parseInt(endEl.value, 10) || undefined) : undefined,
-      inflation_linked: !!inflEl.checked
-    };
-  }
-
-  // ---- UI wiring
-  recEl.addEventListener('change', () => {
-    yearsWrap.classList.toggle('d-none', recEl.value !== 'years');
-    endWrap.classList.toggle('d-none',   recEl.value !== 'annual');
-  });
-
-  addBtn.addEventListener('click', () => {
-    rows.push(readNew());
-    render();
-    notify();
-  });
-
-  rowsEl.addEventListener('click', e => {
-    const i = e.target.getAttribute('data-i');
-    if (i == null) return;
-    if (e.target.classList.contains('g-del')) {
-      rows.splice(+i, 1);
-      render();
-      notify();
-    }
-  });
-  rowsEl.addEventListener('change', e => {
-    if (e.target.classList.contains('g-en')) {
-      const i = +e.target.getAttribute('data-i');
-      rows[i].enabled = e.target.checked;
-      notify();
-    }
-  });
-
-  // ---- expose API
-  window.GoalsModule = { current, onChange };
-
-  // ---- late-bind Live What-If recalc (in case Live block ran earlier)
-  try {
-    if (window.__liveTest?.ping) {
-      let t;
-      onChange(() => {
-        clearTimeout(t);
-        t = setTimeout(() => window.__liveTest.ping('full'), 120);
-      });
-    }
-  } catch {}
-})();
-</script>
-
-      <p class="text-muted small mb-0">
-        Note: For MVP, goals (including any Coach suggestions you "Try") are merged client-side into asset liquidations (post-tax) before the live update call. They don’t alter Living Expense (for taxes) yet—keeping the core calculators untouched.
-      </p>
-    </details>
-  </div>
-</div>
 
 
 
