@@ -1012,17 +1012,21 @@
   const sendLite = debounce(() => ping('lite'), 80);
   const sendFull = debounce(() => ping('full'), 400);
 
-  // 🔗 Make Live What-If react to Goals changes immediately
+
+// 🔗 Make Live What-If react to Goals changes immediately (fast + finish)
 try {
   if (window.GoalsModule?.onChange) {
-    // Debounce a hair so rapid add/toggle/delete coalesce
     let t;
     window.GoalsModule.onChange(() => {
+      // 1) quick redraw using lite mode (fewer sims)
+      sendLite();
+      // 2) after user pauses, do the heavier full run
       clearTimeout(t);
-      t = setTimeout(() => sendFull(), 120);
+      t = setTimeout(() => sendFull(), 600); // 400–800ms feels good; tweak to taste
     });
   }
 } catch {}
+
 
   [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
     .forEach(el => {
