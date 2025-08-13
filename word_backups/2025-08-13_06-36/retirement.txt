@@ -1176,75 +1176,36 @@ try {
       if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
     }
 
+    const xStar = inc ? hi : lo;
+    finalizePatch(xStar);
 
-const xStar = inc ? hi : lo;
+    function finalizePatch(x){
+      let patch;
+      if (lever === 'retirement_age') patch = { retirement_age: Math.round(x) };
+      else if (lever === 'annual_expense') patch = { annual_expense: x };
+      else if (lever === 'annual_saving')  patch = { annual_saving: x };
+      else if (lever === 'inflow') {
+        const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
+        patch = { goal_events: [{
+          name: "part-time",
+          is_expense: false,
+          amount: Math.round(x),
+          start_age: ra,
+          recurrence: "years",
+          years: 3,
+          inflation_linked: true
+        }]};
+      }
 
-// --- NEW: estimate fractional retirement age for display only ---
-let xDisplay = xStar;
-if (lever === 'retirement_age') {
-  // clamp within allowed/realistic bounds
-  const life = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
-  const cur  = lastForm?.current_age ?? gatherForm().current_age ?? 50;
-  const minA = Math.max(cur, (+elAge.min || 55));
-  const maxA = Math.min(life - 1, (+elAge.max || 75));
+      // Show result
+      const pretty = (v) => (lever==='retirement_age' ? Math.round(v) : '$'+Math.round(v).toLocaleString());
+      const leverName = {retirement_age:'Retirement age', annual_expense:'Spending (annual)', annual_saving:'Savings (annual)', inflow:'Part-time inflow (annual)'}[lever];
+      scResult.textContent = `${leverName}: ${pretty(x)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
-  // neighbor integers
-  const r0 = Math.max(minA, Math.min(Math.floor(xStar), maxA));
-  const r1 = Math.max(minA, Math.min(r0 + 1, maxA));
-
-  if (r1 > r0) {
-    // f(x) returns (assets - targetAssets), zero-crossing between r0 and r1
-    const [f0, f1] = await Promise.all([f(r0), f(r1)]);
-    if (Number.isFinite(f0) && Number.isFinite(f1) && Math.abs(f1 - f0) > 1e-9) {
-      const frac = r0 + (0 - f0) / (f1 - f0);
-      xDisplay = Math.max(minA, Math.min(frac, maxA));
+      // Apply to UI and do a full recalc
+      applyPatch(patch);
     }
   }
-}
-
-finalizePatch(xStar, xDisplay);
-
-function finalizePatch(x, xDisp){
-  let patch;
-  if (lever === 'retirement_age') patch = { retirement_age: Math.round(x) };
-  else if (lever === 'annual_expense') patch = { annual_expense: x };
-  else if (lever === 'annual_saving')  patch = { annual_saving: x };
-  else if (lever === 'inflow') {
-    const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
-    patch = { goal_events: [{
-      name: "part-time",
-      is_expense: false,
-      amount: Math.round(x),
-      start_age: ra,
-      recurrence: "years",
-      years: 3,
-      inflation_linked: true
-    }]};
-  }
-
-  // Show result (use fractional display for retirement age)
-  const pretty = (v) =>
-    (lever === 'retirement_age'
-      ? Number(v).toFixed(1)               // e.g., "58.6"
-      : '$' + Math.round(v).toLocaleString());
-
-  const leverName = {
-    retirement_age:'Retirement age',
-    annual_expense:'Spending (annual)',
-    annual_saving:'Savings (annual)',
-    inflow:'Part-time inflow (annual)'
-  }[lever];
-
-  const shown = (lever === 'retirement_age') ? xDisp : x;
-  scResult.textContent =
-    `${leverName}: ${pretty(shown)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
-
-  // Apply integer patch to the UI and recalc
-  applyPatch(patch);
-}
-
-
-
 
   // buttons
   scSolve.addEventListener('click', solve);
