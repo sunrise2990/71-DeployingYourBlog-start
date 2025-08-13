@@ -61,7 +61,9 @@ retirement_backup_dir.mkdir(parents=True, exist_ok=True)
 
 retirement_files = [
     "models/retirement/retirement_calc.py",
-    "models/retirement/retirement_scenario.py"
+    "models/retirement/retirement_scenario.py",
+    "models/retirement/goals.py",
+    "models/retirement/coach.py",
 ]
 
 for filepath in retirement_files:
