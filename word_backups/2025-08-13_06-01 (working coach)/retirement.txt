@@ -1012,18 +1012,6 @@
   const sendLite = debounce(() => ping('lite'), 80);
   const sendFull = debounce(() => ping('full'), 400);
 
-  // 🔗 Make Live What-If react to Goals changes immediately
-try {
-  if (window.GoalsModule?.onChange) {
-    // Debounce a hair so rapid add/toggle/delete coalesce
-    let t;
-    window.GoalsModule.onChange(() => {
-      clearTimeout(t);
-      t = setTimeout(() => sendFull(), 120);
-    });
-  }
-} catch {}
-
   [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
     .forEach(el => {
       el.addEventListener('input', () => { sendLite(); sendFull(); });
