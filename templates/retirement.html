@@ -1106,6 +1106,12 @@ async function solve(){
     // horizon we want the server and chart to use: EXACTLY the target age
     const horizon = targetAge;
 
+    // 🔒 Force the UI slider to match the horizon so all subsequent pings use it
+    if ((+elLife.value || 0) !== horizon) {
+      elLife.value = horizon;
+      updateLabelsFromSliders();   // keeps the label in sync
+    }
+
   const lever = getLever();
 
   // bounds from UI
