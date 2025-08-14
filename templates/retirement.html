@@ -1034,19 +1034,18 @@ try {
       el.addEventListener('change', () => { ping('full'); });
     });
 
-// Keep Expected Lifespan slider in sync with "At age" (and refresh chart)
-scAge.addEventListener('change', () => {
-  const n = Math.min(
-    Math.max(+scAge.value || 0, (+elLife.min || 70)),
-    (+elLife.max || 105)
-  );
-  if (n > (+elLife.value || 0)) {
-    elLife.value = n;            // bump lifespan to match target "At age"
-    updateLabelsFromSliders();
-  }
-  ping('full');                  // redraw with extended horizon
-});
-
+    // Keep Expected Lifespan slider in sync with "At age" (both directions) and refresh
+    scAge.addEventListener('change', () => {
+      const n = Math.min(
+        Math.max(+scAge.value || 0, (+elLife.min || 70)),
+        (+elLife.max || 105)
+      );
+      if (n !== (+elLife.value || 0)) {
+        elLife.value = n;            // match the horizon to "At age"
+        updateLabelsFromSliders();
+      }
+      ping('full');                  // redraw with the new horizon
+    });
 
 // --- Client-side solver (binary search, uses lite evals) ---
 async function evalWithOverrides(overrides){
@@ -1099,12 +1098,13 @@ async function solve(){
     const lifeForm = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
     const cur      = lastForm?.current_age ?? gatherForm().current_age ?? 50;
 
-    // user's requested target age (don't allow < current age)
+    // user's requested target age (clamp to >= current age and slider bounds)
     let targetAge = +scAge.value || lifeForm;
-    if (targetAge < cur) targetAge = cur;
+    targetAge = Math.max(targetAge, cur);
+    targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
 
-    // horizon we want the server to compute (extend if needed)
-    const horizon = Math.max(targetAge, lifeForm);
+    // horizon we want the server and chart to use: EXACTLY the target age
+    const horizon = targetAge;
 
   const lever = getLever();
 
@@ -1120,35 +1120,35 @@ async function solve(){
   const [lo0, hi0] = bounds[lever];
   const inc = increasing[lever];
 
-    function buildOverrides(x){
-      const base = { life_expectancy: horizon };  // ensure server computes to target horizon
+        function buildOverrides(x){
+          const base = { life_expectancy: horizon };  // ensure server computes exactly to target age
 
-      if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
-      if (lever === 'annual_expense')  return { ...base, annual_expense: x };
-      if (lever === 'annual_saving')   return { ...base, annual_saving: x };
-      if (lever === 'inflow') {
-        const form = lastForm || gatherForm();
-        const ra = Math.round(+elAge.value || form.retirement_age || 65);
-        const inflowEvent = {
-          name: "part-time",
-          is_expense: false,
-          amount: x,
-          start_age: ra,
-          recurrence: "years",
-          years: 3,
-          inflation_linked: true
-        };
-        return {
-          ...base,
-          goal_events: (form.goal_events || []).concat(
-            window.GoalsModule?.current() || [],
-            window.__coach_goals || [],
-            [inflowEvent]
-          )
-        };
-      }
-      return base; // ← default still sends the extended horizon
-    }
+          if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
+          if (lever === 'annual_expense')  return { ...base, annual_expense: x };
+          if (lever === 'annual_saving')   return { ...base, annual_saving: x };
+          if (lever === 'inflow') {
+            const form = lastForm || gatherForm();
+            const ra = Math.round(+elAge.value || form.retirement_age || 65);
+            const inflowEvent = {
+              name: "part-time",
+              is_expense: false,
+              amount: x,
+              start_age: ra,
+              recurrence: "years",
+              years: 3,
+              inflation_linked: true
+            };
+            return {
+              ...base,
+              goal_events: (form.goal_events || []).concat(
+                window.GoalsModule?.current() || [],
+                window.__coach_goals || [],
+                [inflowEvent]
+              )
+            };
+          }
+          return base; // <- still send the horizon if no other overrides
+        }
 
   async function f(x){
     const { data, startAge } = await evalWithOverrides(buildOverrides(x));
@@ -1201,8 +1201,8 @@ async function solve(){
     let xDisplay = xStar;
     if (lever === 'retirement_age') {
       // clamp within allowed/realistic bounds
-      const minA = Math.max(cur, (+elAge.min || 55));
-      const maxA = Math.min(horizon - 1, (+elAge.max || 75)); // use extended horizon
+        const minA = Math.max(cur, (+elAge.min || 55));
+        const maxA = Math.min(horizon - 1, (+elAge.max || 75)); // use horizon here
 
       // neighbor integers
       const r0 = Math.max(minA, Math.min(Math.floor(xStar), maxA));
