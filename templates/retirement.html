@@ -923,29 +923,33 @@
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
   // ---- Coach UI helpers ----
-  function applyPatch(patch){
-    if (!patch) return;
+    function applyPatch(patch){
+      if (!patch) return;
 
-    if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
-    if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
-    if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
+      if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
+      if (patch.annual_expense  != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
+      if (patch.annual_saving   != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
 
-   // NEW: reflect % levers back to sliders (store as percent on the UI)
-    if (patch.return_rate_after != null) {
-    elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10; // 0.1% step
+      // reflect % levers back to sliders
+      if (patch.return_rate_after != null) {
+        elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10; // 0.1% step
+      }
+      if (patch.inflation_rate != null) {
+        elInfl.value = Math.round((+patch.inflation_rate * 100) * 10) / 10;    // 0.1% step
+      }
+
+      if (Array.isArray(patch.goal_events) && patch.goal_events.length){
+        window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
+      }
+
+      // ✅ NEW: update labels, then conditionally send full
+      updateLabelsFromSliders();
+      if (!window.__skipNextFull) {
+        sendFull();
+      } else {
+        window.__skipNextFull = false; // consume the flag set by solve()'s final FULL pass
+      }
     }
-    if (patch.inflation_rate != null) {
-    elInfl.value = Math.round((+patch.inflation_rate * 100) * 10) / 10;    // 0.1% step
-    }
-
-
-    if (Array.isArray(patch.goal_events) && patch.goal_events.length){
-      window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
-    }
-
-    updateLabelsFromSliders();
-    setTimeout(() => sendFull(), 50);
-  }
 
   function renderCoach(list){
     const area = document.getElementById('coach_area');
@@ -1058,8 +1062,10 @@ try {
       ping('full');                  // redraw with the new horizon
     });
 
+
+
 // --- Client-side solver (binary search, uses lite evals; finalizes with full) ---
-async function evalWithOverrides(overrides, mode = 'lite'){
+async function evalWithOverrides(overrides, mode = 'lite', draw = true){
   const payload = collectParams();
   Object.assign(payload, overrides || {});
 
@@ -1084,7 +1090,7 @@ async function evalWithOverrides(overrides, mode = 'lite'){
     body: JSON.stringify(payload)
   });
   const data = await res.json();
-  drawFromData(data, payload.current_age);
+  if (draw) drawFromData(data, payload.current_age);
   return { data, startAge: payload.current_age };
 }
 
@@ -1182,7 +1188,8 @@ async function solve(){
   }
 
   async function f(x){
-    const { data, startAge } = await evalWithOverrides(buildOverrides(x), 'lite');
+    // NOTE: do not draw during bisection; only draw final FULL pass
+    const { data, startAge } = await evalWithOverrides(buildOverrides(x), 'lite', /*draw*/ false);
     const curve = curveByMetric(data, metric);
     return valueAtAge(curve, startAge, targetAge) - targetAssets; // want >= 0
   }
@@ -1267,7 +1274,10 @@ async function solve(){
   const xQ = quantizeForLever(xStar);
 
   // One authoritative FULL recompute at the chosen value to avoid “revert”
-  await evalWithOverrides(buildOverrides(xQ), 'full');
+  await evalWithOverrides(buildOverrides(xQ), 'full', /*draw*/ true);
+
+  // Prevent duplicate full ping from applyPatch immediately after
+  window.__skipNextFull = true;
 
   finalizePatch(xQ, xDisplay);
 
@@ -1328,35 +1338,30 @@ async function solve(){
 
 
 
-
-
-  // buttons
-  scSolve.addEventListener('click', solve);
-  scClear.addEventListener('click', () => {
-    window.__coach_goals = [];
-    scResult.textContent = '';
-    ping('full');
-  });
-
-
-
-  // --- RESET: snap sliders back to whatever the main form currently holds
-  document.getElementById('lw_reset').addEventListener('click', () => {
-    const f = gatherForm();
-    setSlidersFromForm(f);
-    updateLabelsFromSliders();
-    ping('full');
-  });
-
-  console.log("Live What-If ready (form-derived)");
-  window.__liveTest = { ping, collectParams };
-
-  // initial draw
+// buttons
+scSolve.addEventListener('click', solve);
+scClear.addEventListener('click', () => {
+  window.__coach_goals = [];
+  scResult.textContent = '';
   ping('full');
+});
+
+// --- RESET: snap sliders back to whatever the main form currently holds
+document.getElementById('lw_reset').addEventListener('click', () => {
+  const f = gatherForm();
+  setSlidersFromForm(f);
+  updateLabelsFromSliders();
+  ping('full');
+});
+
+console.log("Live What-If ready (form-derived)");
+window.__liveTest = { ping, collectParams };
+
+// initial draw
+ping('full');
 })();
+
 </script>
-
-
 
 
 
