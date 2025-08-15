@@ -1062,12 +1062,11 @@
     ping('full');                  // redraw with the new horizon
   });
 
-// --- Client-side solver (binary search uses 'lite'; finalizes with 'full') ---
+// --- Client-side solver (lite for search; full only once at the end) ---
 async function evalWithOverrides(overrides, mode = 'lite', draw = true){
   const payload = collectParams();
   Object.assign(payload, overrides || {});
 
-  // If overrides introduced goal_events, rebuild asset_liquidations from goals
   if (overrides && Array.isArray(overrides.goal_events)) {
     const manualLiqs = (gatherForm().asset_liquidations || []);
     const allGoals   = (payload.goal_events || []);
@@ -1075,11 +1074,12 @@ async function evalWithOverrides(overrides, mode = 'lite', draw = true){
     payload.asset_liquidations = [...manualLiqs, ...fromGoals];
   }
 
-  payload.mode = mode;                 // 'lite' for search; 'full' for final pass
+  payload.mode = mode;
   payload.coach_prefs = null;
 
-  // Speed/consistency knobs
-  payload.num_simulations = (mode === 'lite' ? 200 : 1500);
+  // ✅ tuned for interactivity (fast) but stable
+  //    (use higher counts in your normal non-solve pings if you want)
+  payload.num_simulations = (mode === 'lite' ? 120 : 800);
 
   const url = "{{ url_for('projects.live_update') }}";
   const res = await fetch(url, {
@@ -1109,33 +1109,24 @@ async function evalWithOverrides(overrides, mode = 'lite', draw = true){
 
 async function solve(){
   scResult.textContent = 'Solving…';
-  window.__solving = true;             // pause ambient pings while solving
+  window.__solving = true;
 
   try {
     const metric       = scMetric.value;
     const targetAssets = Math.max(0, +scAssets.value || 0);
 
-    // base form ages
     const lifeForm = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
     const cur      = lastForm?.current_age ?? gatherForm().current_age ?? 50;
 
-    // user's requested target age (clamp to >= current age and slider bounds)
     let targetAge = +scAge.value || lifeForm;
     targetAge = Math.max(targetAge, cur);
     targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
 
-    // horizon we want the server and chart to use: EXACTLY the target age
     const horizon = targetAge;
-
-    // lock the lifespan slider to the horizon so collectParams() is consistent
-    if ((+elLife.value || 0) !== horizon) {
-      elLife.value = horizon;
-      updateLabelsFromSliders();
-    }
+    if ((+elLife.value || 0) !== horizon) { elLife.value = horizon; updateLabelsFromSliders(); }
 
     const lever = getLever();
 
-    // bounds from UI
     const bounds = {
       retirement_age: [ (+elAge.min || 55),         (+elAge.max || 75) ],
       annual_expense: [ (+elExpMo.min||2000)*12,    (+elExpMo.max||20000)*12 ],
@@ -1152,12 +1143,11 @@ async function solve(){
       post_ret_return:true,
       inflation_rate: false,
     };
-
     const [lo0, hi0] = bounds[lever];
     const inc = increasing[lever];
 
     function buildOverrides(x){
-      const base = { life_expectancy: horizon }; // compute exactly to target age
+      const base = { life_expectancy: horizon };
       if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
       if (lever === 'annual_expense')  return { ...base, annual_expense: x };
       if (lever === 'post_ret_return') return { ...base, return_rate_after: x, return_mean_after: x };
@@ -1166,75 +1156,60 @@ async function solve(){
       if (lever === 'inflow') {
         const form = lastForm || gatherForm();
         const ra = Math.round(+elAge.value || form.retirement_age || 65);
-        const inflowEvent = {
-          name: 'part-time',
-          is_expense: false,
-          amount: x,
-          start_age: ra,
-          recurrence: 'years',
-          years: 3,
-          inflation_linked: true
-        };
         return {
           ...base,
           goal_events: (form.goal_events || []).concat(
             window.GoalsModule?.current() || [],
             window.__coach_goals || [],
-            [inflowEvent]
+            [{ name:'part-time', is_expense:false, amount:x, start_age:ra, recurrence:'years', years:3, inflation_linked:true }]
           )
         };
       }
       return base;
     }
 
-    // lite objective (no drawing during search)
+    // ---------- lite search (no drawing) ----------
     async function fLite(x){
       const { data, startAge } = await evalWithOverrides(buildOverrides(x), 'lite', false);
       const curve = curveByMetric(data, metric);
-      return valueAtAge(curve, startAge, targetAge) - targetAssets; // want >= 0
+      return valueAtAge(curve, startAge, targetAge) - targetAssets; // >=0 is success
     }
 
-    // bracket with lite
     let lo = lo0, hi = hi0;
     let flo = await fLite(lo);
     let fhi = await fLite(hi);
 
-    const maxIter = 14;
-    const tolF    = 500;           // $ tolerance on assets
+    const tolF = 500; // $ tolerance on assets
     let   tolX;
-    if (lever === 'retirement_age')                tolX = 0.25;
+    if (lever === 'retirement_age') tolX = 0.25;
     else if (lever === 'post_ret_return' || lever === 'inflation_rate') tolX = 0.0005; // 0.05%
-    else                                           tolX = 50;  // ~$50 for spend/save/inflow
+    else tolX = 50;
 
-    // feasibility check (lite)
     let feasible = false;
     if (inc) {
       if (flo >= 0) { feasible = true; hi = lo; fhi = flo; }
-      else if (fhi < 0) { feasible = false; } else feasible = true;
+      else if (fhi < 0) feasible = false;
+      else feasible = true;
     } else {
       if (fhi >= 0) { feasible = true; lo = hi; flo = fhi; }
-      else if (flo < 0) { feasible = false; } else feasible = true;
+      else if (flo < 0) feasible = false;
+      else feasible = true;
     }
     if (!feasible) {
       const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
                         : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
-      finalizePatch(pick, pick);   // will trigger full redraw
+      finalizePatch(pick, pick);
       return;
     }
 
-    // bisection (lite)
-    for (let k = 0; k < maxIter && Math.abs(hi - lo) > tolX; k++) {
+    for (let k = 0; k < 14 && Math.abs(hi - lo) > tolX; k++) {
       const mid  = (lo + hi) / 2;
       const fmid = await fLite(mid);
-      if (inc) {
-        if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; }
-      } else {
-        if (fmid >= 0) { lo = mid; flo = fmid; } else { hi = mid; fhi = fmid; }
-      }
+      if (inc) { if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; } }
+      else     { if (fmid >= 0) { lo = mid; flo = fmid; } else { hi = mid; fhi = fmid; } }
       if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
     }
-
-    const xStar = inc ? hi : lo;
+    let xStar = inc ? hi : lo;
 
     // fractional display for retirement age only
     let xDisplay = xStar;
@@ -1253,48 +1228,70 @@ async function solve(){
       if (!Number.isFinite(xDisplay)) xDisplay = xStar;
     }
 
-    // Quantize to slider steps so FULL and UI are identical
-    function quantizeForLever(val){
-      if (lever === 'retirement_age') return Math.round(val);
-      if (lever === 'post_ret_return' || lever === 'inflation_rate')
-        return Math.round(val * 1000) / 1000;                   // 0.1% → 0.001 decimal
-      if (lever === 'annual_expense')  return Math.round(val / 600)  * 600;  // $50/mo
-      if (lever === 'annual_saving')   return Math.round(val / 1200) * 1200; // $100/mo
-      if (lever === 'inflow')          return Math.round(val);
-      return val;
+    // quantize to slider steps
+    function stepForLever(){
+      if (lever === 'retirement_age') return 1;
+      if (lever === 'post_ret_return' || lever === 'inflation_rate') return 0.001;   // 0.1%
+      if (lever === 'annual_expense')  return 600;   // $50/mo
+      if (lever === 'annual_saving')   return 1200;  // $100/mo
+      if (lever === 'inflow')          return 1;
+      return 1;
     }
-    let xQ = quantizeForLever(xStar);
+    function quantize(val){
+      const s = stepForLever();
+      if (lever === 'post_ret_return' || lever === 'inflation_rate') {
+        return Math.round(val / s) * s;
+      }
+      return Math.round(val / s) * s;
+    }
+    xStar = quantize(xStar);
 
-    // --- FULL micro-adjustment: a few iterations to remove lite→full drift ---
+    // ---------- fast FULL local refine (fixes 2.0% vs 1.9% type drift) ----------
     async function fFull(x){
       const { data, startAge } = await evalWithOverrides(buildOverrides(x), 'full', false);
       const curve = curveByMetric(data, metric);
       return valueAtAge(curve, startAge, targetAge) - targetAssets;
     }
 
-    // start from the quantized x; set full brackets around it
-    let loF = lo0, hiF = hi0;
-    let err = await fFull(xQ);
-    if (inc) { if (err >= 0) hiF = xQ; else loF = xQ; }
-    else     { if (err >= 0) loF = xQ; else hiF = xQ; }
+    // start with a small bracket around the lite solution (±10 steps), expand if needed
+    const s = stepForLever();
+    let loF = Math.max(lo0, xStar - 10*s);
+    let hiF = Math.min(hi0, xStar + 10*s);
+    let floF = await fFull(loF);
+    let fhiF = await fFull(hiF);
 
-    for (let i = 0; i < 6 && Math.abs(err) > tolF; i++) {
-      const mid  = (loF + hiF) / 2;
-      const xm   = quantizeForLever(mid);
-      const em   = await fFull(xm);
-      if (inc) { if (em >= 0) hiF = xm; else loF = xm; }
-      else     { if (em >= 0) loF = xm; else hiF = xm; }
-      xQ  = xm;
-      err = em;
+    let expansions = 0;
+    while (floF * fhiF > 0 && expansions < 6) {
+      // expand outwards symmetrically
+      loF = Math.max(lo0, loF - 10*s);
+      hiF = Math.min(hi0, hiF + 10*s);
+      floF = await fFull(loF);
+      fhiF = await fFull(hiF);
+      expansions++;
     }
 
-    // one authoritative FULL draw at the final value
-    await evalWithOverrides(buildOverrides(xQ), 'full', true);
+    // if still not straddling, pick nearest bound
+    if (floF * fhiF > 0) {
+      xStar = (Math.abs(floF) <= Math.abs(fhiF)) ? loF : hiF;
+    } else {
+      for (let i = 0; i < 5; i++) {                // very small # of full iterations
+        const mid = quantize((loF + hiF) / 2);
+        const fmid = await fFull(mid);
+        if (Math.abs(fmid) < tolF) { xStar = mid; break; }
+        if (fmid >= 0) {                           // we want ≥ 0
+          if (inc) hiF = mid; else loF = mid;
+        } else {
+          if (inc) loF = mid; else hiF = mid;
+        }
+        xStar = mid;
+      }
+    }
 
-    // avoid immediate duplicate full from applyPatch
-    window.__skipNextFull = true;
+    // single authoritative FULL draw at final value
+    await evalWithOverrides(buildOverrides(xStar), 'full', true);
+    window.__skipNextFull = true;                  // prevent duplicate full ping
 
-    finalizePatch(xQ, xDisplay);
+    finalizePatch(xStar, xDisplay);
 
     function finalizePatch(x, xDisp) {
       let patch;
@@ -1305,45 +1302,34 @@ async function solve(){
       else if (lever === 'inflation_rate') patch = { inflation_rate: x, inflation_mean: x };
       else if (lever === 'inflow') {
         const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
-        patch = {
-          goal_events: [{
-            name: "part-time",
-            is_expense: false,
-            amount: Math.round(x),
-            start_age: ra,
-            recurrence: "years",
-            years: 3,
-            inflation_linked: true
-          }]
-        };
+        patch = { goal_events: [{ name:"part-time", is_expense:false, amount:Math.round(x), start_age:ra, recurrence:"years", years:3, inflation_linked:true }] };
       }
 
       const pretty = (v) => {
         if (lever === 'retirement_age') return (+Number(v).toFixed(1)).toString();
-        if (lever === 'post_ret_return' || lever === 'inflation_rate')
-          return (Number(v)*100).toFixed(1) + '%';
+        if (lever === 'post_ret_return' || lever === 'inflation_rate') return (Number(v)*100).toFixed(1) + '%';
         return '$' + Math.round(v).toLocaleString();
       };
-
       const leverName = {
-        retirement_age: 'Retirement age',
-        annual_expense: 'Spending (annual)',
-        annual_saving:  'Savings (annual)',
-        inflow:         'Part-time inflow (annual)',
+        retirement_age:'Retirement age',
+        annual_expense:'Spending (annual)',
+        annual_saving:'Savings (annual)',
+        inflow:'Part-time inflow (annual)',
         post_ret_return:'Post-ret return',
-        inflation_rate: 'Inflation rate',
+        inflation_rate:'Inflation rate',
       }[lever];
 
       const shown = (lever === 'retirement_age') ? xDisp : x;
       scResult.textContent =
         `${leverName}: ${pretty(shown)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
-      applyPatch(patch); // triggers UI sync; guarded against duplicate full
+      applyPatch(patch);
     }
   } finally {
-    window.__solving = false;     // resume ambient updates
+    window.__solving = false;
   }
 }
+
 
 
 
