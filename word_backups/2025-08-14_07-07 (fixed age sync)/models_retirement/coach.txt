@@ -228,9 +228,7 @@ def _bounds_default(params: Dict[str, Any]) -> Dict[str, Tuple[float, float]]:
     return {
         "retirement_age": (55.0, 75.0),
         "annual_expense": (0.0, 240000.0),
-        "post_ret_return": (0.00, 0.12),
         "annual_saving":  (0.0, 240000.0),
-        "inflation_rate": (0.00, 0.10),
         "inflow":         (0.0, 30000.0),  # annual, for 3 years
     }
 
@@ -240,12 +238,8 @@ def _apply_lever_override(params: Dict[str, Any], lever: str, x: float) -> Dict[
         return {"retirement_age": int(round(x))}
     if lever == "annual_expense":
         return {"annual_expense": float(x)}
-    if lever == "post_ret_return":  # decimal
-        return {"return_rate_after": float(x), "return_mean_after": float(x)}
     if lever == "annual_saving":
         return {"annual_saving": float(x)}
-    if lever == "inflation_rate":   # decimal
-        return {"inflation_rate": float(x), "inflation_mean": float(x)}
     if lever == "inflow":
         ra = int(params.get("retirement_age", 65))
         return {"goal_events": [{
@@ -262,7 +256,7 @@ def _apply_lever_override(params: Dict[str, Any], lever: str, x: float) -> Dict[
 
 def _increasing_with_x(lever: str) -> bool:
     # Whether assets at target age increase as x increases
-    return lever in ("retirement_age", "annual_saving", "post_ret_return", "inflow")
+    return lever in ("retirement_age", "annual_saving", "inflow")
 
 
 def _solve_single_lever(params: Dict[str, Any],

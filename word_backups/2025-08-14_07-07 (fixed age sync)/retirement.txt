@@ -618,9 +618,6 @@
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_expense"> Spending</label>
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_saving"> Savings</label>
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="inflow"> Part-time inflow (3 yrs)</label>
-
-            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="post_ret_return"> Post-Ret return</label>
-            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="inflation_rate"> Inflation rate</label>
           </div>
         </div>
         <div class="col-md-3 d-flex justify-content-end gap-2">
@@ -931,15 +928,6 @@
     if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
     if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
 
-   // NEW: reflect % levers back to sliders (store as percent on the UI)
-    if (patch.return_rate_after != null) {
-    elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10; // 0.1% step
-    }
-    if (patch.inflation_rate != null) {
-    elInfl.value = Math.round((+patch.inflation_rate * 100) * 10) / 10;    // 0.1% step
-    }
-
-
     if (Array.isArray(patch.goal_events) && patch.goal_events.length){
       window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
     }
@@ -1131,53 +1119,42 @@ async function solve(){
     retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
     annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
     annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
-    inflow:         [ 0, 30000 ],
-
-    // NEW (decimals; UI sliders are in %)
-    post_ret_return: [ ((+elPost.min||0)/100), ((+elPost.max||12)/100) ],
-    inflation_rate:  [ ((+elInfl.min||0)/100), ((+elInfl.max||10)/100) ],
+    inflow:         [ 0, 30000 ]
   };
-  const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, inflow:true, post_ret_return:true, inflation_rate: false, };
+  const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, inflow:true };
 
   const [lo0, hi0] = bounds[lever];
   const inc = increasing[lever];
 
-    function buildOverrides(x) {
-      const base = { life_expectancy: horizon }; // compute exactly to target age
+        function buildOverrides(x){
+          const base = { life_expectancy: horizon };  // ensure server computes exactly to target age
 
-      if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
-      if (lever === 'annual_expense')  return { ...base, annual_expense: x };
-      if (lever === 'post_ret_return') {
-        // x is a decimal (e.g., 0.06): set both deterministic & MC means
-        return { ...base, return_rate_after: x, return_mean_after: x };
-      }
-      if (lever === 'annual_saving')   return { ...base, annual_saving: x };
-      if (lever === 'inflation_rate')  return { ...base, inflation_rate: x, inflation_mean: x };
-
-      if (lever === 'inflow') {
-        const form = lastForm || gatherForm();
-        const ra = Math.round(+elAge.value || form.retirement_age || 65);
-        const inflowEvent = {
-          name: 'part-time',
-          is_expense: false,
-          amount: x,                   // optional: Math.round(x)
-          start_age: ra,
-          recurrence: 'years',
-          years: 3,
-          inflation_linked: true
-        };
-        return {
-          ...base,
-          goal_events: (form.goal_events || []).concat(
-            window.GoalsModule?.current() || [],
-            window.__coach_goals || [],
-            [inflowEvent]
-          )
-        };
-      }
-
-      return base; // still send the horizon if no other overrides
-    }
+          if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
+          if (lever === 'annual_expense')  return { ...base, annual_expense: x };
+          if (lever === 'annual_saving')   return { ...base, annual_saving: x };
+          if (lever === 'inflow') {
+            const form = lastForm || gatherForm();
+            const ra = Math.round(+elAge.value || form.retirement_age || 65);
+            const inflowEvent = {
+              name: "part-time",
+              is_expense: false,
+              amount: x,
+              start_age: ra,
+              recurrence: "years",
+              years: 3,
+              inflation_linked: true
+            };
+            return {
+              ...base,
+              goal_events: (form.goal_events || []).concat(
+                window.GoalsModule?.current() || [],
+                window.__coach_goals || [],
+                [inflowEvent]
+              )
+            };
+          }
+          return base; // <- still send the horizon if no other overrides
+        }
 
   async function f(x){
     const { data, startAge } = await evalWithOverrides(buildOverrides(x));
@@ -1252,19 +1229,10 @@ async function solve(){
 
     function finalizePatch(x, xDisp) {
       let patch;
-      if (lever === 'retirement_age') {
-        patch = { retirement_age: Math.round(x) };
-      } else if (lever === 'annual_expense') {
-        patch = { annual_expense: x };
-      } else if (lever === 'annual_saving') {
-        patch = { annual_saving: x };
-      } else if (lever === 'post_ret_return') {
-        // decimal (e.g., 0.062) → reflect to both det & MC mean
-        patch = { return_rate_after: x, return_mean_after: x };
-      } else if (lever === 'inflation_rate') {
-        // decimal (e.g., 0.021) → reflect to both det & MC mean
-        patch = { inflation_rate: x, inflation_mean: x };
-      } else if (lever === 'inflow') {
+      if (lever === 'retirement_age') patch = { retirement_age: Math.round(x) };
+      else if (lever === 'annual_expense') patch = { annual_expense: x };
+      else if (lever === 'annual_saving') patch = { annual_saving: x };
+      else if (lever === 'inflow') {
         const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
         patch = {
           goal_events: [{
@@ -1280,30 +1248,23 @@ async function solve(){
       }
 
       // Show result (use fractional display for retirement age)
-      const pretty = (v) => {
-        if (lever === 'retirement_age') return (+Number(v).toFixed(1)).toString(); // "58.6"
-        if (lever === 'post_ret_return' || lever === 'inflation_rate') {
-          const pct = Number(v) * 100;
-          return pct.toFixed(1) + '%';
-        }
-        return '$' + Math.round(v).toLocaleString();
-      };
+      const pretty = (v) =>
+        (lever === 'retirement_age'
+          ? (+Number(v).toFixed(1)).toString() // "58.6" (no trailing .0)
+          : '$' + Math.round(v).toLocaleString());
 
       const leverName = {
         retirement_age: 'Retirement age',
         annual_expense: 'Spending (annual)',
         annual_saving:  'Savings (annual)',
-        inflow:         'Part-time inflow (annual)',
-        post_ret_return:'Post-ret return',
-        inflation_rate: 'Inflation rate',
+        inflow:         'Part-time inflow (annual)'
       }[lever];
 
-      // choose what to display
       const shown = (lever === 'retirement_age') ? xDisp : x;
       scResult.textContent =
         `${leverName}: ${pretty(shown)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
-      // Apply patch to the UI and do a full recalc (applyPatch handles null guards)
+      // Apply integer patch to the UI and do a full recalc
       applyPatch(patch);
     }
 }
