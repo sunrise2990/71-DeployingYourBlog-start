@@ -1115,14 +1115,43 @@
 
     const xStar = inc ? hi : lo;
 
-    const leverName = { retirement_age:'Retirement age', annual_expense:'Spending (annual)', annual_saving:'Savings (annual)', inflow:'Part-time inflow (annual)' }[lever];
-    const pretty = v => (lever === 'retirement_age' ? (+Number(v).toFixed(1)).toString() : '$' + Math.round(v).toLocaleString());
-    scResult.textContent = `${leverName}: ${pretty(xStar)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
+    // ---- show result (monthly for Spending/Savings) ----
+    const isMonthly = (lever === 'annual_expense' || lever === 'annual_saving');
 
+    const leverName = {
+      retirement_age: 'Retirement age',
+      annual_expense: 'Spending (monthly)',
+      annual_saving:  'Savings (monthly)',
+      inflow:         'Part-time inflow (annual)'
+    }[lever];
+
+    // value to display (solver still uses annual xStar)
+    const displayVal = isMonthly ? (xStar / 12) : xStar;
+    const unit = isMonthly ? ' /mo' : '';
+
+    const pretty = v =>
+      (lever === 'retirement_age'
+        ? (+Number(v).toFixed(1)).toString()
+        : '$' + Math.round(v).toLocaleString());
+
+    scResult.textContent =
+      `${leverName}: ${pretty(displayVal)}${unit} ` +
+      `(meets ${scMetric.options[scMetric.selectedIndex].text} ` +
+      `≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
+
+    // PATCH remains in ANNUAL terms
     const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) }
                 : (lever === 'annual_expense') ? { annual_expense: xStar }
                 : (lever === 'annual_saving')  ? { annual_saving: xStar }
-                : { goal_events: [{ name:"part-time", is_expense:false, amount:Math.round(xStar), start_age: Math.round(+elAge.value || (lastForm?.retirement_age ?? 65)), recurrence:"years", years:3, inflation_linked:true }] };
+                : { goal_events: [{
+                    name: 'part-time',
+                    is_expense: false,
+                    amount: Math.round(xStar),
+                    start_age: Math.round(+elAge.value || (lastForm?.retirement_age ?? 65)),
+                    recurrence: 'years',
+                    years: 3,
+                    inflation_linked: true
+                  }] };
 
     await commitFull(buildOverrides(xStar), patch);
   }
