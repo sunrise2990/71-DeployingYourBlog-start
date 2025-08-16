@@ -611,7 +611,7 @@
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="retirement_age" checked> Retirement age</label>
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_expense"> Spending</label>
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_saving"> Savings</label>
-
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="inflow"> Part-time inflow (3 yrs)</label>
           </div>
         </div>
         <div class="col-md-3 d-flex justify-content-end gap-2">
@@ -1057,9 +1057,9 @@
       retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
       annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
       annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
-
+      inflow:         [ 0, 30000 ]
     };
-    const increasing = { retirement_age:true, annual_expense:false, annual_saving:true };
+    const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, inflow:true };
     const [lo0, hi0] = bounds[lever];
     const inc = increasing[lever];
 
@@ -1068,7 +1068,12 @@
       if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
       if (lever === 'annual_expense')  return { ...base, annual_expense: x };
       if (lever === 'annual_saving')   return { ...base, annual_saving: x };
-
+      if (lever === 'inflow') {
+        const form = lastForm || gatherForm();
+        const ra = Math.round(+elAge.value || form.retirement_age || 65);
+        const inflowEvent = { name:"part-time", is_expense:false, amount:x, start_age:ra, recurrence:"years", years:3, inflation_linked:true };
+        return { ...base, goal_events: (form.goal_events || []).concat(window.GoalsModule?.current()||[], window.__coach_goals||[], [inflowEvent]) };
+      }
       return base;
     }
     async function f(x){
@@ -1117,7 +1122,7 @@
       retirement_age: 'Retirement age',
       annual_expense: 'Spending (monthly)',
       annual_saving:  'Savings (monthly)',
-
+      inflow:         'Part-time inflow (annual)'
     }[lever];
 
     // value to display (solver still uses annual xStar)
