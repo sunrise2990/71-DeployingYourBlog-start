@@ -1115,69 +1115,40 @@
       if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
     }
 
-const xStar = inc ? hi : lo;
+    const xStar = inc ? hi : lo;
 
-// ---- display value (monthly for spend/save; % for post-ret; fractional age) ----
-const isMonthly = (lever === 'annual_expense' || lever === 'annual_saving');
-const isPercent = (lever === 'post_ret_return');
+    // ---- show result (monthly for Spending/Savings; % for Post-ret) ----
+    const isMonthly = (lever === 'annual_expense' || lever === 'annual_saving');
+    const isPercent = (lever === 'post_ret_return');
 
-// Interpolate between the final bracketing integer ages for display only.
-// Uses the last residuals flo=f(lo) and fhi=f(hi) where f(x)=assets(x)-targetAssets.
-let displayAge = xStar;
-if (lever === 'retirement_age') {
-  const ageLo = Math.round(lo);
-  const ageHi = Math.round(hi);
-  const assetsLo = targetAssets + flo;
-  const assetsHi = targetAssets + fhi;
+    const leverName = {
+      retirement_age: 'Retirement age',
+      annual_expense: 'Spending (monthly)',
+      annual_saving:  'Savings (monthly)',
+      post_ret_return:'Post-ret return (%)'
+    }[lever];
 
-  if (
-    ageHi !== ageLo &&
-    Number.isFinite(assetsLo) &&
-    Number.isFinite(assetsHi) &&
-    Math.abs(assetsHi - assetsLo) > 1e-9
-  ) {
-    const t = (targetAssets - assetsLo) / (assetsHi - assetsLo); // 0..1 across [ageLo, ageHi]
-    displayAge = ageLo + Math.min(1, Math.max(0, t));
-  } else {
-    displayAge = Math.round(xStar); // fallback
-  }
-}
+    const displayVal = isMonthly ? (xStar / 12) : isPercent ? (xStar * 100) : xStar;
+    const unit = isMonthly ? ' /mo' : isPercent ? '' : '';
 
-const leverName = {
-  retirement_age: 'Retirement age',
-  annual_expense: 'Spending (monthly)',
-  annual_saving:  'Savings (monthly)',
-  post_ret_return:'Post-ret return (%)'
-}[lever];
+    const pretty = v =>
+      (lever === 'retirement_age') ? (+Number(v).toFixed(1)).toString()
+      : isPercent ? ((+Number(v).toFixed(1)) + '%')
+      : '$' + Math.round(v).toLocaleString();
 
-const displayVal =
-  (lever === 'retirement_age') ? displayAge
-  : isMonthly ? (xStar / 12)
-  : isPercent ? (xStar * 100)
-  : xStar;
+    scResult.textContent =
+      `${leverName}: ${pretty(displayVal)}${unit} ` +
+      `(meets ${scMetric.options[scMetric.selectedIndex].text} ` +
+      `≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
-const unit = isMonthly ? ' /mo' : '';
+    // PATCH (annual for spend/save; decimal for return)
+    const patch =
+      (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) } :
+      (lever === 'annual_expense') ? { annual_expense: xStar } :
+      (lever === 'annual_saving')  ? { annual_saving:  xStar } :
+                                     { return_rate_after: xStar, return_mean_after: xStar };
 
-const pretty = v =>
-  (lever === 'retirement_age')
-    ? (+Number(v).toFixed(1)).toString()
-    : (isPercent ? ((+Number(v).toFixed(1)) + '%')
-                 : '$' + Math.round(v).toLocaleString());
-
-scResult.textContent =
-  `${leverName}: ${pretty(displayVal)}${unit} ` +
-  `(meets ${scMetric.options[scMetric.selectedIndex].text} ` +
-  `≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
-
-// PATCH (annual for spend/save; decimal for return; integer commit for age)
-const patch =
-  (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) } :
-  (lever === 'annual_expense') ? { annual_expense: xStar } :
-  (lever === 'annual_saving')  ? { annual_saving:  xStar } :
-                                 { return_rate_after: xStar, return_mean_after: xStar };
-
-await commitFull(buildOverrides(xStar), patch);
-
+    await commitFull(buildOverrides(xStar), patch);
   }
 
   scSolve.addEventListener('click', solve);
