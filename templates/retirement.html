@@ -301,6 +301,12 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3"></script>
 
+<!-- keep lifespan slider on top so it always receives pointer events -->
+<style>
+  #lw_life { position: relative; z-index: 3; pointer-events: auto; }
+  #lw_assets_chart { position: relative; z-index: 1; }
+</style>
+
 <div class="card mt-4">
   <div class="card-body">
     <h5 class="card-title mb-3">⚡ Live What-If</h5>
@@ -659,7 +665,7 @@
   const scClear    = document.getElementById('sc_clear_goals');
   const scResult   = document.getElementById('sc_result');
 
-  const getLever = () => (document.querySelector('input[name="sc_lever"]:checked') || {}).value || 'retirement_age';
+  const getLever = () => (document.querySelector('input[name="sc_lever"]:checked") || {}).value || 'retirement_age';
   window.__coach_goals = window.__coach_goals || [];
   const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
 
@@ -815,7 +821,7 @@
   // init sliders from form
   const base = gatherForm(); setSlidersFromForm(base); updateLabelsFromSliders();
 
-  // collect params — “At age” ALWAYS overrides horizon
+  // collect params — “At age” ALWAYS overrides horizon, but we do NOT touch the slider value
   let lastForm = null;
   function collectParams() {
     const form = gatherForm();
@@ -833,12 +839,11 @@
     form.inflation_rate     = (+elInfl.value) / 100;
     form.inflation_mean     = form.inflation_rate;
 
-    // OVERRIDE horizon from Strategy Coach “At age”
+    // OVERRIDE horizon from Strategy Coach “At age” – do NOT write back to the slider
     const atAge = +scAge.value;
     if (Number.isFinite(atAge) && atAge > 0) {
       const clamped = Math.min(Math.max(atAge, (+elLife.min || 70)), (+elLife.max || 105));
       form.life_expectancy = clamped;
-      if ((+elLife.value || 0) !== clamped) { elLife.value = clamped; lifeVal.textContent = clamped; }
     } else {
       form.life_expectancy = +elLife.value;
     }
@@ -953,6 +958,9 @@
       el.addEventListener('change', ping);
     });
 
+  // Lifespan slider: keep label live while dragging (purely visual)
+  elLife.addEventListener('input', () => { document.getElementById('lw_life_val').textContent = elLife.value; });
+
   // “At age” change already overrides horizon in collectParams()
   scAge.addEventListener('input', debouncedPing);
   scAge.addEventListener('change', ping);
@@ -1050,10 +1058,6 @@
     targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
     const horizon = targetAge;
 
-    // ✳️ Do NOT force the slider any more — leave it user-draggable.
-    // (We still pin life_expectancy for the server via buildOverrides below.)
-    // if ((+elLife.value || 0) !== horizon) { elLife.value = horizon; updateLabelsFromSliders(); }  <-- removed
-
     const lever = getLever();
     const bounds = {
       retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
@@ -1066,7 +1070,7 @@
     const inc = increasing[lever];
 
     function buildOverrides(x){
-      // 👇 This pins server horizon to Strategy Coach "At age"
+      // pin server horizon to Strategy Coach "At age"
       const base = { life_expectancy: horizon, num_simulations: 500 };
       if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
       if (lever === 'annual_expense')  return { ...base, annual_expense: x };
@@ -1142,14 +1146,6 @@
   scClear.addEventListener('click', () => { window.__coach_goals = []; scResult.textContent = ''; ping(); });
   document.getElementById('lw_reset').addEventListener('click', () => { const f = gatherForm(); setSlidersFromForm(f); updateLabelsFromSliders(); ping(); });
 
-  // ❌ Remove the old forced sync from Strategy Coach “At age” to the slider:
-  // (Delete this block from your file if it still exists)
-  // scAge.addEventListener('change', () => {
-  //   const n = Math.min(Math.max(+scAge.value || 0, (+elLife.min || 70)), (+elLife.max || 105));
-  //   if (n !== (+elLife.value || 0)) { elLife.value = n; updateLabelsFromSliders(); }
-  //   ping();
-  // });
-
   // 🔗 Goals -> Live What-If (ensure + Add Goal / toggle triggers ONE redraw)
   (function hookGoalsToLive() {
     function attach() {
@@ -1170,6 +1166,7 @@
   ping(); // initial draw
 })();
 </script>
+
 
 
 
