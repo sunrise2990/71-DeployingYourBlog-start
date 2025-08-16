@@ -1036,7 +1036,7 @@
     }
   }
 
-    async function solve(){
+  async function solve(){
     scResult.textContent = 'Solving…';
 
     const metric = scMetric.value;
@@ -1131,27 +1131,12 @@
   scClear.addEventListener('click', () => { window.__coach_goals = []; scResult.textContent = ''; ping(); });
   document.getElementById('lw_reset').addEventListener('click', () => { const f = gatherForm(); setSlidersFromForm(f); updateLabelsFromSliders(); ping(); });
 
-  // 🔗 Goals -> Live What-If (ensure + Add Goal / toggle triggers ONE redraw)
-  (function hookGoalsToLive() {
-    function attach() {
-      if (window.GoalsModule?.onChange) {
-        // Any add/remove/toggle inside Goals table → single full ping
-        window.GoalsModule.onChange(() => { ping(); });
-        return true;
-      }
-      return false;
-    }
-    if (!attach()) {
-      const iv = setInterval(() => { if (attach()) clearInterval(iv); }, 200);
-      setTimeout(() => clearInterval(iv), 5000);
-    }
-  })();
-
   console.log("Live What-If ready (single full request, 500 sims)");
   window.__liveTest = { ping, collectParams };
   ping(); // initial draw
 })();
 </script>
+
 
 
 
