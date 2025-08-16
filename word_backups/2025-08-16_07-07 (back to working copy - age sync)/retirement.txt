@@ -675,10 +675,6 @@
   // 👉 CSRF token for JSON POST (safe if undefined)
   const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
 
-  // ---- request gating to ignore stale responses
-  let __lastPingId = 0;
-  let __inflightCtrl = null;
-
   // ---- helpers to read the existing form ----
   const $ = (sel, root=document) => root.querySelector(sel);
 
@@ -977,23 +973,13 @@
     chart.update('none');
   }
 
-  // ---- network call with mode (latest-response wins) ----
+  // ---- network call with mode ----
   async function ping(mode = 'full') {
     const payload = collectParams();
     payload.mode = mode;
     payload.coach_prefs = null; // client-side solver handles target; keep server suggestions simple
 
     const url = "{{ url_for('projects.live_update') }}";
-
-    // latest-response gating
-    const myId = ++__lastPingId;
-
-    // abort any in-flight request when starting a FULL run
-    if (mode === 'full' && __inflightCtrl) {
-      try { __inflightCtrl.abort(); } catch {}
-    }
-    __inflightCtrl = new AbortController();
-
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -1001,18 +987,10 @@
           "Content-Type": "application/json",
           ...(CSRF ? {"X-CSRFToken": CSRF} : {})
         },
-        body: JSON.stringify(payload),
-        signal: __inflightCtrl.signal
+        body: JSON.stringify(payload)
       });
       if (!res.ok) { console.error("live-update failed", res.status, await res.text()); return; }
-
-      // ignore stale responses before parsing
-      if (myId !== __lastPingId) return;
-
       const data = await res.json();
-
-      // ignore stale responses after parsing too
-      if (myId !== __lastPingId) return;
 
       if (data.debug) {
         console.groupCollapsed("LIVE DEBUG");
@@ -1026,7 +1004,7 @@
       // 🧭 render Server suggestions (optional)
       renderCoach(data.coach || []);
     } catch (err) {
-      if (err?.name !== 'AbortError') console.error("live-update error", err);
+      console.error("live-update error", err);
     }
   }
 
@@ -1034,19 +1012,21 @@
   const sendLite = debounce(() => ping('lite'), 80);
   const sendFull = debounce(() => ping('full'), 400);
 
-  // 🔗 Make Live What-If react to Goals changes immediately (fast + finish)
-  try {
-    if (window.GoalsModule?.onChange) {
-      let t;
-      window.GoalsModule.onChange(() => {
-        // 1) quick redraw using lite mode (fewer sims)
-        sendLite();
-        // 2) after user pauses, do the heavier full run
-        clearTimeout(t);
-        t = setTimeout(() => sendFull(), 600); // 400–800ms feels good; tweak to taste
-      });
-    }
-  } catch {}
+
+// 🔗 Make Live What-If react to Goals changes immediately (fast + finish)
+try {
+  if (window.GoalsModule?.onChange) {
+    let t;
+    window.GoalsModule.onChange(() => {
+      // 1) quick redraw using lite mode (fewer sims)
+      sendLite();
+      // 2) after user pauses, do the heavier full run
+      clearTimeout(t);
+      t = setTimeout(() => sendFull(), 600); // 400–800ms feels good; tweak to taste
+    });
+  }
+} catch {}
+
 
   [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
     .forEach(el => {
@@ -1054,64 +1034,62 @@
       el.addEventListener('change', () => { ping('full'); });
     });
 
-  // Keep Expected Lifespan slider in sync with "At age" (both directions)
-  // and avoid firing a competing FULL request (send a lite preview; Solve will send FULL).
-  scAge.addEventListener('change', () => {
-    const n = Math.min(
-      Math.max(+scAge.value || 0, (+elLife.min || 70)),
-      (+elLife.max || 105)
-    );
-    if (n !== (+elLife.value || 0)) {
-      elLife.value = n;            // match the horizon to "At age"
-      updateLabelsFromSliders();
-    }
-    // preview only; the solver's finalizePatch → sendFull does the authoritative FULL
-    sendLite();
-  });
-
-  // --- Client-side solver (binary search, uses lite evals) ---
-  async function evalWithOverrides(overrides){
-    const payload = collectParams();
-    Object.assign(payload, overrides || {});
-
-    // If overrides introduced goal_events, rebuild asset_liquidations from goals
-    if (overrides && Array.isArray(overrides.goal_events)) {
-      const manualLiqs = (gatherForm().asset_liquidations || []);
-      const allGoals = (payload.goal_events || []);
-      const fromGoals = goalsToLiquidations(allGoals, payload);
-      payload.asset_liquidations = [...manualLiqs, ...fromGoals];
-    }
-
-    payload.mode = 'lite';
-    payload.coach_prefs = null;
-
-    const url = "{{ url_for('projects.live_update') }}";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(CSRF ? {"X-CSRFToken": CSRF} : {})
-      },
-      body: JSON.stringify(payload)
+    // Keep Expected Lifespan slider in sync with "At age" (both directions) and refresh
+    scAge.addEventListener('change', () => {
+      const n = Math.min(
+        Math.max(+scAge.value || 0, (+elLife.min || 70)),
+        (+elLife.max || 105)
+      );
+      if (n !== (+elLife.value || 0)) {
+        elLife.value = n;            // match the horizon to "At age"
+        updateLabelsFromSliders();
+      }
+      ping('full');                  // redraw with the new horizon
     });
-    const data = await res.json();
-    drawFromData(data, payload.current_age);
-    return { data, startAge: payload.current_age };
+
+// --- Client-side solver (binary search, uses lite evals) ---
+async function evalWithOverrides(overrides){
+  const payload = collectParams();
+  Object.assign(payload, overrides || {});
+
+  // If overrides introduced goal_events, rebuild asset_liquidations from goals
+  if (overrides && Array.isArray(overrides.goal_events)) {
+    const manualLiqs = (gatherForm().asset_liquidations || []);
+    const allGoals = (payload.goal_events || []);
+    const fromGoals = goalsToLiquidations(allGoals, payload);
+    payload.asset_liquidations = [...manualLiqs, ...fromGoals];
   }
 
-  function curveByMetric(data, metric){
-    if (metric === 'det') return data.deterministic || [];
-    if (metric === 'p10') return data.p10 || [];
-    if (metric === 'p90') return data.p90 || [];
-    return data.p50 || [];
-  }
-  function valueAtAge(curve, startAge, age){
-    const idx = Math.max(0, Math.min(curve.length - 1, Math.round(age - startAge)));
-    return Number(curve[idx] ?? 0);
-  }
+  payload.mode = 'lite';
+  payload.coach_prefs = null;
 
-  async function solve(){
-    scResult.textContent = 'Solving…';
+  const url = "{{ url_for('projects.live_update') }}";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(CSRF ? {"X-CSRFToken": CSRF} : {})
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  drawFromData(data, payload.current_age);
+  return { data, startAge: payload.current_age };
+}
+
+function curveByMetric(data, metric){
+  if (metric === 'det') return data.deterministic || [];
+  if (metric === 'p10') return data.p10 || [];
+  if (metric === 'p90') return data.p90 || [];
+  return data.p50 || [];
+}
+function valueAtAge(curve, startAge, age){
+  const idx = Math.max(0, Math.min(curve.length - 1, Math.round(age - startAge)));
+  return Number(curve[idx] ?? 0);
+}
+
+async function solve(){
+  scResult.textContent = 'Solving…';
 
     const metric = scMetric.value;
     const targetAssets = Math.max(0, +scAssets.value || 0);
@@ -1134,82 +1112,82 @@
       updateLabelsFromSliders();   // keeps the label in sync
     }
 
-    const lever = getLever();
+  const lever = getLever();
 
-    // bounds from UI
-    const bounds = {
-      retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
-      annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
-      annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
-      inflow:         [ 0, 30000 ]
-    };
-    const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, inflow:true };
+  // bounds from UI
+  const bounds = {
+    retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
+    annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
+    annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
+    inflow:         [ 0, 30000 ]
+  };
+  const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, inflow:true };
 
-    const [lo0, hi0] = bounds[lever];
-    const inc = increasing[lever];
+  const [lo0, hi0] = bounds[lever];
+  const inc = increasing[lever];
 
-    function buildOverrides(x){
-      const base = { life_expectancy: horizon };  // ensure server computes exactly to target age
+        function buildOverrides(x){
+          const base = { life_expectancy: horizon };  // ensure server computes exactly to target age
 
-      if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
-      if (lever === 'annual_expense')  return { ...base, annual_expense: x };
-      if (lever === 'annual_saving')   return { ...base, annual_saving: x };
-      if (lever === 'inflow') {
-        const form = lastForm || gatherForm();
-        const ra = Math.round(+elAge.value || form.retirement_age || 65);
-        const inflowEvent = {
-          name: "part-time",
-          is_expense: false,
-          amount: x,
-          start_age: ra,
-          recurrence: "years",
-          years: 3,
-          inflation_linked: true
-        };
-        return {
-          ...base,
-          goal_events: (form.goal_events || []).concat(
-            window.GoalsModule?.current() || [],
-            window.__coach_goals || [],
-            [inflowEvent]
-          )
-        };
-      }
-      return base; // <- still send the horizon if no other overrides
-    }
+          if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
+          if (lever === 'annual_expense')  return { ...base, annual_expense: x };
+          if (lever === 'annual_saving')   return { ...base, annual_saving: x };
+          if (lever === 'inflow') {
+            const form = lastForm || gatherForm();
+            const ra = Math.round(+elAge.value || form.retirement_age || 65);
+            const inflowEvent = {
+              name: "part-time",
+              is_expense: false,
+              amount: x,
+              start_age: ra,
+              recurrence: "years",
+              years: 3,
+              inflation_linked: true
+            };
+            return {
+              ...base,
+              goal_events: (form.goal_events || []).concat(
+                window.GoalsModule?.current() || [],
+                window.__coach_goals || [],
+                [inflowEvent]
+              )
+            };
+          }
+          return base; // <- still send the horizon if no other overrides
+        }
 
-    async function f(x){
-      const { data, startAge } = await evalWithOverrides(buildOverrides(x));
-      const curve = curveByMetric(data, metric);
-      return valueAtAge(curve, startAge, targetAge) - targetAssets; // want >= 0
-    }
+  async function f(x){
+    const { data, startAge } = await evalWithOverrides(buildOverrides(x));
+    const curve = curveByMetric(data, metric);
+    return valueAtAge(curve, startAge, targetAge) - targetAssets; // want >= 0
+  }
 
-    // bracket
-    let lo = lo0, hi = hi0;
-    let flo = await f(lo);
-    let fhi = await f(hi);
+  // bracket
+  let lo = lo0, hi = hi0;
+  let flo = await f(lo);
+  let fhi = await f(hi);
 
-    const maxIter = 14;
-    const tolX = (lever==='retirement_age') ? 0.25 : 50; // ~$50 or quarter year
-    const tolF = 500; // $500 tolerance on assets
+  const maxIter = 14;
+  const tolX = (lever==='retirement_age') ? 0.25 : 50; // ~$50 or quarter year
+  const tolF = 500; // $500 tolerance on assets
 
-    // feasibility
-    let feasible = false;
-    if (inc) {
-      if (flo >= 0) { feasible = true; hi = lo; fhi = flo; }
-      else if (fhi < 0) { feasible = false; } else feasible = true;
-    } else {
-      if (fhi >= 0) { feasible = true; lo = hi; flo = fhi; }
-      else if (flo < 0) { feasible = false; } else feasible = true;
-    }
+  // feasibility
+  let feasible = false;
+  if (inc) {
+    if (flo >= 0) { feasible = true; hi = lo; fhi = flo; }
+    else if (fhi < 0) { feasible = false; } else feasible = true;
+  } else {
+    if (fhi >= 0) { feasible = true; lo = hi; flo = fhi; }
+    else if (flo < 0) { feasible = false; } else feasible = true;
+  }
 
-    if (!feasible) {
-      const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
-                        : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
-      scResult.textContent = "Target not achievable within bounds; using nearest bound.";
-      finalizePatch(pick, pick);
-      return;
-    }
+  if (!feasible) {
+    const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
+                      : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
+    scResult.textContent = "Target not achievable within bounds; using nearest bound.";
+    finalizePatch(pick, pick);
+    return;
+  }
 
     // bisection
     for (let k = 0; k < maxIter && Math.abs(hi - lo) > tolX; k++) {
@@ -1225,16 +1203,19 @@
 
     const xStar = inc ? hi : lo;
 
-    // --- estimate fractional retirement age for display only ---
+    // --- NEW: estimate fractional retirement age for display only ---
     let xDisplay = xStar;
     if (lever === 'retirement_age') {
-      const minA = Math.max(cur, (+elAge.min || 55));
-      const maxA = Math.min(horizon - 1, (+elAge.max || 75)); // use horizon here
+      // clamp within allowed/realistic bounds
+        const minA = Math.max(cur, (+elAge.min || 55));
+        const maxA = Math.min(horizon - 1, (+elAge.max || 75)); // use horizon here
 
+      // neighbor integers
       const r0 = Math.max(minA, Math.min(Math.floor(xStar), maxA));
       const r1 = Math.max(minA, Math.min(r0 + 1, maxA));
 
       if (r1 > r0) {
+        // f(x) returns (assets - targetAssets), zero-crossing between r0 and r1
         const [f0, f1] = await Promise.all([f(r0), f(r1)]);
         if (Number.isFinite(f0) && Number.isFinite(f1) && Math.abs(f1 - f0) > 1e-9) {
           const frac = r0 + (0 - f0) / (f1 - f0);
@@ -1269,7 +1250,7 @@
       // Show result (use fractional display for retirement age)
       const pretty = (v) =>
         (lever === 'retirement_age'
-          ? (+Number(v).toFixed(1)).toString()
+          ? (+Number(v).toFixed(1)).toString() // "58.6" (no trailing .0)
           : '$' + Math.round(v).toLocaleString());
 
       const leverName = {
@@ -1286,7 +1267,10 @@
       // Apply integer patch to the UI and do a full recalc
       applyPatch(patch);
     }
-  }
+}
+
+
+
 
   // buttons
   scSolve.addEventListener('click', solve);
@@ -1295,6 +1279,8 @@
     scResult.textContent = '';
     ping('full');
   });
+
+
 
   // --- RESET: snap sliders back to whatever the main form currently holds
   document.getElementById('lw_reset').addEventListener('click', () => {
@@ -1311,7 +1297,6 @@
   ping('full');
 })();
 </script>
-
 
 
 
