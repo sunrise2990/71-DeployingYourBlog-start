@@ -386,9 +386,6 @@
     </details>
 
     <canvas id="lw_assets_chart" class="mt-4"></canvas>
-
-    <!-- Locked snapshots live here -->
-    <div id="lw_snapshots" class="mt-3"></div>
   </div>
 </div>
 
@@ -669,23 +666,21 @@
   const scClear    = document.getElementById('sc_clear_goals');
   const scResult   = document.getElementById('sc_result');
 
-  // levers (radio)
   const getLever = () => (document.querySelector('input[name="sc_lever"]:checked') || {}).value || 'retirement_age';
 
-  // 👉 stash for coach-suggested goals (not persisted)
+  // coach goals (not persisted)
   window.__coach_goals = window.__coach_goals || [];
 
-  // 👉 CSRF token for JSON POST (safe if undefined)
   const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
 
-  // ---- request gating to ignore stale responses
+  // ---- request/paint gating ----
   let __lastPingId = 0;
   let __inflightCtrl = null;
-
-  // ---- paint ordering guard (prevents late stale paints from any path)
   let __lastPaintToken = 0;
 
-  // ---- helpers to read the existing form ----
+  // 🔒 while we are committing a Solve result, suppress any other pings/paints
+  let __awaitingSolveCommit = false;
+
   const $ = (sel, root=document) => root.querySelector(sel);
 
   function findByLabelText(text) {
@@ -722,15 +717,12 @@
   const nz = (v, f) => (Number.isFinite(v) ? v : f);
   const fmt = x => Number(x).toLocaleString();
 
-  // ---- snapshot the whole form (includes CPP from Extended-Year fields) ----
+  // ---- snapshot the whole form ----
   function gatherForm() {
     const current_age     = nz(numFrom(findInput({labelIncludes:['Current Age'], names:['current_age']})), 53);
     const retirement_age  = nz(numFrom(findInput({labelIncludes:['Retirement Age'], names:['retirement_age']})), 65);
-
-    // Lifespan (needed for fallback)
     const life_expectancy = nz(numFrom(findInput({labelIncludes:['Expected Lifespan'], names:['expected_lifespan']})), 90);
 
-    // Map Extended-Year to CPP window: start = From, end = To - 1 (inclusive)
     const ext_from = nz(
       numFrom(findInput({
         ids:['extended_year_from_age','extended_from_age'],
@@ -738,7 +730,6 @@
         labelIncludes:['Extended Year From']
       })), retirement_age
     );
-
     const ext_to_raw = nz(
       numFrom(findInput({
         ids:['extended_year_to_age','extended_to_age'],
@@ -777,7 +768,6 @@
     const return_std      = toDec(ret_std_pct);
     const inflation_std   = toDec(infl_std_pct);
 
-    // optional liquidations (1..3)
     function liq(n){
       const amt = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation ${n}`], names:[`asset_liquidation_${n}`]})), 0);
       const age = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation Age ${n}`], names:[`asset_liquidation_age_${n}`]})), NaN);
@@ -802,7 +792,6 @@
       life_expectancy,
       income_tax_rate,
 
-      // MC mirrors deterministic
       return_mean: return_rate,
       return_mean_after: return_rate_after,
       return_std,
@@ -811,7 +800,7 @@
     };
   }
 
-  // ---- Goals → asset_liquidations (client-side) ----
+  // ---- Goals → asset_liquidations ----
   function goalsToLiquidations(goals, base){
     const out = [];
     const infl = base.inflation_rate || 0;
@@ -862,25 +851,6 @@
     }
   });
 
-  // ---- Snapshot util (locks current chart as an image) ----
-  function snapshotChart(caption){
-    try {
-      const url = chart.toBase64Image();
-      const host = document.getElementById('lw_snapshots');
-      const box  = document.createElement('div');
-      box.className = 'border rounded p-2';
-      box.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <div class="small text-muted">${caption}</div>
-          <button type="button" class="btn btn-sm btn-outline-danger">×</button>
-        </div>
-        <img class="img-fluid border" alt="Locked chart" src="${url}">`;
-      box.querySelector('button').addEventListener('click', ()=> host.removeChild(box));
-      host.prepend(box);
-    } catch {}
-  }
-
-  // Helpers to write sliders/labels from a form snapshot
   function setSlidersFromForm(f) {
     elAge.value     = f.retirement_age;
     elExpMo.value   = Math.round((f.annual_expense/12) / 50) * 50;
@@ -929,16 +899,15 @@
     // default sims; server will downshift in lite mode
     form.num_simulations    = 2000;
 
-    // 🔗 attach goals (table + coach) and merge into asset_liquidations
+    // goals
     const goalsTable = (window.GoalsModule?.current() || []);
     const coachGoals = (window.__coach_goals || []);
     const allGoals   = goalsTable.concat(coachGoals);
 
-    form.goal_events = allGoals;  // send for server visibility/debug
+    form.goal_events = allGoals;
     const fromGoals  = goalsToLiquidations(allGoals, form);
     form.asset_liquidations = [...(form.asset_liquidations || []), ...fromGoals];
 
-    // reflect labels
     updateLabelsFromSliders();
 
     lastForm = form;
@@ -948,50 +917,9 @@
   // --- debounce helpers ---
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
-  // ---- Coach UI helpers ----
-  function applyPatch(patch){
-    if (!patch) return;
-
-    if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
-    if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
-    if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
-
-    if (Array.isArray(patch.goal_events) && patch.goal_events.length){
-      window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
-    }
-
-    updateLabelsFromSliders();
-    sendFull();
-  }
-
-  function renderCoach(list){
-    const area = document.getElementById('coach_area');
-    if (!area) return;
-    area.innerHTML = '';
-    (list || []).forEach(s => {
-      const row = document.createElement('div');
-      if (s.type === 'status') {
-        row.className = 'alert alert-secondary py-2 mb-0';
-        row.textContent = s.detail || s.title || 'Status';
-      } else {
-        row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
-        row.innerHTML = `
-          <div>
-            <div class="fw-semibold">${s.title || 'Suggestion'}</div>
-            <div class="text-muted small">${s.why || ''}</div>
-          </div>
-          <div class="d-flex gap-2">
-            <button type="button" class="btn btn-sm btn-primary">Try it</button>
-          </div>`;
-        row.querySelector('button').addEventListener('click', () => applyPatch(s.patch));
-      }
-      area.appendChild(row);
-    });
-  }
-
   // ---- draw helper (order-guarded) ----
   function drawFromData(data, startAge, paintToken){
-    if (paintToken != null && paintToken < __lastPaintToken) return; // stale paint
+    if (paintToken != null && paintToken < __lastPaintToken) return;
     if (paintToken != null) __lastPaintToken = paintToken;
 
     const n = (data.p50?.length) || (data.deterministic?.length) || 0;
@@ -1004,21 +932,19 @@
     chart.update('none');
   }
 
-  // ---- network call with mode (latest-response & latest-paint win) ----
+  // ---- network call with mode (latest-response & paint ordering) ----
   async function ping(mode = 'full') {
+    // suppress non-commit pings while committing a Solve result
+    if (__awaitingSolveCommit) return;
+
     const payload = collectParams();
     payload.mode = mode;
     payload.coach_prefs = null;
 
     const url = "{{ url_for('projects.live_update') }}";
-
-    // paint token: any newer request gets a higher token and supersedes
     const paintToken = ++__lastPaintToken;
-
-    // latest-response gating
     const myId = ++__lastPingId;
 
-    // abort any in-flight request when starting a FULL run
     if (mode === 'full' && __inflightCtrl) {
       try { __inflightCtrl.abort(); } catch {}
     }
@@ -1035,39 +961,54 @@
         signal: __inflightCtrl.signal
       });
       if (!res.ok) { console.error("live-update failed", res.status, await res.text()); return; }
-
-      if (myId !== __lastPingId) return; // stale response (newer one started)
+      if (myId !== __lastPingId) return;
 
       const data = await res.json();
-
-      if (myId !== __lastPingId) return; // stale after parse
-
-      if (data.debug) {
-        console.groupCollapsed("LIVE DEBUG");
-        console.table(data.debug.used_params || {});
-        console.log("Deterministic last:", data.debug?.derived?.deterministic_last);
-        console.groupEnd();
-      }
+      if (myId !== __lastPingId) return;
 
       drawFromData(data, payload.current_age, paintToken);
-      renderCoach(data.coach || []);
+
+      // suggestions (ignored when committing)
+      const area = document.getElementById('coach_area');
+      if (area) {
+        area.innerHTML = '';
+        (data.coach || []).forEach(s => {
+          const row = document.createElement('div');
+          if (s.type === 'status') {
+            row.className = 'alert alert-secondary py-2 mb-0';
+            row.textContent = s.detail || s.title || 'Status';
+          } else {
+            row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
+            row.innerHTML = `
+              <div>
+                <div class="fw-semibold">${s.title || 'Suggestion'}</div>
+                <div class="text-muted small">${s.why || ''}</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-primary">Try it</button>
+              </div>`;
+            row.querySelector('button').addEventListener('click', () => applyPatch(s.patch));
+          }
+          area.appendChild(row);
+        });
+      }
     } catch (err) {
       if (err?.name !== 'AbortError') console.error("live-update error", err);
     }
   }
 
   // faster while dragging, solid after pause
-  const sendLite = debounce(() => ping('lite'), 80);
-  const sendFull = debounce(() => ping('full'), 400);
+  const sendLite = debounce(() => { if (!__awaitingSolveCommit) ping('lite'); }, 80);
+  const sendFull = debounce(() => { if (!__awaitingSolveCommit) ping('full'); }, 400);
 
-  // 🔗 Make Live What-If react to Goals changes immediately (fast + finish)
+  // Goals changes quick + finish
   try {
     if (window.GoalsModule?.onChange) {
       let t;
       window.GoalsModule.onChange(() => {
-        sendLite();                // quick preview (lite)
+        sendLite();
         clearTimeout(t);
-        t = setTimeout(() => sendFull(), 600); // authoritative full
+        t = setTimeout(() => sendFull(), 600);
       });
     }
   } catch {}
@@ -1078,21 +1019,20 @@
       el.addEventListener('change', () => { ping('full'); });
     });
 
-  // Keep Expected Lifespan slider in sync with "At age" (both directions)
-  // and avoid firing a competing FULL request (preview only here).
+  // Keep Expected Lifespan slider in sync with "At age" (preview only)
   scAge.addEventListener('change', () => {
     const n = Math.min(
       Math.max(+scAge.value || 0, (+elLife.min || 70)),
       (+elLife.max || 105)
     );
     if (n !== (+elLife.value || 0)) {
-      elLife.value = n;            // match the horizon to "At age"
+      elLife.value = n;
       updateLabelsFromSliders();
     }
-    sendLite(); // preview; Solve will send the authoritative FULL
+    sendLite();
   });
 
-  // --- Client-side solver (binary search, uses lite evals) ---
+  // --- lite eval used by solver ---
   async function evalWithOverrides(overrides){
     const payload = collectParams();
     Object.assign(payload, overrides || {});
@@ -1108,8 +1048,6 @@
     payload.coach_prefs = null;
 
     const url = "{{ url_for('projects.live_update') }}";
-
-    // paint ordering for lite evals, too
     const paintToken = ++__lastPaintToken;
 
     const res = await fetch(url, {
@@ -1136,25 +1074,70 @@
     return Number(curve[idx] ?? 0);
   }
 
+  // --- FULL COMMIT: post exactly the overrides used to solve, then paint; no extra recalc ---
+  async function commitFull(overrides, patch){
+    __awaitingSolveCommit = true;
+
+    // Cancel any in-flight non-commit request
+    if (__inflightCtrl) { try { __inflightCtrl.abort(); } catch {} }
+
+    const payload = collectParams();
+    Object.assign(payload, overrides || {});
+    payload.mode = 'full';
+    payload.coach_prefs = null;
+
+    const url = "{{ url_for('projects.live_update') }}";
+    const paintToken = ++__lastPaintToken;
+    __inflightCtrl = new AbortController();
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(CSRF ? {"X-CSRFToken": CSRF} : {})
+        },
+        body: JSON.stringify(payload),
+        signal: __inflightCtrl.signal
+      });
+      if (!res.ok) { console.error("full-commit failed", res.status, await res.text()); return; }
+      const data = await res.json();
+
+      // Authoritative paint (identical inputs to solver)
+      drawFromData(data, payload.current_age, paintToken);
+
+      // Update UI controls to reflect the patch WITHOUT firing pings
+      if (patch) {
+        if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
+        if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
+        if (patch.annual_saving != null)  elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
+        if (Array.isArray(patch.goal_events) && patch.goal_events.length){
+          window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
+        }
+        updateLabelsFromSliders();
+      }
+    } catch (e) {
+      if (e?.name !== 'AbortError') console.error('commit error', e);
+    } finally {
+      __awaitingSolveCommit = false;
+    }
+  }
+
+  // --- SOLVER (binary search on lite evals; then commit the exact inputs) ---
   async function solve(){
     scResult.textContent = 'Solving…';
 
     const metric = scMetric.value;
     const targetAssets = Math.max(0, +scAssets.value || 0);
 
-    // base form ages
     const lifeForm = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
     const cur      = lastForm?.current_age ?? gatherForm().current_age ?? 50;
 
-    // user's requested target age (clamp to >= current age and slider bounds)
     let targetAge = +scAge.value || lifeForm;
     targetAge = Math.max(targetAge, cur);
     targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
 
-    // horizon we want the server and chart to use: EXACTLY the target age
     const horizon = targetAge;
-
-    // 🔒 Force the UI slider to match the horizon so all subsequent pings use it
     if ((+elLife.value || 0) !== horizon) {
       elLife.value = horizon;
       updateLabelsFromSliders();
@@ -1162,7 +1145,6 @@
 
     const lever = getLever();
 
-    // bounds from UI
     const bounds = {
       retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
       annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
@@ -1176,7 +1158,6 @@
 
     function buildOverrides(x){
       const base = { life_expectancy: horizon };
-
       if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
       if (lever === 'annual_expense')  return { ...base, annual_expense: x };
       if (lever === 'annual_saving')   return { ...base, annual_saving: x };
@@ -1207,7 +1188,7 @@
     async function f(x){
       const { data, startAge } = await evalWithOverrides(buildOverrides(x));
       const curve = curveByMetric(data, metric);
-      return valueAtAge(curve, startAge, targetAge) - targetAssets; // want >= 0
+      return valueAtAge(curve, startAge, targetAge) - targetAssets;
     }
 
     // bracket
@@ -1216,10 +1197,9 @@
     let fhi = await f(hi);
 
     const maxIter = 14;
-    const tolX = (lever==='retirement_age') ? 0.25 : 50; // ~$50 or quarter year
-    const tolF = 500; // $500 tolerance on assets
+    const tolX = (lever==='retirement_age') ? 0.25 : 50;
+    const tolF = 500;
 
-    // feasibility
     let feasible = false;
     if (inc) {
       if (flo >= 0) { feasible = true; hi = lo; fhi = flo; }
@@ -1229,11 +1209,26 @@
       else if (flo < 0) { feasible = false; } else feasible = true;
     }
 
+    const leverName = {
+      retirement_age: 'Retirement age',
+      annual_expense: 'Spending (annual)',
+      annual_saving:  'Savings (annual)',
+      inflow:         'Part-time inflow (annual)'
+    }[lever];
+
     if (!feasible) {
       const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
                         : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
       scResult.textContent = "Target not achievable within bounds; using nearest bound.";
-      finalizePatch(pick, pick);
+      const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(pick) }
+                  : (lever === 'annual_expense') ? { annual_expense: pick }
+                  : (lever === 'annual_saving')  ? { annual_saving: pick }
+                  : { goal_events: [{
+                        name: "part-time", is_expense: false, amount: Math.round(pick),
+                        start_age: Math.round(+elAge.value || (lastForm?.retirement_age ?? 65)),
+                        recurrence: "years", years: 3, inflation_linked: true
+                      }] };
+      await commitFull(buildOverrides(pick), patch);
       return;
     }
 
@@ -1251,14 +1246,13 @@
 
     const xStar = inc ? hi : lo;
 
-    // --- fractional retirement age for display only ---
+    // fractional retirement age for display only
     let xDisplay = xStar;
     if (lever === 'retirement_age') {
-      const minA = Math.max(lastForm?.current_age ?? gatherForm().current_age ?? 50, (+elAge.min || 55));
+      const minA = Math.max(cur, (+elAge.min || 55));
       const maxA = Math.min(horizon - 1, (+elAge.max || 75));
       const r0 = Math.max(minA, Math.min(Math.floor(xStar), maxA));
       const r1 = Math.max(minA, Math.min(r0 + 1, maxA));
-
       if (r1 > r0) {
         const [f0, f1] = await Promise.all([f(r0), f(r1)]);
         if (Number.isFinite(f0) && Number.isFinite(f1) && Math.abs(f1 - f0) > 1e-9) {
@@ -1269,51 +1263,26 @@
       if (!Number.isFinite(xDisplay)) xDisplay = xStar;
     }
 
-    finalizePatch(xStar, xDisplay);
+    const pretty = (v) =>
+      (lever === 'retirement_age'
+        ? (+Number(v).toFixed(1)).toString()
+        : '$' + Math.round(v).toLocaleString());
 
-    function finalizePatch(x, xDisp) {
-      let patch;
-      if (lever === 'retirement_age') patch = { retirement_age: Math.round(x) };
-      else if (lever === 'annual_expense') patch = { annual_expense: x };
-      else if (lever === 'annual_saving') patch = { annual_saving: x };
-      else if (lever === 'inflow') {
-        const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
-        patch = {
-          goal_events: [{
-            name: "part-time",
-            is_expense: false,
-            amount: Math.round(x),
-            start_age: ra,
-            recurrence: "years",
-            years: 3,
-            inflation_linked: true
-          }]
-        };
-      }
+    const shown = (lever === 'retirement_age') ? xDisplay : xStar;
+    scResult.textContent =
+      `${leverName}: ${pretty(shown)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
-      // Show result
-      const pretty = (v) =>
-        (lever === 'retirement_age'
-          ? (+Number(v).toFixed(1)).toString()
-          : '$' + Math.round(v).toLocaleString());
+    // Build the UI patch and COMMIT the exact solved inputs (authoritative full run)
+    const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) }
+                : (lever === 'annual_expense') ? { annual_expense: xStar }
+                : (lever === 'annual_saving')  ? { annual_saving: xStar }
+                : { goal_events: [{
+                      name: "part-time", is_expense: false, amount: Math.round(xStar),
+                      start_age: Math.round(+elAge.value || (lastForm?.retirement_age ?? 65)),
+                      recurrence: "years", years: 3, inflation_linked: true
+                    }] };
 
-      const leverName = {
-        retirement_age: 'Retirement age',
-        annual_expense: 'Spending (annual)',
-        annual_saving:  'Savings (annual)',
-        inflow:         'Part-time inflow (annual)'
-      }[lever];
-
-      const shown = (lever === 'retirement_age') ? xDisp : x;
-      scResult.textContent =
-        `${leverName}: ${pretty(shown)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
-
-      // 🔒 Immediately lock the chart the user just saw (before any redraws)
-      snapshotChart(`${new Date().toLocaleString()} — ${leverName} result`);
-
-      // Apply integer patch to the UI and do a full recalc
-      applyPatch(patch);
-    }
+    await commitFull(buildOverrides(xStar), patch);
   }
 
   // buttons
@@ -1324,7 +1293,6 @@
     ping('full');
   });
 
-  // --- RESET: snap sliders back to whatever the main form currently holds
   document.getElementById('lw_reset').addEventListener('click', () => {
     const f = gatherForm();
     setSlidersFromForm(f);
@@ -1339,6 +1307,7 @@
   ping('full');
 })();
 </script>
+
 
 
 
