@@ -785,18 +785,26 @@ const chart = new Chart(ctx, {
 
       // MC P10 (thin + dashed)
       { label: 'MC P10', data: [],
-        borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.04)',
-        borderWidth: 1.5, borderDash: [4,4], pointRadius: 0, tension: 0.25 },
+        borderColor: '#dc2626',
+        backgroundColor: 'rgba(220,38,38,0.05)',
+        borderWidth: 2.0, borderDash: [3,3],
+        borderCapStyle: 'round',
+        pointRadius: 0, tension: 0.25
+      },
 
       // MC Median — ⭐ make this stand out: thicker + long dash + slight smoothing
       { label: 'MC Median', data: [],
-        borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)',
-        borderWidth: 4, borderDash: [8,4], pointRadius: 0, tension: 0.35 },
+        borderColor: '#ec4899',                         // pink
+        backgroundColor: 'rgba(236,72,153,0.08)',
+        borderWidth: 3, borderDash: [8,4],              // make it stand out
+        borderCapStyle: 'round',
+        pointRadius: 0, tension: 0.25
+      },
 
       // MC P90 (thin + short dash)
       { label: 'MC P90', data: [],
         borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.04)',
-        borderWidth: 1.5, borderDash: [4,2], pointRadius: 0, tension: 0.25 },
+        borderWidth: 1.7, borderDash: [4,2], pointRadius: 0, tension: 0.25 },
     ]
   },
   options: {
