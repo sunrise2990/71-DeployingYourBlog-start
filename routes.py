@@ -842,6 +842,8 @@ def _harmonize(params: dict) -> dict:
 
 
 
+
+
 # Goals helpers
 from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
 # Coach helpers (still available, optional)
@@ -942,7 +944,7 @@ def _series_value_for(metric, det_curve, pct, idx):
     return seq[i]
 
 
-def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
+def _solve_single_lever(p0, prefs, seed, n_eval, _DET, _MC, run_mc_with_seed):
     """
     prefs:
       { "target": { "metric": "det|p10|p50|p90", "assets": 2000000, "age": 90 },
@@ -973,8 +975,8 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         det_tbl = det_out.get("table", [])
         det_curve = [row.get("Asset") for row in det_tbl]
 
-        # fast MC
-        mc = run_mc_with_seed(seed, _MC, **_build_mc_args(p_eval, n_sims=700))
+        # MC with the SAME seed and SAME num_sims as the graph for exact matching
+        mc = run_mc_with_seed(seed, _MC, **_build_mc_args(p_eval, n_sims=n_eval))
         pct = mc.get("percentiles", {})
 
         idx = target_age - start_age
@@ -1101,19 +1103,20 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         patch["return_mean_after"] = val
         lever_value_out = val
 
-    # Pretty title
+    # Pretty title (monthly display for spending/savings)
     lever_name = {
         "retirement_age": "Retirement age",
-        "annual_expense": "Spending (annual)",
-        "annual_saving":  "Savings (annual)",
+        "annual_expense": "Spending (monthly)",
+        "annual_saving":  "Savings (monthly)",
         "post_ret_return":"Post-ret return",
     }[lever]
     met_txt = {"det": "Deterministic", "p10": "MC p10", "p50": "MC Median", "p90": "MC p90"}[metric]
-    val_txt = (
-        f"{int(round(lever_value_out))}"
-        if lever == "retirement_age"
-        else (f"{lever_value_out*100:.1f}%" if lever == "post_ret_return" else f"${int(round(lever_value_out)):,}")
-    )
+    if lever == "retirement_age":
+        val_txt = f"{int(round(lever_value_out))}"
+    elif lever == "post_ret_return":
+        val_txt = f"{lever_value_out*100:.1f}%"
+    else:
+        val_txt = f"${int(round(lever_value_out/12.0)):,}"
     title = f"{lever_name}: {val_txt} (meets {met_txt} ≥ ${int(round(want_assets)):,} at age {target_age})"
 
     return {
@@ -1161,19 +1164,22 @@ def live_update():
     # ---- Monte Carlo ----
     mc_params = _build_mc_args(
         params,
-        n_sims=(500 if is_lite else params.get("num_simulations", params.get("n_sims", 2000)))
+        n_sims=(120 if is_lite else params.get("num_simulations", params.get("n_sims", 2000)))
     )
     seed = _get_or_create_seed()
     mc_out = run_mc_with_seed(seed, _MC, **mc_params)
     pct = mc_out.get("percentiles", {})
     det_last = det_curve[-1] if det_curve else None
 
+    # Seed forwarding so coach/solver match the on-screen graph exactly
+    params["mc_seed"] = seed
+
     # ---- Targeted solve (single lever) when FULL + prefs present ----
     solution = {}
     if not is_lite and coach_prefs:
         try:
             # expected schema: {"target":{"metric":"det|p10|p50|p90","assets":..., "age":...}, "lever":"retirement_age|annual_expense|annual_saving|post_ret_return"}
-            solution = _solve_single_lever(params, coach_prefs, seed, _DET, _MC, run_mc_with_seed)
+            solution = _solve_single_lever(params, coach_prefs, seed, mc_params["num_simulations"], _DET, _MC, run_mc_with_seed)
         except Exception as e:
             solution = {"error": str(e)}
 
@@ -1226,6 +1232,7 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 
