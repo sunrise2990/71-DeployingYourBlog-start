@@ -844,7 +844,7 @@
     }
 
     // Single-jump sim count
-    form.num_simulations = 500;
+    form.num_simulations = 300;
 
     // goals ➜ liqs
     const goalsTable = (window.GoalsModule?.current() || []);
@@ -873,7 +873,7 @@
     chart.update('none');
   }
 
-  // === Single debounced FULL request (500 sims) ===
+  // === Single debounced FULL request (300 sims) ===
   async function ping() {
     if (__awaitingSolveCommit) return;        // block while committing solve
     const payload = collectParams();
@@ -957,7 +957,7 @@
   scAge.addEventListener('input', debouncedPing);
   scAge.addEventListener('change', ping);
 
-  // Solver evals — use FULL (500 sims) but DO NOT DRAW
+  // Solver evals — use FULL (300 sims) but DO NOT DRAW
   async function evalWithOverrides(overrides){
     const payload = collectParams();
     Object.assign(payload, overrides || {});
@@ -1064,7 +1064,7 @@
     const inc = increasing[lever];
 
     function buildOverrides(x){
-      const base = { life_expectancy: horizon, num_simulations: 500 };
+      const base = { life_expectancy: horizon, num_simulations: 300 };
       if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
       if (lever === 'annual_expense')  return { ...base, annual_expense: x };
       if (lever === 'annual_saving')   return { ...base, annual_saving: x };
@@ -1147,7 +1147,7 @@
     }
   })();
 
-  console.log("Live What-If ready (single full request, 500 sims)");
+  console.log("Live What-If ready (single full request, 300 sims)");
   window.__liveTest = { ping, collectParams };
   ping(); // initial draw
 })();
