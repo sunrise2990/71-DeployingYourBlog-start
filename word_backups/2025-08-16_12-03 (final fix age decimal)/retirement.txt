@@ -770,49 +770,23 @@
     return out;
   }
 
-
-// Chart
-const ctx = document.getElementById('lw_assets_chart').getContext('2d');
-const chart = new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels: [],
-    datasets: [
-      // Deterministic (solid, medium)
-      { label: 'Deterministic', data: [],
-        borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)',
-        borderWidth: 2, pointRadius: 0, tension: 0.25 },
-
-      // MC P10 (thin + dashed)
-      { label: 'MC P10', data: [],
-        borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.04)',
-        borderWidth: 1.5, borderDash: [4,4], pointRadius: 0, tension: 0.25 },
-
-      // MC Median — ⭐ make this stand out: thicker + long dash + slight smoothing
-      { label: 'MC Median', data: [],
-        borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)',
-        borderWidth: 4, borderDash: [8,4], pointRadius: 0, tension: 0.35 },
-
-      // MC P90 (thin + short dash)
-      { label: 'MC P90', data: [],
-        borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.04)',
-        borderWidth: 1.5, borderDash: [4,2], pointRadius: 0, tension: 0.25 },
-    ]
-  },
-  options: {
-    responsive: true, animation: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: { labels: { boxWidth: 14, font: { weight: 600 } } } // slightly bolder legend
-    },
-    elements: { line: { borderJoinStyle: 'round' }, point: { hitRadius: 6 } },
-    scales: {
-      x: { title: { display: true, text: 'Age' } },
-      y: { ticks: { callback: v => Number(v).toLocaleString() } }
+  // Chart
+  const ctx = document.getElementById('lw_assets_chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'Deterministic', data: [] },
+      { label: 'MC P10',        data: [] },
+      { label: 'MC Median',     data: [] },
+      { label: 'MC P90',        data: [] },
+    ]},
+    options: {
+      responsive: true, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { title: { display: true, text: 'Age' } },
+               y: { ticks: { callback: v => Number(v).toLocaleString() } } }
     }
-  }
-});
-
+  });
 
   // labels/sliders
   function setSlidersFromForm(f) {
