@@ -947,7 +947,7 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     """
     prefs:
       { "target": { "metric": "det|p10|p50|p90", "assets": 2000000, "age": 90 },
-        "lever":  "retirement_age|annual_expense|annual_saving|post_ret_return",
+        "lever":  "retirement_age|annual_expense|annual_saving|inflow",
       }
     Returns {"patch": {...}, "achieved": float, "lever_value": value, "summary": str} or {}
     """
@@ -974,9 +974,8 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         det_tbl = det_out.get("table", [])
         det_curve = [row.get("Asset") for row in det_tbl]
 
-        # fast MC — honor requested num_simulations if present (default 300)
-        n_sims = int(p_eval.get("num_simulations", 300))
-        mc = run_mc_with_seed(seed, _MC, **_build_mc_args(p_eval, n_sims=n_sims))
+        # fast MC
+        mc = run_mc_with_seed(seed, _MC, **_build_mc_args(p_eval, n_sims=700))
         pct = mc.get("percentiles", {})
 
         idx = target_age - start_age
@@ -1002,10 +1001,18 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
             p["annual_expense"] = max(0.0, float(x))
         elif lever == "annual_saving":
             p["annual_saving"] = max(0.0, float(x))
-        elif lever == "post_ret_return":
-            xr = max(0.0, float(x))  # decimal (e.g., 0.06 for 6%)
-            p["return_rate_after"] = xr
-            p["return_mean_after"] = xr
+        elif lever == "inflow":
+            amt = max(0.0, float(x))
+            ra = int(p["retirement_age"])
+            p["goal_events"] = (p.get("goal_events") or []) + [{
+                "name": "solve_inflow",
+                "is_expense": False,
+                "amount": amt,
+                "start_age": ra,
+                "recurrence": "years",
+                "years": 3,
+                "inflation_linked": True
+            }]
         return p
 
     if lever == "retirement_age":
@@ -1017,8 +1024,8 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         low, high, inc = 0.0, float(p0["annual_expense"]) * 1.5, -1  # more spend ↓ assets
     elif lever == "annual_saving":
         low, high, inc = 0.0, max(float(p0["annual_saving"]) * 2.0, 120000.0), +1
-    elif lever == "post_ret_return":
-        low, high, inc = 0.0, 0.12, +1  # 0% .. 12% post-ret return (decimal)
+    elif lever == "inflow":
+        low, high, inc = 0.0, 30000.0, +1  # inflow per year for 3 years
     else:
         return {}
 
@@ -1055,11 +1062,7 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     # Binary search
     best_x, best_v = None, None
     max_iter = 16
-    tolX = (
-        0.25 if lever == "retirement_age"
-        else 0.0005 if lever == "post_ret_return"  # ~0.05%
-        else 50.0                                   # ~$50 annual
-    )
+    tolX = (0.25 if lever == "retirement_age" else 50.0)  # quarter-year or ~$50
     tolF = 500.0  # $500 tolerance on assets
 
     lo, hi = low, high
@@ -1089,22 +1092,22 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         patch["annual_expense"] = round(float(xStar), 2)
     elif lever == "annual_saving":
         patch["annual_saving"] = round(float(xStar), 2)
-    elif lever == "post_ret_return":
-        xr = float(xStar)
-        patch["return_rate_after"] = xr
-        patch["return_mean_after"] = xr
+    elif lever == "inflow":
+        patch["goal_events"] = [{
+            "name": "solve_inflow",
+            "is_expense": False,
+            "amount": round(float(xStar), 2),
+            "start_age": int(p0["retirement_age"]),
+            "recurrence": "years",
+            "years": 3,
+            "inflation_linked": True
+        }]
 
     return {
         "patch": patch,
         "achieved": float(vStar or 0.0),
-        "lever_value": (
-            patch.get("retirement_age") if lever == "retirement_age"
-            else patch.get("annual_expense") if lever == "annual_expense"
-            else patch.get("annual_saving") if lever == "annual_saving"
-            else patch.get("return_rate_after") if lever == "post_ret_return"
-            else None
-        ),
-        "summary": f"{lever.replace('_',' ')} → {patch} gives {metric} @ {target_age} ≈ ${float(vStar or 0.0):,.0f}"
+        "lever_value": (patch.get(lever) if lever != "inflow" else patch["goal_events"][0]["amount"]),
+        "summary": f"{lever.replace('_',' ')} → {patch.get(lever, 'goal_events')} gives {metric} @ {target_age} ≈ ${float(vStar or 0.0):,.0f}"
     }
 
 
@@ -1210,7 +1213,6 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
-
 
 
 

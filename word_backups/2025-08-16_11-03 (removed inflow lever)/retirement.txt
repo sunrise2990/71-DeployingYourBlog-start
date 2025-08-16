@@ -611,7 +611,7 @@
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="retirement_age" checked> Retirement age</label>
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_expense"> Spending</label>
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_saving"> Savings</label>
-            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="post_ret_return">Post-ret return (%)</label>
+
           </div>
         </div>
         <div class="col-md-3 d-flex justify-content-end gap-2">
@@ -915,10 +915,6 @@
     if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
     if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
     if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
-    if (patch.return_rate_after != null) {
-      elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10; // decimal → %
-      postVal.textContent = (+elPost.value).toFixed(1);
-    }
     if (Array.isArray(patch.goal_events) && patch.goal_events.length){
       window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
     }
@@ -1030,9 +1026,8 @@
         if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
         if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
         if (patch.annual_saving != null)  elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
-        if (patch.return_rate_after != null) {
-          elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10; // decimal → %
-          postVal.textContent = (+elPost.value).toFixed(1);
+        if (Array.isArray(patch.goal_events) && patch.goal_events.length){
+          window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
         }
         updateLabelsFromSliders();
       }
@@ -1041,7 +1036,7 @@
     }
   }
 
-  async function solve(){
+    async function solve(){
     scResult.textContent = 'Solving…';
 
     const metric = scMetric.value;
@@ -1062,9 +1057,9 @@
       retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
       annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
       annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
-      post_ret_return:[ (+elPost.min||0)/100, (+elPost.max||12)/100 ]
+
     };
-    const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, post_ret_return:true };
+    const increasing = { retirement_age:true, annual_expense:false, annual_saving:true };
     const [lo0, hi0] = bounds[lever];
     const inc = increasing[lever];
 
@@ -1073,7 +1068,7 @@
       if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
       if (lever === 'annual_expense')  return { ...base, annual_expense: x };
       if (lever === 'annual_saving')   return { ...base, annual_saving: x };
-      if (lever === 'post_ret_return') return { ...base, return_rate_after: x, return_mean_after: x };
+
       return base;
     }
     async function f(x){
@@ -1087,9 +1082,7 @@
     let fhi = await f(hi);
 
     const maxIter = 14;
-    const tolX = (lever==='retirement_age') ? 0.25
-               : (lever==='post_ret_return') ? 0.0005   // ≈0.05%
-               : 50;
+    const tolX = (lever==='retirement_age') ? 0.25 : 50;
     const tolF = 500;
 
     let feasible = false;
@@ -1102,7 +1095,7 @@
       const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(pick) }
                   : (lever === 'annual_expense') ? { annual_expense: pick }
                   : (lever === 'annual_saving')  ? { annual_saving: pick }
-                  : { return_rate_after: pick, return_mean_after: pick };
+                  : { goal_events: [{ name:"part-time", is_expense:false, amount:Math.round(pick), start_age: Math.round(+elAge.value || (lastForm?.retirement_age ?? 65)), recurrence:"years", years:3, inflation_linked:true }] };
       await commitFull(buildOverrides(pick), patch);
       return;
     }
@@ -1117,36 +1110,43 @@
 
     const xStar = inc ? hi : lo;
 
-    // ---- show result (monthly for Spending/Savings; % for Post-ret) ----
+    // ---- show result (monthly for Spending/Savings) ----
     const isMonthly = (lever === 'annual_expense' || lever === 'annual_saving');
-    const isPercent = (lever === 'post_ret_return');
 
     const leverName = {
       retirement_age: 'Retirement age',
       annual_expense: 'Spending (monthly)',
       annual_saving:  'Savings (monthly)',
-      post_ret_return:'Post-ret return (%)'
+
     }[lever];
 
-    const displayVal = isMonthly ? (xStar / 12) : isPercent ? (xStar * 100) : xStar;
-    const unit = isMonthly ? ' /mo' : isPercent ? '' : '';
+    // value to display (solver still uses annual xStar)
+    const displayVal = isMonthly ? (xStar / 12) : xStar;
+    const unit = isMonthly ? ' /mo' : '';
 
     const pretty = v =>
-      (lever === 'retirement_age') ? (+Number(v).toFixed(1)).toString()
-      : isPercent ? ((+Number(v).toFixed(1)) + '%')
-      : '$' + Math.round(v).toLocaleString();
+      (lever === 'retirement_age'
+        ? (+Number(v).toFixed(1)).toString()
+        : '$' + Math.round(v).toLocaleString());
 
     scResult.textContent =
       `${leverName}: ${pretty(displayVal)}${unit} ` +
       `(meets ${scMetric.options[scMetric.selectedIndex].text} ` +
       `≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
-    // PATCH (annual for spend/save; decimal for return)
-    const patch =
-      (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) } :
-      (lever === 'annual_expense') ? { annual_expense: xStar } :
-      (lever === 'annual_saving')  ? { annual_saving:  xStar } :
-                                     { return_rate_after: xStar, return_mean_after: xStar };
+    // PATCH remains in ANNUAL terms
+    const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) }
+                : (lever === 'annual_expense') ? { annual_expense: xStar }
+                : (lever === 'annual_saving')  ? { annual_saving: xStar }
+                : { goal_events: [{
+                    name: 'part-time',
+                    is_expense: false,
+                    amount: Math.round(xStar),
+                    start_age: Math.round(+elAge.value || (lastForm?.retirement_age ?? 65)),
+                    recurrence: 'years',
+                    years: 3,
+                    inflation_linked: true
+                  }] };
 
     await commitFull(buildOverrides(xStar), patch);
   }
@@ -1159,6 +1159,7 @@
   (function hookGoalsToLive() {
     function attach() {
       if (window.GoalsModule?.onChange) {
+        // Any add/remove/toggle inside Goals table → single full ping
         window.GoalsModule.onChange(() => { ping(); });
         return true;
       }
@@ -1170,12 +1171,11 @@
     }
   })();
 
-  console.log("Live What-If ready (single full request, 300 sims; Post-ret return lever enabled; monthly display for spend/save)");
+  console.log("Live What-If ready (single full request, 300 sims)");
   window.__liveTest = { ping, collectParams };
   ping(); // initial draw
 })();
 </script>
-
 
 
 
