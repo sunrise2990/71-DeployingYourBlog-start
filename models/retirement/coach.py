@@ -27,20 +27,6 @@ def _first_depletion_age(series: Optional[List[float]], start_age: int) -> Optio
     return None
 
 
-def _seed_from_params(params: Dict[str, Any], fallback: int = 12345) -> int:
-    """
-    Try to use the same MC seed as live_update for exact matching with the graph.
-    routes.py stores it server-side; if it was forwarded here, honor it.
-    """
-    for k in ("mc_seed", "_mc_seed", "__seed", "seed"):
-        if k in params:
-            try:
-                return int(params[k])
-            except Exception:
-                pass
-    return fallback
-
-
 def _coalesce_liqs(liqs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Coalesce liquidations by age (same behavior as routes.py)."""
     if not liqs:
@@ -83,20 +69,9 @@ def _merge_goals_into_liqs(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         return base_liqs
 
 
-def _quick_mc(
-    params: Dict[str, Any],
-    n_sims: int = 400,
-    seed: Optional[int] = None,
-) -> Dict[str, List[float]]:
-    """
-    Fast MC percentiles honoring goal events/liquidations.
-    IMPORTANT: If num_simulations is present in params, we use it so the solver
-    matches the What-If graph (same #paths ⇒ same p-curves, given same seed).
-    """
+def _quick_mc(params: Dict[str, Any], n_sims: int = 500, seed: int = 12345) -> Dict[str, List[float]]:
+    """Fast MC percentiles honoring goal events/liquidations."""
     liqs = _merge_goals_into_liqs(params)
-    n = int(params.get("num_simulations", n_sims))
-    sd = _seed_from_params(params) if seed is None else int(seed)
-
     mc_params = dict(
         current_age=int(params["current_age"]),
         retirement_age=int(params["retirement_age"]),
@@ -114,11 +89,11 @@ def _quick_mc(
         cpp_end_age=int(params["cpp_end_age"]),
         asset_liquidations=liqs,
         life_expectancy=int(params["life_expectancy"]),
-        num_simulations=n,
+        num_simulations=int(params.get("num_simulations", n_sims)),
         income_tax_rate=float(params["income_tax_rate"]),
     )
-    out = run_mc_with_seed(sd, _MC, **mc_params)
-    return out.get("percentiles", {})  # {p10:[], p50:[], p90:[]}
+    out = run_mc_with_seed(seed, _MC, **mc_params)
+    return out.get("percentiles", {})
 
 
 def _quick_det(params: Dict[str, Any]) -> List[float]:
@@ -150,8 +125,7 @@ def _curve_for_metric(params: Dict[str, Any], metric: str) -> List[float]:
     metric = (metric or "p50").lower()
     if metric == "det":
         return _quick_det(params)
-    # Match graph’s settings (same seed + same num_simulations when provided)
-    pct = _quick_mc(params, n_sims=int(params.get("num_simulations", 2000)))
+    pct = _quick_mc(params, n_sims=int(params.get("num_simulations", 500)))
     if metric == "p10":
         return pct.get("p10", []) or []
     if metric == "p90":
@@ -191,7 +165,7 @@ def _heuristic_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[f
         base = dict(params)
         for d in range(1, 6):
             try_params = dict(base, retirement_age=int(base["retirement_age"]) + d)
-            pct_try = _quick_mc(try_params, n_sims=int(base.get("num_simulations", 1200)))
+            pct_try = _quick_mc(try_params, n_sims=400)
             if _first_depletion_age(pct_try.get("p10") or [], start_age) is None:
                 suggestions.append({
                     "type": "action",
@@ -201,20 +175,36 @@ def _heuristic_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[f
                 })
                 break
 
-        # Trim spending in $50/mo steps up to $1,200/mo (matches UI slider granularity)
-        step_mo, max_cut_mo = 50, 1200
-        for cut_mo in range(step_mo, max_cut_mo + step_mo, step_mo):
-            cut = cut_mo * 12.0
-            try_params = dict(params, annual_expense=max(0.0, float(params["annual_expense"]) - cut))
-            pct_try = _quick_mc(try_params, n_sims=int(params.get("num_simulations", 1200)))
+        # Trim spending in $3k steps up to $12k
+        step, max_cut = 3000, 12000
+        for cut in range(step, max_cut + step, step):
+            try_params = dict(params, annual_expense=max(0, float(params["annual_expense"]) - cut))
+            pct_try = _quick_mc(try_params, n_sims=400)
             if _first_depletion_age(pct_try.get("p10") or [], start_age) is None:
                 suggestions.append({
                     "type": "action",
-                    "title": f"Trim spending by ${cut_mo:,.0f}/mo",
+                    "title": f"Trim spending by ${cut:,.0f}/yr",
                     "why": "Keeps the 10th percentile (p10) above $0 for the full horizon.",
                     "patch": {"annual_expense": float(params["annual_expense"]) - cut}
                 })
                 break
+
+        # Part-time income suggestion (3 years from retirement)
+        ra = int(params["retirement_age"])
+        suggestions.append({
+            "type": "action",
+            "title": "Add part-time income $6,000/yr for 3 years post-retirement",
+            "why": "Offsets early sequence risk in initial retirement years.",
+            "patch": {"goal_events": [{
+                "name": "part-time",
+                "is_expense": False,
+                "amount": 6000.0,
+                "start_age": ra,
+                "recurrence": "years",
+                "years": 3,
+                "inflation_linked": True
+            }]}
+        })
     else:
         # Gentle stress test when plan is healthy
         suggestions.append({
@@ -231,7 +221,7 @@ def _heuristic_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[f
     return suggestions
 
 
-# ---------- targeted single-lever solver ----------
+# ---------- targeted single-lever solver (server side) ----------
 
 def _bounds_default(params: Dict[str, Any]) -> Dict[str, Tuple[float, float]]:
     """Base UI-like bounds; retirement age is further clamped to horizon/current age."""
@@ -239,7 +229,7 @@ def _bounds_default(params: Dict[str, Any]) -> Dict[str, Tuple[float, float]]:
         "retirement_age": (55.0, 75.0),
         "annual_expense": (0.0, 240000.0),
         "annual_saving":  (0.0, 240000.0),
-        "post_ret_return": (0.00, 0.12),  # decimal
+        "inflow":         (0.0, 30000.0),  # annual, for 3 years
     }
 
 
@@ -250,14 +240,23 @@ def _apply_lever_override(params: Dict[str, Any], lever: str, x: float) -> Dict[
         return {"annual_expense": float(x)}
     if lever == "annual_saving":
         return {"annual_saving": float(x)}
-    if lever == "post_ret_return":  # decimal
-        return {"return_rate_after": float(x), "return_mean_after": float(x)}
+    if lever == "inflow":
+        ra = int(params.get("retirement_age", 65))
+        return {"goal_events": [{
+            "name": "part-time",
+            "is_expense": False,
+            "amount": float(x),
+            "start_age": ra,
+            "recurrence": "years",
+            "years": 3,
+            "inflation_linked": True
+        }]}
     return {}
 
 
 def _increasing_with_x(lever: str) -> bool:
     # Whether assets at target age increase as x increases
-    return lever in ("retirement_age", "annual_saving", "post_ret_return")
+    return lever in ("retirement_age", "annual_saving", "inflow")
 
 
 def _solve_single_lever(params: Dict[str, Any],
@@ -269,8 +268,6 @@ def _solve_single_lever(params: Dict[str, Any],
     """
     Binary search the given lever to reach target_assets at target_age.
     Returns (x_star, patch, achieved_assets).
-
-    Supported levers: retirement_age | annual_expense | annual_saving | post_ret_return
     """
     lever = lever or "retirement_age"
     all_bounds = _bounds_default(params)
@@ -283,33 +280,15 @@ def _solve_single_lever(params: Dict[str, Any],
         lo = max(lo, float(start_age))
         hi = min(hi, float(max(start_age + 1, life - 1)))  # cannot retire ≥ life expectancy
 
-    # Clamp target age to available horizon so “age 90” on life=84 doesn’t force None
+    # Clamp target age to available horizon so “age 90” on life=84 doesn’t force zero/None
     target_age = int(min(max(target_age, start_age), life))
 
     inc = _increasing_with_x(lever)
 
-    # Use the same seed & sim count as the graph to avoid post-apply drift
-    seed = _seed_from_params(params)
-    n_eval = int(params.get("num_simulations", 2000))
-
-    # Simple memoization to speed the search
-    cache: Dict[float, float] = {}
-
-    def eval_assets(x: float, sims: Optional[int] = None) -> float:
-        key = (x, sims or n_eval)
-        if key in cache:
-            return cache[key]
+    def eval_assets(x: float) -> float:
         p = _apply_patch(params, _apply_lever_override(params, lever, x))
-        if sims is not None:
-            p = dict(p, num_simulations=int(sims))
-        else:
-            p = dict(p, num_simulations=n_eval)
-        # Keep horizon at least up to target_age (defensive if caller forgot to align UI)
-        p["life_expectancy"] = max(int(p["life_expectancy"]), target_age)
-        curve = _curve_for_metric(dict(p, mc_seed=seed), metric)
-        val = _value_at_age(curve, start_age, target_age)
-        cache[key] = val
-        return val
+        curve = _curve_for_metric(p, metric)
+        return _value_at_age(curve, start_age, target_age)
 
     # Bracket & checks
     f_lo = eval_assets(lo) - target_assets
@@ -335,9 +314,9 @@ def _solve_single_lever(params: Dict[str, Any],
         val = eval_assets(x_edge)
         return x_edge, _apply_lever_override(params, lever, x_edge), val
 
-    # Bisection (tight tolerances, but bounded iters for speed)
-    max_iter = 16
-    tol_x = 0.25 if lever == "retirement_age" else (0.0005 if lever == "post_ret_return" else 50.0)
+    # Bisection
+    max_iter = 18
+    tol_x = 0.25 if lever == "retirement_age" else 50.0  # quarter-year or ~$50
     tol_f = 500.0
 
     for _ in range(max_iter):
@@ -357,11 +336,8 @@ def _solve_single_lever(params: Dict[str, Any],
             else:
                 hi = mid
 
-    # Final pick at full graph fidelity (already using n_eval and same seed)
     x_star = hi if inc else lo
     achieved = eval_assets(x_star)
-
-    # Patch to apply
     patch = _apply_lever_override(params, lever, x_star)
     return x_star, patch, achieved
 
@@ -375,7 +351,7 @@ def coach_suggestions(params: Dict[str, Any],
     If prefs contains a 'target' and 'lever', run single-lever targeted solver:
       prefs = {
         "target": {"metric":"det|p10|p50|p90", "assets": <number>, "age": <int>},
-        "lever":  "retirement_age|annual_expense|annual_saving|post_ret_return",
+        "lever":  "retirement_age|annual_expense|annual_saving|inflow",
         "bounds": {"retirement_age": [55,75], ...}  # optional, per lever
       }
     Otherwise, fall back to the lightweight heuristic suggestions.
@@ -390,6 +366,7 @@ def coach_suggestions(params: Dict[str, Any],
     if target and "type" in target:
         t = target["type"]
         if t == "p10_nonneg":
+            # emulate by setting assets >= 0 at age
             target = {"metric": "p10", "assets": 0.0,
                       "age": int(target.get("age", params.get("life_expectancy", 90)))}
             lever = (lever or (prefs.get("levers", ["retirement_age"])[0]))
@@ -412,21 +389,15 @@ def coach_suggestions(params: Dict[str, Any],
         x_star, patch, achieved = _solve_single_lever(params, metric, assets_goal, age_goal,
                                                       lever, tuple(b) if b else None)
 
-        # Display formatting (monthly for spending/saving as requested)
-        if lever == "retirement_age":
-            lever_name = "Retirement age"
-            val_txt = f"{int(round(x_star))}"
-        elif lever == "post_ret_return":
-            lever_name = "Post-ret return"
-            val_txt = f"{(float(x_star)*100):.1f}%"
-        elif lever == "annual_expense":
-            lever_name = "Spending (monthly)"
-            val_txt = f"${int(round(x_star/12.0)):,}"
-        else:  # annual_saving
-            lever_name = "Savings (monthly)"
-            val_txt = f"${int(round(x_star/12.0)):,}"
+        lever_name = {
+            "retirement_age": "Retirement age",
+            "annual_expense": "Spending (annual)",
+            "annual_saving":  "Savings (annual)",
+            "inflow":         "Part-time inflow (annual)",
+        }.get(lever, lever)
 
         met_txt = {"det": "Deterministic", "p10": "MC p10", "p50": "MC Median", "p90": "MC p90"}[metric]
+        val_txt = f"{int(round(x_star))}" if lever == "retirement_age" else f"${int(round(x_star)):,}"
         title = f"{lever_name}: {val_txt} (meets {met_txt} ≥ ${int(round(assets_goal)):,} at age {age_goal})"
 
         return [
@@ -438,20 +409,8 @@ def coach_suggestions(params: Dict[str, Any],
              "patch": patch}
         ]
 
-    # ---- Fallback: heuristic suggestions (now shows $/mo where relevant) ----
-    sug = _heuristic_suggestions(params, percentiles)
-    for s in sug:
-        if s.get("type") == "action" and isinstance(s.get("patch"), dict):
-            p = s["patch"]
-            if "annual_expense" in p:
-                mo = int(round(max(0.0, float(p["annual_expense"])) / 12.0))
-                s["title"] = s["title"].replace("/yr", "/mo").replace("spending by $", f"spending by ${mo:,}")
-            if "annual_saving" in p:
-                mo = int(round(max(0.0, float(p["annual_saving"])) / 12.0))
-                s["title"] = f"Increase savings by ${mo:,}/mo"
-    return sug
-
-
+    # ---- Fallback: heuristic suggestions ----
+    return _heuristic_suggestions(params, percentiles)
 
 
 
