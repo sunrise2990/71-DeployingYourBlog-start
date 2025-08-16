@@ -659,7 +659,13 @@
   const scClear    = document.getElementById('sc_clear_goals');
   const scResult   = document.getElementById('sc_result');
 
-  const getLever = () => (document.querySelector('input[name="sc_lever"]:checked') || {}).value || 'retirement_age';
+  // Robust: don’t rely on a chain that can return undefined
+  const getLever = () => {
+    const r = document.querySelector('input[name="sc_lever"]:checked');
+    return r ? r.value : 'retirement_age';
+  };
+
+  // coach goals scratch
   window.__coach_goals = window.__coach_goals || [];
   const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
 
@@ -815,7 +821,7 @@
   // init sliders from form
   const base = gatherForm(); setSlidersFromForm(base); updateLabelsFromSliders();
 
-  // collect params — “At age” ALWAYS overrides horizon
+  // collect params — “At age” ALWAYS overrides horizon (server only). We DO NOT write it back to the slider.
   let lastForm = null;
   function collectParams() {
     const form = gatherForm();
@@ -833,15 +839,11 @@
     form.inflation_rate     = (+elInfl.value) / 100;
     form.inflation_mean     = form.inflation_rate;
 
-    // OVERRIDE horizon from Strategy Coach “At age”
+    // OVERRIDE horizon from Strategy Coach “At age” — no UI write-back here
     const atAge = +scAge.value;
-    if (Number.isFinite(atAge) && atAge > 0) {
-      const clamped = Math.min(Math.max(atAge, (+elLife.min || 70)), (+elLife.max || 105));
-      form.life_expectancy = clamped;
-      if ((+elLife.value || 0) !== clamped) { elLife.value = clamped; lifeVal.textContent = clamped; }
-    } else {
-      form.life_expectancy = +elLife.value;
-    }
+    form.life_expectancy = (Number.isFinite(atAge) && atAge > 0)
+      ? Math.min(Math.max(atAge, (+elLife.min || 70)), (+elLife.max || 105))
+      : (+elLife.value);
 
     // Single-jump sim count
     form.num_simulations = 500;
@@ -875,7 +877,7 @@
 
   // === Single debounced FULL request (500 sims) ===
   async function ping() {
-    if (__awaitingSolveCommit) return;        // block while committing solve
+    if (__awaitingSolveCommit) return;
     const payload = collectParams();
     payload.mode = 'full';
     payload.coach_prefs = null;
@@ -953,6 +955,9 @@
       el.addEventListener('change', ping);
     });
 
+  // Keep lifespan label moving while dragging (purely visual)
+  elLife.addEventListener('input', () => { lifeVal.textContent = elLife.value; });
+
   // “At age” change already overrides horizon in collectParams()
   scAge.addEventListener('input', debouncedPing);
   scAge.addEventListener('change', ping);
@@ -980,7 +985,6 @@
       body: JSON.stringify(payload)
     });
     const data = await res.json();
-    // NO draw here – prevents preview/commit flip
     return { data, startAge: payload.current_age };
   }
   function curveByMetric(data, metric){
@@ -1021,7 +1025,6 @@
       const data = await res.json();
       drawFromData(data, payload.current_age, paintToken);
 
-      // reflect patch without firing extra pings
       if (patch) {
         if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
         if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
@@ -1036,7 +1039,7 @@
     }
   }
 
-    async function solve(){
+  async function solve(){
     scResult.textContent = 'Solving…';
 
     const metric = scMetric.value;
@@ -1050,7 +1053,7 @@
     targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
     const horizon = targetAge;
 
-    if ((+elLife.value || 0) !== horizon) { elLife.value = horizon; updateLabelsFromSliders(); }
+    // IMPORTANT: do NOT force the lifespan slider here (keeps it draggable)
 
     const lever = getLever();
     const bounds = {
@@ -1076,6 +1079,7 @@
       }
       return base;
     }
+
     async function f(x){
       const { data, startAge } = await evalWithOverrides(buildOverrides(x));
       const curve = curveByMetric(data, metric);
@@ -1095,7 +1099,8 @@
     else     { feasible = !(flo < 0); if (fhi >= 0) { lo = hi; flo = fhi; } }
 
     if (!feasible) {
-      const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo) : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
+      const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
+                        : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
       scResult.textContent = "Target not achievable within bounds; using nearest bound.";
       const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(pick) }
                   : (lever === 'annual_expense') ? { annual_expense: pick }
@@ -1135,7 +1140,6 @@
   (function hookGoalsToLive() {
     function attach() {
       if (window.GoalsModule?.onChange) {
-        // Any add/remove/toggle inside Goals table → single full ping
         window.GoalsModule.onChange(() => { ping(); });
         return true;
       }
@@ -1147,7 +1151,7 @@
     }
   })();
 
-  console.log("Live What-If ready (single full request, 500 sims)");
+  console.log("Live What-If ready (single full request, 500 sims; lifespan slider free)");
   window.__liveTest = { ping, collectParams };
   ping(); // initial draw
 })();
