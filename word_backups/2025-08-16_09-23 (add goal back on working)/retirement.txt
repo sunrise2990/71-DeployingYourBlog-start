@@ -1036,7 +1036,7 @@
     }
   }
 
-  async function solve(){
+    async function solve(){
     scResult.textContent = 'Solving…';
 
     const metric = scMetric.value;
@@ -1050,9 +1050,7 @@
     targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
     const horizon = targetAge;
 
-    // ✳️ Do NOT force the slider any more — leave it user-draggable.
-    // (We still pin life_expectancy for the server via buildOverrides below.)
-    // if ((+elLife.value || 0) !== horizon) { elLife.value = horizon; updateLabelsFromSliders(); }  <-- removed
+    if ((+elLife.value || 0) !== horizon) { elLife.value = horizon; updateLabelsFromSliders(); }
 
     const lever = getLever();
     const bounds = {
@@ -1066,7 +1064,6 @@
     const inc = increasing[lever];
 
     function buildOverrides(x){
-      // 👇 This pins server horizon to Strategy Coach "At age"
       const base = { life_expectancy: horizon, num_simulations: 500 };
       if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
       if (lever === 'annual_expense')  return { ...base, annual_expense: x };
@@ -1079,7 +1076,6 @@
       }
       return base;
     }
-
     async function f(x){
       const { data, startAge } = await evalWithOverrides(buildOverrides(x));
       const curve = curveByMetric(data, metric);
@@ -1099,8 +1095,7 @@
     else     { feasible = !(flo < 0); if (fhi >= 0) { lo = hi; flo = fhi; } }
 
     if (!feasible) {
-      const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
-                        : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
+      const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo) : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
       scResult.textContent = "Target not achievable within bounds; using nearest bound.";
       const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(pick) }
                   : (lever === 'annual_expense') ? { annual_expense: pick }
@@ -1120,15 +1115,9 @@
 
     const xStar = inc ? hi : lo;
 
-    const leverName = {
-      retirement_age:'Retirement age',
-      annual_expense:'Spending (annual)',
-      annual_saving:'Savings (annual)',
-      inflow:'Part-time inflow (annual)'
-    }[lever];
+    const leverName = { retirement_age:'Retirement age', annual_expense:'Spending (annual)', annual_saving:'Savings (annual)', inflow:'Part-time inflow (annual)' }[lever];
     const pretty = v => (lever === 'retirement_age' ? (+Number(v).toFixed(1)).toString() : '$' + Math.round(v).toLocaleString());
-    scResult.textContent =
-      `${leverName}: ${pretty(xStar)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
+    scResult.textContent = `${leverName}: ${pretty(xStar)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
     const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) }
                 : (lever === 'annual_expense') ? { annual_expense: xStar }
@@ -1142,18 +1131,11 @@
   scClear.addEventListener('click', () => { window.__coach_goals = []; scResult.textContent = ''; ping(); });
   document.getElementById('lw_reset').addEventListener('click', () => { const f = gatherForm(); setSlidersFromForm(f); updateLabelsFromSliders(); ping(); });
 
-  // ❌ Remove the old forced sync from Strategy Coach “At age” to the slider:
-  // (Delete this block from your file if it still exists)
-  // scAge.addEventListener('change', () => {
-  //   const n = Math.min(Math.max(+scAge.value || 0, (+elLife.min || 70)), (+elLife.max || 105));
-  //   if (n !== (+elLife.value || 0)) { elLife.value = n; updateLabelsFromSliders(); }
-  //   ping();
-  // });
-
   // 🔗 Goals -> Live What-If (ensure + Add Goal / toggle triggers ONE redraw)
   (function hookGoalsToLive() {
     function attach() {
       if (window.GoalsModule?.onChange) {
+        // Any add/remove/toggle inside Goals table → single full ping
         window.GoalsModule.onChange(() => { ping(); });
         return true;
       }
@@ -1165,11 +1147,12 @@
     }
   })();
 
-  console.log("Live What-If ready (single full request, 500 sims; lifespan slider free)");
+  console.log("Live What-If ready (single full request, 500 sims)");
   window.__liveTest = { ping, collectParams };
   ping(); // initial draw
 })();
 </script>
+
 
 
 
