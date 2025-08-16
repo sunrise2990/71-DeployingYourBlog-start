@@ -471,29 +471,26 @@
 
 <script id="goals-module">
 (() => {
-  // ---- grab elements
   const rowsEl   = document.getElementById('goal_rows');
   const addBtn   = document.getElementById('goal_add');
 
   const nameEl   = document.getElementById('g_name');
-  const typeEl   = document.getElementById('g_type');     // expense | inflow
+  const typeEl   = document.getElementById('g_type');
   const amtEl    = document.getElementById('g_amt');
   const ageEl    = document.getElementById('g_age');
-  const recEl    = document.getElementById('g_rec');      // once | annual | years
+  const recEl    = document.getElementById('g_rec');
   const yearsWrap= document.getElementById('g_years_wrap');
   const yearsEl  = document.getElementById('g_years');
   const endWrap  = document.getElementById('g_endage_wrap');
   const endEl    = document.getElementById('g_endage');
   const inflEl   = document.getElementById('g_infl');
 
-  // ---- tiny state + pub/sub
   let rows = [];
   const subs = new Set();
   const notify = () => subs.forEach(fn => { try { fn(); } catch {} });
   const onChange = fn => (subs.add(fn), () => subs.delete(fn));
   const current = () => rows.filter(r => r.enabled !== false);
 
-  // ---- helpers
   function esc(s){ return (s ?? '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function whenText(r){
     if (r.recurrence === 'annual') return `Age ${r.start_age}–${r.end_age ?? ''}`;
@@ -529,7 +526,6 @@
     };
   }
 
-  // ---- UI wiring
   recEl.addEventListener('change', () => {
     yearsWrap.classList.toggle('d-none', recEl.value !== 'years');
     endWrap.classList.toggle('d-none',   recEl.value !== 'annual');
@@ -558,10 +554,8 @@
     }
   });
 
-  // ---- expose API
   window.GoalsModule = { current, onChange };
 
-  // ---- late-bind Live What-If recalc (in case Live block ran earlier)
   try {
     if (window.__liveTest?.ping) {
       let t;
@@ -616,10 +610,8 @@
           <div class="d-flex flex-wrap gap-4">
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="retirement_age" checked> Retirement age</label>
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_expense"> Spending</label>
-            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="post_ret_return"> Post-Ret return</label>
             <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_saving"> Savings</label>
-            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="inflation_rate"> Inflation rate</label>
-            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="inflow"> Part-time inflow (3 yrs)</label>
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="post_ret_return"> Post-ret return</label>
           </div>
         </div>
         <div class="col-md-3 d-flex justify-content-end gap-2">
@@ -668,22 +660,16 @@
   const scClear    = document.getElementById('sc_clear_goals');
   const scResult   = document.getElementById('sc_result');
 
-  // --- global guards ---
+  // --- global guards/state ---
   window.__solving = false;      // pause live pings while solving
-  window.__skipNextFull = false; // consumed right after finalizePatch()
-
-  // levers (radio)
-  const getLever = () => (document.querySelector('input[name="sc_lever"]:checked') || {}).value || 'retirement_age';
-
-  // 👉 stash for coach-suggested goals (not persisted)
+  let liveAbort = null;          // abort controller for live pings
   window.__coach_goals = window.__coach_goals || [];
 
-  // 👉 CSRF token for JSON POST (safe if undefined)
+  const getLever = () => (document.querySelector('input[name="sc_lever"]:checked') || {}).value || 'retirement_age';
   const CSRF = "{{ csrf_token() if csrf_token is defined else '' }}";
 
   // ---- helpers to read the existing form ----
   const $ = (sel, root=document) => root.querySelector(sel);
-
   function findByLabelText(text) {
     const labels = Array.from(document.querySelectorAll('label'));
     const t = (text || '').toLowerCase();
@@ -695,14 +681,12 @@
     const col = lab.closest('.col-md-4, .col, .form-group, .mb-3') || lab.parentElement;
     return col ? col.querySelector('input,select,textarea') : null;
   }
-
   function findInput({ids=[], names=[], labelIncludes=[]}) {
     for (const id of ids)   { const el = document.getElementById(id); if (el) return el; }
     for (const nm of names) { const el = $(`[name="${nm}"]`);         if (el) return el; }
     for (const txt of labelIncludes) { const el = findByLabelText(txt); if (el) return el; }
     return null;
   }
-
   function numFrom(el) {
     if (!el) return NaN;
     if (el.tagName === 'SELECT') {
@@ -718,30 +702,23 @@
   const nz = (v, f) => (Number.isFinite(v) ? v : f);
   const fmt = x => Number(x).toLocaleString();
 
-  // ---- snapshot the whole form (includes CPP from Extended-Year fields) ----
+  // ---- snapshot the whole form ----
   function gatherForm() {
     const current_age     = nz(numFrom(findInput({labelIncludes:['Current Age'], names:['current_age']})), 53);
     const retirement_age  = nz(numFrom(findInput({labelIncludes:['Retirement Age'], names:['retirement_age']})), 65);
-
-    // Lifespan (needed for fallback)
     const life_expectancy = nz(numFrom(findInput({labelIncludes:['Expected Lifespan'], names:['expected_lifespan']})), 90);
 
-    // Map Extended-Year to CPP window: start = From, end = To - 1 (inclusive)
-    const ext_from = nz(
-      numFrom(findInput({
-        ids:['extended_year_from_age','extended_from_age'],
-        names:['extended_year_from_age'],
-        labelIncludes:['Extended Year From']
-      })), retirement_age
-    );
-
-    const ext_to_raw = nz(
-      numFrom(findInput({
-        ids:['extended_year_to_age','extended_to_age'],
-        names:['extended_year_to_age'],
-        labelIncludes:['Extended Year To']
-      })), life_expectancy + 1
-    );
+    // Extended-Year window → CPP window
+    const ext_from = nz(numFrom(findInput({
+      ids:['extended_year_from_age','extended_from_age'],
+      names:['extended_year_from_age'],
+      labelIncludes:['Extended Year From']
+    })), retirement_age);
+    const ext_to_raw = nz(numFrom(findInput({
+      ids:['extended_year_to_age','extended_to_age'],
+      names:['extended_year_to_age'],
+      labelIncludes:['Extended Year To']
+    })), life_expectancy + 1);
 
     const cpp_start_age = ext_from;
     const cpp_end_age   = Math.max(ext_from, (Number.isFinite(ext_to_raw) ? (ext_to_raw - 1) : life_expectancy));
@@ -773,7 +750,6 @@
     const return_std      = toDec(ret_std_pct);
     const inflation_std   = toDec(infl_std_pct);
 
-    // optional liquidations (1..3)
     function liq(n){
       const amt = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation ${n}`], names:[`asset_liquidation_${n}`]})), 0);
       const age = nz(numFrom(findInput({labelIncludes:[`Asset Liquidation Age ${n}`], names:[`asset_liquidation_age_${n}`]})), NaN);
@@ -807,7 +783,7 @@
     };
   }
 
-  // ---- Goals → asset_liquidations (client-side) ----
+  // ---- Goals → asset_liquidations ----
   function goalsToLiquidations(goals, base){
     const out = [];
     const infl = base.inflation_rate || 0;
@@ -815,12 +791,11 @@
     for (const g of goals || []) {
       if (!g || g.enabled === false) continue;
       let ages = [];
-      if (g.recurrence === 'once') {
-        ages = [g.start_age];
-      } else if (g.recurrence === 'years') {
+      if (g.recurrence === 'once')      ages = [g.start_age];
+      else if (g.recurrence === 'years'){
         const n = Math.max(1, g.years || 1);
         ages = Array.from({length:n}, (_,i)=>g.start_age + i);
-      } else if (g.recurrence === 'annual') {
+      } else if (g.recurrence === 'annual'){
         const end = (g.end_age ?? g.start_age);
         const n = Math.max(0, end - g.start_age + 1);
         ages = Array.from({length:n}, (_,i)=>g.start_age + i);
@@ -923,36 +898,24 @@
     return form;
   }
 
-  // --- debounce helpers ---
+  // --- debounce helper ---
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
   // ---- Coach UI helpers ----
   function applyPatch(patch){
     if (!patch) return;
 
-    if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
-    if (patch.annual_expense  != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
-    if (patch.annual_saving   != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
-
-    // reflect % levers back to sliders
-    if (patch.return_rate_after != null) {
-      elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10; // 0.1% step
-    }
-    if (patch.inflation_rate != null) {
-      elInfl.value = Math.round((+patch.inflation_rate * 100) * 10) / 10;    // 0.1% step
-    }
+    if (patch.retirement_age    != null) elAge.value   = +patch.retirement_age;
+    if (patch.annual_expense    != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
+    if (patch.annual_saving     != null) elSaveMo.value= Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
+    if (patch.return_rate_after != null) elPost.value  = Math.round((+patch.return_rate_after * 100) * 10) / 10;
 
     if (Array.isArray(patch.goal_events) && patch.goal_events.length){
       window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
     }
 
-    // ✅ update labels, then conditionally send full
     updateLabelsFromSliders();
-    if (!window.__skipNextFull) {
-      sendFull();
-    } else {
-      window.__skipNextFull = false; // consume the flag set by solve()'s final FULL pass
-    }
+    sendFull(); // one authoritative redraw
   }
 
   function renderCoach(list){
@@ -980,7 +943,7 @@
     });
   }
 
-  // ---- draw helper
+  // ---- draw helper ----
   function drawFromData(data, startAge){
     const n = (data.p50?.length) || (data.deterministic?.length) || 0;
     const sa = startAge ?? (lastForm?.current_age) ?? 0;
@@ -992,12 +955,20 @@
     chart.update('none');
   }
 
-  // ---- network call with mode (guarded)
+  // ---- network call with mode (abort stale live pings) ----
   async function ping(mode = 'full') {
-    if (window.__solving) return; // ignore ambient pings during solve
+    if (window.__solving) return;
+
+    // cancel previous live request
+    if (liveAbort) { try { liveAbort.abort(); } catch {} }
+    liveAbort = new AbortController();
+
     const payload = collectParams();
     payload.mode = mode;
-    payload.coach_prefs = null; // client-side solver handles target; keep server suggestions simple
+    payload.coach_prefs = null;
+
+    // downshift sims for lite
+    if (mode === 'lite') payload.num_simulations = 96;
 
     const url = "{{ url_for('projects.live_update') }}";
     try {
@@ -1007,7 +978,8 @@
           "Content-Type": "application/json",
           ...(CSRF ? {"X-CSRFToken": CSRF} : {})
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: liveAbort.signal
       });
       if (!res.ok) { console.error("live-update failed", res.status, await res.text()); return; }
       const data = await res.json();
@@ -1020,9 +992,9 @@
       }
 
       drawFromData(data, payload.current_age);
-      renderCoach(data.coach || []); // optional
+      renderCoach(data.coach || []);
     } catch (err) {
-      console.error("live-update error", err);
+      if (err.name !== 'AbortError') console.error("live-update error", err);
     }
   }
 
@@ -1030,23 +1002,23 @@
   const sendLite = debounce(() => { if (!window.__solving) ping('lite'); }, 80);
   const sendFull = debounce(() => { if (!window.__solving) ping('full'); }, 350);
 
-  // 🔗 Make Live What-If react to Goals changes immediately (fast + finish)
+  // Goals changes: lite now, one full after pause
   try {
     if (window.GoalsModule?.onChange) {
-      let fullTimer;
+      let t;
       window.GoalsModule.onChange(() => {
         if (window.__solving) return;
-        sendLite();                   // quick feedback first
-        clearTimeout(fullTimer);
-        fullTimer = setTimeout(() => sendFull(), 500);  // one full pass after pause
+        sendLite();
+        clearTimeout(t);
+        t = setTimeout(() => sendFull(), 500);
       });
     }
   } catch {}
 
-  // Sliders: input => lite ONLY; change => one FULL (no double fulls)
+  // Inputs: input => lite ONLY; change => single FULL
   [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
     .forEach(el => {
-      el.addEventListener('input', () => { if (!window.__solving) sendLite(); });
+      el.addEventListener('input',  () => { if (!window.__solving) sendLite(); });
       el.addEventListener('change', () => { if (!window.__solving) sendFull(); });
     });
 
@@ -1063,8 +1035,8 @@
     if (!window.__solving) sendFull();  // redraw with the new horizon
   });
 
-  // --- Client-side solver (lite for search; full only once at the end) ---
-  async function evalWithOverrides(overrides, mode = 'lite', draw = true){
+  // --- Client-side eval (optionally draws; used in solve with draw=false) ---
+  async function evalWithOverrides(overrides, mode = 'lite', draw = false){
     const payload = collectParams();
     Object.assign(payload, overrides || {});
 
@@ -1077,9 +1049,7 @@
 
     payload.mode = mode;
     payload.coach_prefs = null;
-
-    // tuned counts for responsiveness vs stability
-    payload.num_simulations = (mode === 'lite' ? 120 : 800);
+    payload.num_simulations = (mode === 'lite' ? 96 : 1200);
 
     const url = "{{ url_for('projects.live_update') }}";
     const res = await fetch(url, {
@@ -1106,6 +1076,7 @@
     return Number(curve[idx] ?? 0);
   }
 
+  // --- Solver (lite search, memoized; one final FULL draw) ---
   async function solve(){
     scResult.textContent = 'Solving…';
     window.__solving = true;
@@ -1130,17 +1101,13 @@
         retirement_age: [ (+elAge.min || 55),         (+elAge.max || 75) ],
         annual_expense: [ (+elExpMo.min||2000)*12,    (+elExpMo.max||20000)*12 ],
         annual_saving:  [ (+elSaveMo.min||0)*12,      (+elSaveMo.max||20000)*12 ],
-        inflow:         [ 0,                           30000 ],
-        post_ret_return:[ ((+elPost.min||0)/100),      ((+elPost.max||12)/100) ],
-        inflation_rate: [ ((+elInfl.min||0)/100),      ((+elInfl.max||10)/100) ],
+        post_ret_return:[ ((+elPost.min||0)/100),     ((+elPost.max||12)/100) ],
       };
       const increasing = {
         retirement_age: true,
         annual_expense: false,
         annual_saving:  true,
-        inflow:         true,
         post_ret_return:true,
-        inflation_rate: false,
       };
       const [lo0, hi0] = bounds[lever];
       const inc = increasing[lever];
@@ -1149,41 +1116,35 @@
         const base = { life_expectancy: horizon };
         if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
         if (lever === 'annual_expense')  return { ...base, annual_expense: x };
-        if (lever === 'post_ret_return') return { ...base, return_rate_after: x, return_mean_after: x };
         if (lever === 'annual_saving')   return { ...base, annual_saving: x };
-        if (lever === 'inflation_rate')  return { ...base, inflation_rate: x, inflation_mean: x };
-        if (lever === 'inflow') {
-          const form = lastForm || gatherForm();
-          const ra = Math.round(+elAge.value || form.retirement_age || 65);
-          return {
-            ...base,
-            goal_events: (form.goal_events || []).concat(
-              window.GoalsModule?.current() || [],
-              window.__coach_goals || [],
-              [{ name:'part-time', is_expense:false, amount:x, start_age:ra, recurrence:'years', years:3, inflation_linked:true }]
-            )
-          };
-        }
+        if (lever === 'post_ret_return') return { ...base, return_rate_after: x, return_mean_after: x };
         return base;
       }
 
-      // ---------- lite search (no drawing) ----------
-      async function fLite(x){
+      // memoized f(x) for this solve run
+      const cache = new Map();
+      async function f(x){
+        const key = `${lever}|${metric}|${horizon}|${x.toFixed(6)}|${targetAssets}`;
+        if (cache.has(key)) return cache.get(key);
         const { data, startAge } = await evalWithOverrides(buildOverrides(x), 'lite', false);
         const curve = curveByMetric(data, metric);
-        return valueAtAge(curve, startAge, targetAge) - targetAssets; // >=0 is success
+        const val = valueAtAge(curve, startAge, targetAge) - targetAssets; // >=0 is success
+        cache.set(key, val);
+        return val;
       }
 
+      // bracket
       let lo = lo0, hi = hi0;
-      let flo = await fLite(lo);
-      let fhi = await fLite(hi);
+      let flo = await f(lo);
+      let fhi = await f(hi);
 
       const tolF = 500; // $ tolerance on assets
       let   tolX;
       if (lever === 'retirement_age') tolX = 0.25;
-      else if (lever === 'post_ret_return' || lever === 'inflation_rate') tolX = 0.0005; // 0.05%
+      else if (lever === 'post_ret_return') tolX = 0.0005; // 0.05%
       else tolX = 50;
 
+      // feasibility
       let feasible = false;
       if (inc) {
         if (flo >= 0) { feasible = true; hi = lo; fhi = flo; }
@@ -1194,6 +1155,7 @@
         else if (flo < 0) feasible = false;
         else feasible = true;
       }
+
       if (!feasible) {
         const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
                           : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
@@ -1201,16 +1163,17 @@
         return;
       }
 
+      // bisection (lite only, no drawing)
       for (let k = 0; k < 14 && Math.abs(hi - lo) > tolX; k++) {
         const mid  = (lo + hi) / 2;
-        const fmid = await fLite(mid);
+        const fmid = await f(mid);
         if (inc) { if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; } }
         else     { if (fmid >= 0) { lo = mid; flo = fmid; } else { hi = mid; fhi = fmid; } }
         if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
       }
       let xStar = inc ? hi : lo;
 
-      // fractional display for retirement age only
+      // fractional display for retirement age only (uses cache where possible)
       let xDisplay = xStar;
       if (lever === 'retirement_age') {
         const minA = Math.max(cur, (+elAge.min || 55));
@@ -1218,7 +1181,7 @@
         const r0 = Math.max(minA, Math.min(Math.floor(xStar), maxA));
         const r1 = Math.max(minA, Math.min(r0 + 1,       maxA));
         if (r1 > r0) {
-          const [f0, f1] = await Promise.all([fLite(r0), fLite(r1)]);
+          const [f0, f1] = await Promise.all([f(r0), f(r1)]);
           if (Number.isFinite(f0) && Number.isFinite(f1) && Math.abs(f1 - f0) > 1e-9) {
             const frac = r0 + (0 - f0) / (f1 - f0);
             xDisplay = Math.max(minA, Math.min(frac, maxA));
@@ -1226,61 +1189,6 @@
         }
         if (!Number.isFinite(xDisplay)) xDisplay = xStar;
       }
-
-      // quantize to slider steps
-      function stepForLever(){
-        if (lever === 'retirement_age') return 1;
-        if (lever === 'post_ret_return' || lever === 'inflation_rate') return 0.001;   // 0.1%
-        if (lever === 'annual_expense')  return 600;   // $50/mo
-        if (lever === 'annual_saving')   return 1200;  // $100/mo
-        if (lever === 'inflow')          return 1;
-        return 1;
-      }
-      function quantize(val){
-        const s = stepForLever();
-        return Math.round(val / s) * s;
-      }
-      xStar = quantize(xStar);
-
-      // ---------- fast FULL local refine ----------
-      async function fFull(x){
-        const { data, startAge } = await evalWithOverrides(buildOverrides(x), 'full', false);
-        const curve = curveByMetric(data, metric);
-        return valueAtAge(curve, startAge, targetAge) - targetAssets;
-      }
-
-      // bracket around the lite solution (±10 steps), expand if needed
-      const s = stepForLever();
-      let loF = Math.max(lo0, xStar - 10*s);
-      let hiF = Math.min(hi0, xStar + 10*s);
-      let floF = await fFull(loF);
-      let fhiF = await fFull(hiF);
-
-      let expansions = 0;
-      while (floF * fhiF > 0 && expansions < 6) {
-        loF = Math.max(lo0, loF - 10*s);
-        hiF = Math.min(hi0, hiF + 10*s);
-        floF = await fFull(loF);
-        fhiF = await fFull(hiF);
-        expansions++;
-      }
-
-      if (floF * fhiF > 0) {
-        xStar = (Math.abs(floF) <= Math.abs(fhiF)) ? loF : hiF;
-      } else {
-        for (let i = 0; i < 5; i++) {
-          const mid = quantize((loF + hiF) / 2);
-          const fmid = await fFull(mid);
-          if (Math.abs(fmid) < tolF) { xStar = mid; break; }
-          if (fmid >= 0) { if (inc) hiF = mid; else loF = mid; }
-          else           { if (inc) loF = mid; else hiF = mid; }
-          xStar = mid;
-        }
-      }
-
-      // single authoritative FULL draw at final value
-      await evalWithOverrides(buildOverrides(xStar), 'full', true);
-      window.__skipNextFull = true;                  // prevent duplicate full ping
 
       finalizePatch(xStar, xDisplay);
 
@@ -1290,30 +1198,24 @@
         else if (lever === 'annual_expense') patch = { annual_expense: x };
         else if (lever === 'annual_saving')  patch = { annual_saving: x };
         else if (lever === 'post_ret_return')patch = { return_rate_after: x, return_mean_after: x };
-        else if (lever === 'inflation_rate') patch = { inflation_rate: x, inflation_mean: x };
-        else if (lever === 'inflow') {
-          const ra = Math.round(+elAge.value || (lastForm?.retirement_age ?? 65));
-          patch = { goal_events: [{ name:"part-time", is_expense:false, amount:Math.round(x), start_age:ra, recurrence:"years", years:3, inflation_linked:true }] };
-        }
 
         const pretty = (v) => {
           if (lever === 'retirement_age') return (+Number(v).toFixed(1)).toString();
-          if (lever === 'post_ret_return' || lever === 'inflation_rate') return (Number(v)*100).toFixed(1) + '%';
+          if (lever === 'post_ret_return') return (Number(v)*100).toFixed(1) + '%';
           return '$' + Math.round(v).toLocaleString();
         };
         const leverName = {
           retirement_age:'Retirement age',
           annual_expense:'Spending (annual)',
-          annual_saving:'Savings (annual)',
-          inflow:'Part-time inflow (annual)',
+          annual_saving: 'Savings (annual)',
           post_ret_return:'Post-ret return',
-          inflation_rate:'Inflation rate',
         }[lever];
 
         const shown = (lever === 'retirement_age') ? xDisp : x;
         scResult.textContent =
           `${leverName}: ${pretty(shown)} (meets ${scMetric.options[scMetric.selectedIndex].text} ≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
+        // Apply patch → triggers ONE full redraw
         applyPatch(patch);
       }
     } finally {
@@ -1329,7 +1231,7 @@
     ping('full');
   });
 
-  // --- RESET: snap sliders back to whatever the main form currently holds
+  // RESET: snap sliders back to whatever the main form currently holds
   document.getElementById('lw_reset').addEventListener('click', () => {
     const f = gatherForm();
     setSlidersFromForm(f);

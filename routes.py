@@ -941,11 +941,12 @@ def _series_value_for(metric, det_curve, pct, idx):
     i = min(idx, len(seq) - 1)
     return seq[i]
 
+
 def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     """
     prefs:
       { "target": { "metric": "det|p10|p50|p90", "assets": 2000000, "age": 90 },
-        "lever":  "retirement_age|annual_expense|annual_saving|inflow",
+        "lever":  "retirement_age|annual_expense|annual_saving|post_ret_return",
       }
     Returns {"patch": {...}, "achieved": float, "lever_value": value, "summary": str} or {}
     """
@@ -985,32 +986,24 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         return {
             "patch": {},
             "achieved": float(base_val),
-            "lever_value": p0.get(lever),
+            "lever_value": p0.get(lever) if lever != "post_ret_return" else p0.get("return_rate_after"),
             "summary": f"Already meets target ({metric} @ {target_age} = ${base_val:,.0f})"
         }
 
     # Define ranges & direction per lever (monotonic assumptions)
     low, high, inc = None, None, +1
 
-    def apply_lever(p, x):
+    def apply_lever(p, x: float):
         if lever == "retirement_age":
             p["retirement_age"] = int(round(x))
         elif lever == "annual_expense":
             p["annual_expense"] = max(0.0, float(x))
         elif lever == "annual_saving":
             p["annual_saving"] = max(0.0, float(x))
-        elif lever == "inflow":
-            amt = max(0.0, float(x))
-            ra = int(p["retirement_age"])
-            p["goal_events"] = (p.get("goal_events") or []) + [{
-                "name": "solve_inflow",
-                "is_expense": False,
-                "amount": amt,
-                "start_age": ra,
-                "recurrence": "years",
-                "years": 3,
-                "inflation_linked": True
-            }]
+        elif lever == "post_ret_return":  # decimal (e.g., 0.06 for 6%)
+            val = max(0.0, float(x))
+            p["return_rate_after"] = val
+            p["return_mean_after"] = val
         return p
 
     if lever == "retirement_age":
@@ -1022,8 +1015,8 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         low, high, inc = 0.0, float(p0["annual_expense"]) * 1.5, -1  # more spend ↓ assets
     elif lever == "annual_saving":
         low, high, inc = 0.0, max(float(p0["annual_saving"]) * 2.0, 120000.0), +1
-    elif lever == "inflow":
-        low, high, inc = 0.0, 30000.0, +1  # inflow per year for 3 years
+    elif lever == "post_ret_return":
+        low, high, inc = 0.00, 0.12, +1  # 0%..12% (decimal)
     else:
         return {}
 
@@ -1054,13 +1047,21 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         # pick closer bound
         pick = (high if (abs((v_high or 0) - want_assets) <= abs((v_low or 0) - want_assets)) else low)
         ach = eval_assets(apply_lever(dict(p0), pick))
-        return {"patch": apply_lever({}, pick), "achieved": float(ach or 0.0),
-                "lever_value": pick, "summary": "Target not reachable within bounds; using nearest bound."}
+        lever_value = pick if lever != "post_ret_return" else float(pick)
+        return {
+            "patch": apply_lever({}, pick),
+            "achieved": float(ach or 0.0),
+            "lever_value": lever_value,
+            "summary": "Target not reachable within bounds; using nearest bound."
+        }
 
     # Binary search
     best_x, best_v = None, None
     max_iter = 16
-    tolX = (0.25 if lever == "retirement_age" else 50.0)  # quarter-year or ~$50
+    tolX = (
+        0.25 if lever == "retirement_age"
+        else (0.001 if lever == "post_ret_return" else 50.0)  # 0.1% (decimal 0.001) or ~$50
+    )
     tolF = 500.0  # $500 tolerance on assets
 
     lo, hi = low, high
@@ -1082,30 +1083,44 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     xStar = (best_x if best_x is not None else (hi if inc > 0 else lo))
     vStar = (best_v if best_v is not None else eval_assets(apply_lever(dict(p0), xStar)))
 
-    # Round/format lever value
+    # Build patch + lever value for summary
     patch = {}
+    lever_value_out = xStar
     if lever == "retirement_age":
         patch["retirement_age"] = int(round(xStar))
+        lever_value_out = patch["retirement_age"]
     elif lever == "annual_expense":
         patch["annual_expense"] = round(float(xStar), 2)
+        lever_value_out = patch["annual_expense"]
     elif lever == "annual_saving":
         patch["annual_saving"] = round(float(xStar), 2)
-    elif lever == "inflow":
-        patch["goal_events"] = [{
-            "name": "solve_inflow",
-            "is_expense": False,
-            "amount": round(float(xStar), 2),
-            "start_age": int(p0["retirement_age"]),
-            "recurrence": "years",
-            "years": 3,
-            "inflation_linked": True
-        }]
+        lever_value_out = patch["annual_saving"]
+    elif lever == "post_ret_return":
+        val = float(xStar)
+        patch["return_rate_after"] = val
+        patch["return_mean_after"] = val
+        lever_value_out = val
+
+    # Pretty title
+    lever_name = {
+        "retirement_age": "Retirement age",
+        "annual_expense": "Spending (annual)",
+        "annual_saving":  "Savings (annual)",
+        "post_ret_return":"Post-ret return",
+    }[lever]
+    met_txt = {"det": "Deterministic", "p10": "MC p10", "p50": "MC Median", "p90": "MC p90"}[metric]
+    val_txt = (
+        f"{int(round(lever_value_out))}"
+        if lever == "retirement_age"
+        else (f"{lever_value_out*100:.1f}%" if lever == "post_ret_return" else f"${int(round(lever_value_out)):,}")
+    )
+    title = f"{lever_name}: {val_txt} (meets {met_txt} ≥ ${int(round(want_assets)):,} at age {target_age})"
 
     return {
         "patch": patch,
         "achieved": float(vStar or 0.0),
-        "lever_value": (patch.get(lever) if lever != "inflow" else patch["goal_events"][0]["amount"]),
-        "summary": f"{lever.replace('_',' ')} → {patch.get(lever, 'goal_events')} gives {metric} @ {target_age} ≈ ${float(vStar or 0.0):,.0f}"
+        "lever_value": lever_value_out,
+        "summary": f"{title} — achieved ≈ ${float(vStar or 0.0):,.0f}",
     }
 
 
@@ -1157,7 +1172,7 @@ def live_update():
     solution = {}
     if not is_lite and coach_prefs:
         try:
-            # expected schema: {"target":{"metric":"det|p10|p50|p90","assets":..., "age":...}, "lever":...}
+            # expected schema: {"target":{"metric":"det|p10|p50|p90","assets":..., "age":...}, "lever":"retirement_age|annual_expense|annual_saving|post_ret_return"}
             solution = _solve_single_lever(params, coach_prefs, seed, _DET, _MC, run_mc_with_seed)
         except Exception as e:
             solution = {"error": str(e)}

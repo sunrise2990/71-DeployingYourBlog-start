@@ -69,8 +69,11 @@ def _merge_goals_into_liqs(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         return base_liqs
 
 
-def _quick_mc(params: Dict[str, Any], n_sims: int = 500, seed: int = 12345) -> Dict[str, List[float]]:
-    """Fast MC percentiles honoring goal events/liquidations."""
+def _quick_mc(params: Dict[str, Any], n_sims: int = 400, seed: int = 12345) -> Dict[str, List[float]]:
+    """
+    Fast MC percentiles honoring goal events/liquidations.
+    Defaults to a light simulation count to keep coach snappy.
+    """
     liqs = _merge_goals_into_liqs(params)
     mc_params = dict(
         current_age=int(params["current_age"]),
@@ -93,7 +96,7 @@ def _quick_mc(params: Dict[str, Any], n_sims: int = 500, seed: int = 12345) -> D
         income_tax_rate=float(params["income_tax_rate"]),
     )
     out = run_mc_with_seed(seed, _MC, **mc_params)
-    return out.get("percentiles", {})
+    return out.get("percentiles", {})  # {p10:[], p50:[], p90:[]}
 
 
 def _quick_det(params: Dict[str, Any]) -> List[float]:
@@ -125,7 +128,7 @@ def _curve_for_metric(params: Dict[str, Any], metric: str) -> List[float]:
     metric = (metric or "p50").lower()
     if metric == "det":
         return _quick_det(params)
-    pct = _quick_mc(params, n_sims=int(params.get("num_simulations", 500)))
+    pct = _quick_mc(params, n_sims=int(params.get("num_simulations", 400)))
     if metric == "p10":
         return pct.get("p10", []) or []
     if metric == "p90":
@@ -165,7 +168,7 @@ def _heuristic_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[f
         base = dict(params)
         for d in range(1, 6):
             try_params = dict(base, retirement_age=int(base["retirement_age"]) + d)
-            pct_try = _quick_mc(try_params, n_sims=400)
+            pct_try = _quick_mc(try_params, n_sims=350)
             if _first_depletion_age(pct_try.get("p10") or [], start_age) is None:
                 suggestions.append({
                     "type": "action",
@@ -178,8 +181,8 @@ def _heuristic_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[f
         # Trim spending in $3k steps up to $12k
         step, max_cut = 3000, 12000
         for cut in range(step, max_cut + step, step):
-            try_params = dict(params, annual_expense=max(0, float(params["annual_expense"]) - cut))
-            pct_try = _quick_mc(try_params, n_sims=400)
+            try_params = dict(params, annual_expense=max(0.0, float(params["annual_expense"]) - cut))
+            pct_try = _quick_mc(try_params, n_sims=350)
             if _first_depletion_age(pct_try.get("p10") or [], start_age) is None:
                 suggestions.append({
                     "type": "action",
@@ -188,23 +191,6 @@ def _heuristic_suggestions(params: Dict[str, Any], percentiles: Dict[str, List[f
                     "patch": {"annual_expense": float(params["annual_expense"]) - cut}
                 })
                 break
-
-        # Part-time income suggestion (3 years from retirement)
-        ra = int(params["retirement_age"])
-        suggestions.append({
-            "type": "action",
-            "title": "Add part-time income $6,000/yr for 3 years post-retirement",
-            "why": "Offsets early sequence risk in initial retirement years.",
-            "patch": {"goal_events": [{
-                "name": "part-time",
-                "is_expense": False,
-                "amount": 6000.0,
-                "start_age": ra,
-                "recurrence": "years",
-                "years": 3,
-                "inflation_linked": True
-            }]}
-        })
     else:
         # Gentle stress test when plan is healthy
         suggestions.append({
@@ -228,10 +214,8 @@ def _bounds_default(params: Dict[str, Any]) -> Dict[str, Tuple[float, float]]:
     return {
         "retirement_age": (55.0, 75.0),
         "annual_expense": (0.0, 240000.0),
-        "post_ret_return": (0.00, 0.12),
         "annual_saving":  (0.0, 240000.0),
-        "inflation_rate": (0.00, 0.10),
-        "inflow":         (0.0, 30000.0),  # annual, for 3 years
+        "post_ret_return": (0.00, 0.12),  # decimal
     }
 
 
@@ -240,29 +224,16 @@ def _apply_lever_override(params: Dict[str, Any], lever: str, x: float) -> Dict[
         return {"retirement_age": int(round(x))}
     if lever == "annual_expense":
         return {"annual_expense": float(x)}
-    if lever == "post_ret_return":  # decimal
-        return {"return_rate_after": float(x), "return_mean_after": float(x)}
     if lever == "annual_saving":
         return {"annual_saving": float(x)}
-    if lever == "inflation_rate":   # decimal
-        return {"inflation_rate": float(x), "inflation_mean": float(x)}
-    if lever == "inflow":
-        ra = int(params.get("retirement_age", 65))
-        return {"goal_events": [{
-            "name": "part-time",
-            "is_expense": False,
-            "amount": float(x),
-            "start_age": ra,
-            "recurrence": "years",
-            "years": 3,
-            "inflation_linked": True
-        }]}
+    if lever == "post_ret_return":  # decimal
+        return {"return_rate_after": float(x), "return_mean_after": float(x)}
     return {}
 
 
 def _increasing_with_x(lever: str) -> bool:
     # Whether assets at target age increase as x increases
-    return lever in ("retirement_age", "annual_saving", "post_ret_return", "inflow")
+    return lever in ("retirement_age", "annual_saving", "post_ret_return")
 
 
 def _solve_single_lever(params: Dict[str, Any],
@@ -274,6 +245,8 @@ def _solve_single_lever(params: Dict[str, Any],
     """
     Binary search the given lever to reach target_assets at target_age.
     Returns (x_star, patch, achieved_assets).
+
+    Supported levers: retirement_age | annual_expense | annual_saving | post_ret_return
     """
     lever = lever or "retirement_age"
     all_bounds = _bounds_default(params)
@@ -292,7 +265,9 @@ def _solve_single_lever(params: Dict[str, Any],
     inc = _increasing_with_x(lever)
 
     def eval_assets(x: float) -> float:
+        # Keep the solve path light by limiting sims even if caller requests more
         p = _apply_patch(params, _apply_lever_override(params, lever, x))
+        p = dict(p, num_simulations=min(int(p.get("num_simulations", 400)), 600))
         curve = _curve_for_metric(p, metric)
         return _value_at_age(curve, start_age, target_age)
 
@@ -320,8 +295,8 @@ def _solve_single_lever(params: Dict[str, Any],
         val = eval_assets(x_edge)
         return x_edge, _apply_lever_override(params, lever, x_edge), val
 
-    # Bisection
-    max_iter = 18
+    # Bisection (tight tolerances, but bounded iters for speed)
+    max_iter = 16
     tol_x = 0.25 if lever == "retirement_age" else 50.0  # quarter-year or ~$50
     tol_f = 500.0
 
@@ -357,7 +332,7 @@ def coach_suggestions(params: Dict[str, Any],
     If prefs contains a 'target' and 'lever', run single-lever targeted solver:
       prefs = {
         "target": {"metric":"det|p10|p50|p90", "assets": <number>, "age": <int>},
-        "lever":  "retirement_age|annual_expense|annual_saving|inflow",
+        "lever":  "retirement_age|annual_expense|annual_saving|post_ret_return",
         "bounds": {"retirement_age": [55,75], ...}  # optional, per lever
       }
     Otherwise, fall back to the lightweight heuristic suggestions.
@@ -399,11 +374,16 @@ def coach_suggestions(params: Dict[str, Any],
             "retirement_age": "Retirement age",
             "annual_expense": "Spending (annual)",
             "annual_saving":  "Savings (annual)",
-            "inflow":         "Part-time inflow (annual)",
+            "post_ret_return": "Post-ret return",
         }.get(lever, lever)
 
         met_txt = {"det": "Deterministic", "p10": "MC p10", "p50": "MC Median", "p90": "MC p90"}[metric]
-        val_txt = f"{int(round(x_star))}" if lever == "retirement_age" else f"${int(round(x_star)):,}"
+        if lever == "retirement_age":
+            val_txt = f"{int(round(x_star))}"
+        elif lever == "post_ret_return":
+            val_txt = f"{(float(x_star)*100):.1f}%"
+        else:
+            val_txt = f"${int(round(x_star)):,}"
         title = f"{lever_name}: {val_txt} (meets {met_txt} ≥ ${int(round(assets_goal)):,} at age {age_goal})"
 
         return [
@@ -417,6 +397,7 @@ def coach_suggestions(params: Dict[str, Any],
 
     # ---- Fallback: heuristic suggestions ----
     return _heuristic_suggestions(params, percentiles)
+
 
 
 

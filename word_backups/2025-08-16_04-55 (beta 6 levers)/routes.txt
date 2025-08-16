@@ -840,99 +840,336 @@ def _harmonize(params: dict) -> dict:
     return params
 
 
+
+
 # Goals helpers
 from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
+# Coach helpers (still available, optional)
+from models.retirement.coach import coach_suggestions
+
+# ---------- shared helpers (coalesce + goal merge) ----------
+
+def _coalesce_liqs(liqs: list[dict]) -> list[dict]:
+    """Coalesce liquidations by age exactly like live_update already does."""
+    if not liqs:
+        return []
+    liqs = sorted(liqs, key=lambda r: int(r.get("age", 0)))
+    out: list[dict] = []
+    i = 0
+    while i < len(liqs):
+        age_i = int(liqs[i]["age"])
+        amt = 0.0
+        while i < len(liqs) and int(liqs[i]["age"]) == age_i:
+            amt += float(liqs[i]["amount"])
+            i += 1
+        amt = round(amt, 2)
+        if abs(amt) >= 0.005:
+            out.append({"age": age_i, "amount": amt})
+    return out
 
 
-@bp_for_live.post("/api/live-update")
-def live_update():
-    params = _merge(request.get_json(silent=True) or {})
-    params = _harmonize(params)  # keep CPP window aligned with main calculator
-
-    goal_events = params.get("goal_events") or []
-
-    # ---- Expand goals to per-age cashflows (MVP post-tax via liquidations) ----
-    per_age = {}
-    goals_error = None
+def _merge_goals_into_liqs(params: dict) -> list[dict]:
+    """
+    Expand params['goal_events'] to per-age and merge into existing
+    params['asset_liquidations'], returning a coalesced list.
+    Safe to call even if there are no goals.
+    """
+    base_liqs = list(params.get("asset_liquidations") or [])
+    goals = list(params.get("goal_events") or [])
+    if not goals:
+        return base_liqs
     try:
-        already_merged = bool(params.get("asset_liquidations"))
-        if goal_events and not already_merged:
-            per_age = expand_goals_to_per_age(
-                current_age=int(params["current_age"]),
-                life_expectancy=int(params["life_expectancy"]),
-                inflation_rate=float(params.get("inflation_rate", 0.0)),
-                goals=goal_events,
-            )
+        per_age = expand_goals_to_per_age(
+            current_age=int(params["current_age"]),
+            life_expectancy=int(params["life_expectancy"]),
+            inflation_rate=float(params.get("inflation_rate", 0.0)),
+            goals=goals,
+        )
+        merged = goals_to_liquidations_adapter(current_liqs=base_liqs, per_age=per_age)
+        return _coalesce_liqs(merged)
+    except Exception:
+        # Never fail hard on goal merge during solver/live calc
+        return base_liqs
 
-            # Convert to signed liquidations (expense -> negative, inflow -> positive)
-            liqs = goals_to_liquidations_adapter(
-                current_liqs=list(params.get("asset_liquidations") or []),
-                per_age=per_age,
-            )
 
-            # Sort + coalesce by age, round to cents, drop ~zero
-            liqs.sort(key=lambda r: int(r.get("age", 0)))
-            coalesced: list[dict] = []
-            i = 0
-            while i < len(liqs):
-                age_i = int(liqs[i]["age"])
-                amt = 0.0
-                while i < len(liqs) and int(liqs[i]["age"]) == age_i:
-                    amt += float(liqs[i]["amount"])
-                    i += 1
-                amt = round(amt, 2)
-                if abs(amt) >= 0.005:
-                    coalesced.append({"age": age_i, "amount": amt})
+# --- tiny helpers for the solver & sims ---
 
-            params["asset_liquidations"] = coalesced
-    except Exception as e:
-        goals_error = str(e)
-        # Fall back cleanly if the payload for goals is malformed
-        params["asset_liquidations"] = list(params.get("asset_liquidations") or [])
-
-    # ✅ Pass ONLY the args that run_retirement_projection expects
-    det_keys = [
+def _build_det_args(p):
+    keys = [
         "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
         "current_assets", "return_rate", "return_rate_after", "annual_expense",
         "cpp_monthly", "cpp_start_age", "cpp_end_age",
         "asset_liquidations", "inflation_rate", "life_expectancy", "income_tax_rate",
     ]
-    det_params = {k: params[k] for k in det_keys if k in params}
-    det_out = _DET(**det_params)
+    return {k: p[k] for k in keys if k in p}
 
+def _build_mc_args(p, n_sims):
+    return dict(
+        current_age=int(p["current_age"]),
+        retirement_age=int(p["retirement_age"]),
+        annual_saving=float(p["annual_saving"]),
+        saving_increase_rate=float(p["saving_increase_rate"]),
+        current_assets=float(p["current_assets"]),
+        return_mean=float(p.get("return_mean", p["return_rate"])),
+        return_mean_after=float(p.get("return_mean_after", p["return_rate_after"])),
+        return_std=float(p["return_std"]),
+        annual_expense=float(p["annual_expense"]),
+        inflation_mean=float(p.get("inflation_mean", p["inflation_rate"])),
+        inflation_std=float(p["inflation_std"]),
+        cpp_monthly=float(p["cpp_monthly"]),
+        cpp_start_age=int(p["cpp_start_age"]),
+        cpp_end_age=int(p["cpp_end_age"]),
+        asset_liquidations=list(p.get("asset_liquidations") or []),
+        life_expectancy=int(p["life_expectancy"]),
+        num_simulations=int(n_sims),
+        income_tax_rate=float(p["income_tax_rate"]),
+    )
+
+def _series_value_for(metric, det_curve, pct, idx):
+    """Safe value lookup: clamp idx to the last known point to avoid None when target age > horizon."""
+    if idx < 0:
+        return None
+    if metric == "det":
+        if not det_curve:
+            return None
+        i = min(idx, len(det_curve) - 1)
+        return det_curve[i]
+    key = {"p10":"p10", "p50":"p50", "p90":"p90"}[metric]
+    seq = pct.get(key) or []
+    if not seq:
+        return None
+    i = min(idx, len(seq) - 1)
+    return seq[i]
+
+def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
+    """
+    prefs:
+      { "target": { "metric": "det|p10|p50|p90", "assets": 2000000, "age": 90 },
+        "lever":  "retirement_age|annual_expense|annual_saving|inflow",
+      }
+    Returns {"patch": {...}, "achieved": float, "lever_value": value, "summary": str} or {}
+    """
+    target = (prefs or {}).get("target") or {}
+    metric = target.get("metric") or "p50"
+    want_assets = float(target.get("assets") or 0.0)
+
+    # Clamp target age to horizon so asking for age 90 with life=84 doesn't read as None/0
+    start_age = int(p0["current_age"])
+    life = int(p0["life_expectancy"])
+    req_age = int(target.get("age") or life)
+    target_age = max(start_age, min(req_age, life))
+
+    lever = (prefs or {}).get("lever") or "retirement_age"
+
+    # Build a quick evaluator (mirrors server live path + goal merge)
+    def eval_assets(p):
+        # Ensure any goal_events are reflected as liquidations for the sim
+        p_eval = dict(p)
+        p_eval["asset_liquidations"] = _merge_goals_into_liqs(p_eval)
+
+        # deterministic
+        det_out = _DET(**_build_det_args(p_eval))
+        det_tbl = det_out.get("table", [])
+        det_curve = [row.get("Asset") for row in det_tbl]
+
+        # fast MC
+        mc = run_mc_with_seed(seed, _MC, **_build_mc_args(p_eval, n_sims=700))
+        pct = mc.get("percentiles", {})
+
+        idx = target_age - start_age
+        return _series_value_for(metric, det_curve, pct, idx)
+
+    base_val = eval_assets(dict(p0))
+    # If we already exceed target, return no-op patch
+    if base_val is not None and base_val >= want_assets:
+        return {
+            "patch": {},
+            "achieved": float(base_val),
+            "lever_value": p0.get(lever),
+            "summary": f"Already meets target ({metric} @ {target_age} = ${base_val:,.0f})"
+        }
+
+    # Define ranges & direction per lever (monotonic assumptions)
+    low, high, inc = None, None, +1
+
+    def apply_lever(p, x):
+        if lever == "retirement_age":
+            p["retirement_age"] = int(round(x))
+        elif lever == "annual_expense":
+            p["annual_expense"] = max(0.0, float(x))
+        elif lever == "annual_saving":
+            p["annual_saving"] = max(0.0, float(x))
+        elif lever == "inflow":
+            amt = max(0.0, float(x))
+            ra = int(p["retirement_age"])
+            p["goal_events"] = (p.get("goal_events") or []) + [{
+                "name": "solve_inflow",
+                "is_expense": False,
+                "amount": amt,
+                "start_age": ra,
+                "recurrence": "years",
+                "years": 3,
+                "inflation_linked": True
+            }]
+        return p
+
+    if lever == "retirement_age":
+        # Honor horizon and current age; never allow retiring at/after life expectancy
+        low  = max(int(p0["current_age"]), 50)
+        high = min(80, max(int(p0["current_age"]) + 1, life - 1))
+        inc  = +1  # increasing age increases assets
+    elif lever == "annual_expense":
+        low, high, inc = 0.0, float(p0["annual_expense"]) * 1.5, -1  # more spend ↓ assets
+    elif lever == "annual_saving":
+        low, high, inc = 0.0, max(float(p0["annual_saving"]) * 2.0, 120000.0), +1
+    elif lever == "inflow":
+        low, high, inc = 0.0, 30000.0, +1  # inflow per year for 3 years
+    else:
+        return {}
+
+    # Check attainability
+    p_low  = apply_lever(dict(p0), low)
+    v_low  = eval_assets(p_low)
+    p_high = apply_lever(dict(p0), high)
+    v_high = eval_assets(p_high)
+
+    # Normalize monotonic orientation so "low" is below target and "high" can reach it
+    def below(v): return (v is None) or (v < want_assets)
+    def above(v): return (v is not None) and (v >= want_assets)
+
+    feasible = True
+    if inc > 0:
+        if above(v_low):   # already enough at low bound
+            high = low
+        elif not above(v_high):
+            feasible = False
+    else:
+        # decreasing lever value improves assets (spending)
+        if above(v_high):  # already enough at higher spend (unlikely)
+            low = high
+        elif not above(v_low):
+            feasible = False
+
+    if not feasible:
+        # pick closer bound
+        pick = (high if (abs((v_high or 0) - want_assets) <= abs((v_low or 0) - want_assets)) else low)
+        ach = eval_assets(apply_lever(dict(p0), pick))
+        return {"patch": apply_lever({}, pick), "achieved": float(ach or 0.0),
+                "lever_value": pick, "summary": "Target not reachable within bounds; using nearest bound."}
+
+    # Binary search
+    best_x, best_v = None, None
+    max_iter = 16
+    tolX = (0.25 if lever == "retirement_age" else 50.0)  # quarter-year or ~$50
+    tolF = 500.0  # $500 tolerance on assets
+
+    lo, hi = low, high
+    while max_iter > 0 and abs(hi - lo) > tolX:
+        max_iter -= 1
+        mid = (lo + hi) / 2.0
+        v_mid = eval_assets(apply_lever(dict(p0), mid))
+        if (v_mid is not None) and (v_mid >= want_assets):
+            best_x, best_v = mid, v_mid
+            if inc > 0: hi = mid
+            else:       lo = mid
+        else:
+            if inc > 0: lo = mid
+            else:       hi = mid
+        if v_mid is not None and abs(v_mid - want_assets) < tolF:
+            lo = hi = mid
+            break
+
+    xStar = (best_x if best_x is not None else (hi if inc > 0 else lo))
+    vStar = (best_v if best_v is not None else eval_assets(apply_lever(dict(p0), xStar)))
+
+    # Round/format lever value
+    patch = {}
+    if lever == "retirement_age":
+        patch["retirement_age"] = int(round(xStar))
+    elif lever == "annual_expense":
+        patch["annual_expense"] = round(float(xStar), 2)
+    elif lever == "annual_saving":
+        patch["annual_saving"] = round(float(xStar), 2)
+    elif lever == "inflow":
+        patch["goal_events"] = [{
+            "name": "solve_inflow",
+            "is_expense": False,
+            "amount": round(float(xStar), 2),
+            "start_age": int(p0["retirement_age"]),
+            "recurrence": "years",
+            "years": 3,
+            "inflation_linked": True
+        }]
+
+    return {
+        "patch": patch,
+        "achieved": float(vStar or 0.0),
+        "lever_value": (patch.get(lever) if lever != "inflow" else patch["goal_events"][0]["amount"]),
+        "summary": f"{lever.replace('_',' ')} → {patch.get(lever, 'goal_events')} gives {metric} @ {target_age} ≈ ${float(vStar or 0.0):,.0f}"
+    }
+
+
+@bp_for_live.post("/api/live-update")
+def live_update():
+    payload = request.get_json(silent=True) or {}
+
+    # speed mode: "lite" while dragging, "full" after user pauses or presses Solve
+    mode = payload.get("mode", "full")
+    is_lite = (mode == "lite")
+
+    # optional target/lever preferences for the solver/coach
+    coach_prefs = payload.get("coach_prefs", {}) or {}
+
+    params = _merge(payload)
+    params = _harmonize(params)  # keep CPP window aligned with main calculator
+
+    goal_events = params.get("goal_events") or []
+
+    # ---- Expand goals to per-age cashflows (post-tax via liquidations) ----
+    per_age = {}
+    goals_error = None
+    try:
+        already_merged = bool(params.get("asset_liquidations"))
+        if goal_events and not already_merged:
+            # Use the same merge+coalesce the coach uses
+            params["asset_liquidations"] = _merge_goals_into_liqs(params)
+    except Exception as e:
+        goals_error = str(e)
+        params["asset_liquidations"] = list(params.get("asset_liquidations") or [])
+
+    # ---- Deterministic ----
+    det_out = _DET(**_build_det_args(params))
     det_table = det_out.get("table", [])
     labels = [row.get("Year") for row in det_table]
     det_curve = [row.get("Asset") for row in det_table]
 
-    # MC mapping
-    mc_params = dict(
-        current_age=params["current_age"],
-        retirement_age=params["retirement_age"],
-        annual_saving=params["annual_saving"],
-        saving_increase_rate=params["saving_increase_rate"],
-        current_assets=params["current_assets"],
-        return_mean=params.get("return_mean", params["return_rate"]),
-        return_mean_after=params.get("return_mean_after", params["return_rate_after"]),
-        return_std=params["return_std"],
-        annual_expense=params["annual_expense"],
-        inflation_mean=params.get("inflation_mean", params["inflation_rate"]),
-        inflation_std=params["inflation_std"],
-        cpp_monthly=params["cpp_monthly"],
-        cpp_start_age=params["cpp_start_age"],
-        cpp_end_age=params["cpp_end_age"],
-        asset_liquidations=params["asset_liquidations"],
-        life_expectancy=params["life_expectancy"],
-        num_simulations=params.get("num_simulations", params.get("n_sims", 2000)),
-        income_tax_rate=params["income_tax_rate"],
+    # ---- Monte Carlo ----
+    mc_params = _build_mc_args(
+        params,
+        n_sims=(500 if is_lite else params.get("num_simulations", params.get("n_sims", 2000)))
     )
-
     seed = _get_or_create_seed()
     mc_out = run_mc_with_seed(seed, _MC, **mc_params)
-
     pct = mc_out.get("percentiles", {})
     det_last = det_curve[-1] if det_curve else None
 
-    # Keep a rich (but compact) debug payload for browser-side inspection
+    # ---- Targeted solve (single lever) when FULL + prefs present ----
+    solution = {}
+    if not is_lite and coach_prefs:
+        try:
+            # expected schema: {"target":{"metric":"det|p10|p50|p90","assets":..., "age":...}, "lever":...}
+            solution = _solve_single_lever(params, coach_prefs, seed, _DET, _MC, run_mc_with_seed)
+        except Exception as e:
+            solution = {"error": str(e)}
+
+    # ---- Coach suggestions (optional) only on FULL ----
+    coach = []
+    if not is_lite:
+        try:
+            coach = coach_suggestions(params, pct, prefs=coach_prefs)
+        except Exception as e:
+            coach = [{"type": "status", "title": "Coach unavailable", "detail": str(e)}]
+
     debug = {
         "used_params": {
             "current_age": params["current_age"],
@@ -953,13 +1190,14 @@ def live_update():
             "inflation_std": params["inflation_std"],
             "asset_liquidations": params["asset_liquidations"],
             "goal_events_count": len(goal_events),
+            "mode": mode,
+            "num_simulations": mc_params["num_simulations"],
         },
-        "goals": {
-            "per_age": per_age,            # expanded view: {age: {expense, inflow}}
-            "error": goals_error,          # None if OK
-        },
+        "goals": {"per_age": per_age, "error": goals_error},
         "mc": {"seed": seed},
         "derived": {"deterministic_last": det_last},
+        "coach_prefs": coach_prefs if not is_lite else {},
+        "solution": solution,
     }
 
     out = {
@@ -968,9 +1206,12 @@ def live_update():
         "p10": pct.get("p10", []),
         "p50": pct.get("p50", []),
         "p90": pct.get("p90", []),
+        **({"coach": coach} if not is_lite else {}),
+        **({"solution": solution} if not is_lite else {}),
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 
