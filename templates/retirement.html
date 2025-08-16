@@ -968,7 +968,7 @@
     payload.coach_prefs = null;
 
     // downshift sims for lite
-    if (mode === 'lite') payload.num_simulations = 96;
+    if (mode === 'lite') payload.num_simulations = 80; // a bit lighter than 96 for snappier drags
 
     const url = "{{ url_for('projects.live_update') }}";
     try {
@@ -999,8 +999,8 @@
   }
 
   // faster while dragging, solid after pause (guarded)
-  const sendLite = debounce(() => { if (!window.__solving) ping('lite'); }, 80);
-  const sendFull = debounce(() => { if (!window.__solving) ping('full'); }, 350);
+  const sendLite = debounce(() => { if (!window.__solving) ping('lite'); }, 60);
+  const sendFull = debounce(() => { if (!window.__solving) ping('full'); }, 250);
 
   // Goals changes: lite now, one full after pause
   try {
@@ -1010,7 +1010,7 @@
         if (window.__solving) return;
         sendLite();
         clearTimeout(t);
-        t = setTimeout(() => sendFull(), 500);
+        t = setTimeout(() => sendFull(), 400);
       });
     }
   } catch {}
@@ -1049,7 +1049,7 @@
 
     payload.mode = mode;
     payload.coach_prefs = null;
-    payload.num_simulations = (mode === 'lite' ? 96 : 1200);
+    payload.num_simulations = (mode === 'lite' ? 80 : 1200);
 
     const url = "{{ url_for('projects.live_update') }}";
     const res = await fetch(url, {
@@ -1199,15 +1199,17 @@
         else if (lever === 'annual_saving')  patch = { annual_saving: x };
         else if (lever === 'post_ret_return')patch = { return_rate_after: x, return_mean_after: x };
 
+        // Pretty result text (MONTHLY for spending/saving)
         const pretty = (v) => {
-          if (lever === 'retirement_age') return (+Number(v).toFixed(1)).toString();
-          if (lever === 'post_ret_return') return (Number(v)*100).toFixed(1) + '%';
-          return '$' + Math.round(v).toLocaleString();
+          if (lever === 'retirement_age')   return (+Number(v).toFixed(1)).toString();
+          if (lever === 'post_ret_return')  return (Number(v)*100).toFixed(1) + '%';
+          // monthly for money levers
+          return '$' + Math.round((Number(v) || 0)/12).toLocaleString() + '/mo';
         };
         const leverName = {
           retirement_age:'Retirement age',
-          annual_expense:'Spending (annual)',
-          annual_saving: 'Savings (annual)',
+          annual_expense:'Spending (monthly)',
+          annual_saving: 'Savings (monthly)',
           post_ret_return:'Post-ret return',
         }[lever];
 
@@ -1246,6 +1248,7 @@
   ping('full');
 })();
 </script>
+
 
 
 
