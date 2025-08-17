@@ -900,9 +900,9 @@
     form.retirement_age     = +elAge.value;
     form.annual_expense     = (+elExpMo.value) * 12;
     form.return_rate_after  = (+elPost.value) / 100;
-    form.return_mean_after  = form.return_rate_after + 0.5 * Math.pow(form.return_std || 0, 2);
+    form.return_mean_after  = form.return_rate_after;
     form.return_rate        = (+elPre.value) / 100;
-    form.return_mean        = form.return_rate       + 0.5 * Math.pow(form.return_std || 0, 2);
+    form.return_mean        = form.return_rate;
     form.annual_saving      = (+elSaveMo.value) * 12;
     form.current_assets     = +elAssets.value;
     form.income_tax_rate    = (+elTax.value) / 100;
@@ -1123,160 +1123,142 @@
     }
   }
 
-async function solve(){
-  scResult.textContent = 'Solving…';
+  async function solve(){
+    scResult.textContent = 'Solving…';
 
-  const metric = scMetric.value;
-  const targetAssets = Math.max(0, +scAssets.value || 0);
+    const metric = scMetric.value;
+    const targetAssets = Math.max(0, +scAssets.value || 0);
 
-  const lifeForm = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
-  const cur      = lastForm?.current_age ?? gatherForm().current_age ?? 50;
+    const lifeForm = lastForm?.life_expectancy ?? gatherForm().life_expectancy ?? 90;
+    const cur      = lastForm?.current_age ?? gatherForm().current_age ?? 50;
 
-  let targetAge = +scAge.value || lifeForm;
-  targetAge = Math.max(targetAge, cur);
-  targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
+    let targetAge = +scAge.value || lifeForm;
+    targetAge = Math.max(targetAge, cur);
+    targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
 
-  // Solver evaluates up to max(slider_life, targetAge) WITHOUT moving the slider
-  const horizon = Math.max(+elLife.value || lifeForm, targetAge);
+    // Solver evaluates up to max(slider_life, targetAge) WITHOUT moving the slider
+    const horizon = Math.max(+elLife.value || lifeForm, targetAge);
 
-  const lever = getLever();
-  const bounds = {
-    retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
-    annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
-    annual_saving:  [ (+elSaveMo.min||0)*12,   (+elSaveMo.max||20000)*12 ],
-    post_ret_return:[ (+elPost.min||0)/100,    (+elPost.max||12)/100 ]
-  };
-  const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, post_ret_return:true };
-  const [lo0, hi0] = bounds[lever];
-  const inc = increasing[lever];
+    const lever = getLever();
+    const bounds = {
+      retirement_age: [ (+elAge.min || 55), (+elAge.max || 75) ],
+      annual_expense: [ (+elExpMo.min||2000)*12, (+elExpMo.max||20000)*12 ],
+      annual_saving:  [ (+elSaveMo.min||0)*12, (+elSaveMo.max||20000)*12 ],
+      post_ret_return:[ (+elPost.min||0)/100, (+elPost.max||12)/100 ]
+    };
+    const increasing = { retirement_age:true, annual_expense:false, annual_saving:true, post_ret_return:true };
+    const [lo0, hi0] = bounds[lever];
+    const inc = increasing[lever];
 
-  // helper: get sigma (decimal) to convert CAGR -> arithmetic mean for MC
-  const getSigma = () => (lastForm?.return_std ?? gatherForm().return_std ?? 0);
-
-  function buildOverrides(x){
-    const base = { life_expectancy: horizon, num_simulations: 300 };
-    if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
-    if (lever === 'annual_expense')  return { ...base, annual_expense: x };
-    if (lever === 'annual_saving')   return { ...base, annual_saving: x };
-    if (lever === 'post_ret_return') {
-      const s = getSigma();
-      return {
-        ...base,
-        // x is the user-facing CAGR
-        return_rate_after: x,
-        // MC engine needs arithmetic mean
-        return_mean_after: x + 0.5 * s * s
-      };
+    function buildOverrides(x){
+      const base = { life_expectancy: horizon, num_simulations: 300 };
+      if (lever === 'retirement_age') return { ...base, retirement_age: Math.round(x) };
+      if (lever === 'annual_expense')  return { ...base, annual_expense: x };
+      if (lever === 'annual_saving')   return { ...base, annual_saving: x };
+      if (lever === 'post_ret_return') return { ...base, return_rate_after: x, return_mean_after: x };
+      return base;
     }
-    return base;
-  }
+    async function f(x){
+      const { data, startAge } = await evalWithOverrides(buildOverrides(x));
+      const curve = curveByMetric(data, metric);
+      return valueAtAge(curve, startAge, targetAge) - targetAssets;
+    }
 
-  async function f(x){
-    const { data, startAge } = await evalWithOverrides(buildOverrides(x));
-    const curve = curveByMetric(data, metric);
-    return valueAtAge(curve, startAge, targetAge) - targetAssets;
-  }
+    let lo = lo0, hi = hi0;
+    let flo = await f(lo);
+    let fhi = await f(hi);
 
-  let lo = lo0, hi = hi0;
-  let flo = await f(lo);
-  let fhi = await f(hi);
+    const maxIter = 14;
+    const tolX = (lever==='retirement_age') ? 0.25
+               : (lever==='post_ret_return') ? 0.0005   // ≈0.05%
+               : 50;
+    const tolF = 500;
 
-  const maxIter = 14;
-  const tolX = (lever==='retirement_age') ? 0.25
-             : (lever==='post_ret_return') ? 0.0005   // ≈0.05%
-             : 50;
-  const tolF = 500;
+    let feasible = false;
+    if (inc) { feasible = !(fhi < 0); if (flo >= 0) { hi = lo; fhi = flo; } }
+    else     { feasible = !(flo < 0); if (fhi >= 0) { lo = hi; flo = fhi; } }
 
-  let feasible = false;
-  if (inc) { feasible = !(fhi < 0); if (flo >= 0) { hi = lo; fhi = flo; } }
-  else     { feasible = !(flo < 0); if (fhi >= 0) { lo = hi; flo = fhi; } }
+    if (!feasible) {
+      const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo) : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
+      scResult.textContent = "Target not achievable within bounds; using nearest bound.";
+      const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(pick) }
+                  : (lever === 'annual_expense') ? { annual_expense: pick }
+                  : (lever === 'annual_saving')  ? { annual_saving: pick }
+                  : { return_rate_after: pick, return_mean_after: pick };
+      await commitFull(buildOverrides(pick), patch);
+      return;
+    }
 
-  if (!feasible) {
-    const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
-                      : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
-    scResult.textContent = "Target not achievable within bounds; using nearest bound.";
-    const s = getSigma();
+    for (let k = 0; k < maxIter && Math.abs(hi - lo) > tolX; k++) {
+      const mid = (lo + hi) / 2;
+      const fmid = await f(mid);
+      if (inc) { if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; } }
+      else     { if (fmid >= 0) { lo = mid; flo = fmid; } else { hi = mid; fhi = fmid; } }
+      if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
+    }
+
+    const xStar = inc ? hi : lo;
+
+    // ---- display value (monthly for spend/save; % for post-ret; fractional age) ----
+    const isMonthly = (lever === 'annual_expense' || lever === 'annual_saving');
+    const isPercent = (lever === 'post_ret_return');
+
+    // Interpolate between the final bracketing integer ages for display only
+    let displayAge = xStar;
+    if (lever === 'retirement_age') {
+      const ageLo = Math.round(lo);
+      const ageHi = Math.round(hi);
+      const assetsLo = targetAssets + flo;
+      const assetsHi = targetAssets + fhi;
+
+      if (
+        ageHi !== ageLo &&
+        Number.isFinite(assetsLo) &&
+        Number.isFinite(assetsHi) &&
+        Math.abs(assetsHi - assetsLo) > 1e-9
+      ) {
+        const t = (targetAssets - assetsLo) / (assetsHi - assetsLo); // 0..1 across [ageLo, ageHi]
+        displayAge = ageLo + Math.min(1, Math.max(0, t));
+      } else {
+        displayAge = Math.round(xStar); // fallback
+      }
+    }
+
+    const leverName = {
+      retirement_age: 'Retirement age',
+      annual_expense: 'Spending (monthly)',
+      annual_saving:  'Savings (monthly)',
+      post_ret_return:'Post-ret return (%)'
+    }[lever];
+
+    const displayVal =
+      (lever === 'retirement_age') ? displayAge
+      : isMonthly ? (xStar / 12)
+      : isPercent ? (xStar * 100)
+      : xStar;
+
+    const unit = isMonthly ? ' /mo' : '';
+
+    const pretty = v =>
+      (lever === 'retirement_age')
+        ? (+Number(v).toFixed(1)).toString()
+        : (isPercent ? ((+Number(v).toFixed(1)) + '%')
+                     : '$' + Math.round(v).toLocaleString());
+
+    scResult.textContent =
+      `${leverName}: ${pretty(displayVal)}${unit} ` +
+      `(meets ${scMetric.options[scMetric.selectedIndex].text} ` +
+      `≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
+
+    // PATCH (annual for spend/save; decimal for return; integer commit for age)
     const patch =
-      (lever === 'retirement_age') ? { retirement_age: Math.round(pick) } :
-      (lever === 'annual_expense') ? { annual_expense: pick } :
-      (lever === 'annual_saving')  ? { annual_saving:  pick } :
-        { return_rate_after: pick, return_mean_after: pick + 0.5*s*s };
-    await commitFull(buildOverrides(pick), patch);
-    return;
+      (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) } :
+      (lever === 'annual_expense') ? { annual_expense: xStar } :
+      (lever === 'annual_saving')  ? { annual_saving:  xStar } :
+                                     { return_rate_after: xStar, return_mean_after: xStar };
+
+    await commitFull(buildOverrides(xStar), patch);
   }
-
-  for (let k = 0; k < maxIter && Math.abs(hi - lo) > tolX; k++) {
-    const mid = (lo + hi) / 2;
-    const fmid = await f(mid);
-    if (inc) { if (fmid >= 0) { hi = mid; fhi = fmid; } else { lo = mid; flo = fmid; } }
-    else     { if (fmid >= 0) { lo = mid; flo = fmid; } else { hi = mid; fhi = fmid; } }
-    if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
-  }
-
-  const xStar = inc ? hi : lo;
-
-  // ---- display value (monthly for spend/save; % for post-ret; fractional age) ----
-  const isMonthly = (lever === 'annual_expense' || lever === 'annual_saving');
-  const isPercent = (lever === 'post_ret_return');
-
-  // Interpolate between the final bracketing integer ages for display only.
-  // Uses the last residuals flo=f(lo) and fhi=f(hi) where f(x)=assets(x)-targetAssets.
-  let displayAge = xStar;
-  if (lever === 'retirement_age') {
-    const ageLo = Math.round(lo);
-    const ageHi = Math.round(hi);
-    const assetsLo = targetAssets + flo;
-    const assetsHi = targetAssets + fhi;
-
-    if (
-      ageHi !== ageLo &&
-      Number.isFinite(assetsLo) &&
-      Number.isFinite(assetsHi) &&
-      Math.abs(assetsHi - assetsLo) > 1e-9
-    ) {
-      const t = (targetAssets - assetsLo) / (assetsHi - assetsLo); // 0..1 across [ageLo, ageHi]
-      displayAge = ageLo + Math.min(1, Math.max(0, t));
-    } else {
-      displayAge = Math.round(xStar); // fallback
-    }
-  }
-
-  const leverName = {
-    retirement_age: 'Retirement age',
-    annual_expense: 'Spending (monthly)',
-    annual_saving:  'Savings (monthly)',
-    post_ret_return:'Post-ret return (%)'
-  }[lever];
-
-  const displayVal =
-    (lever === 'retirement_age') ? displayAge
-    : isMonthly ? (xStar / 12)
-    : isPercent ? (xStar * 100)
-    : xStar;
-
-  const unit = isMonthly ? ' /mo' : '';
-
-  const pretty = v =>
-    (lever === 'retirement_age')
-      ? (+Number(v).toFixed(1)).toString()
-      : (isPercent ? ((+Number(v).toFixed(1)) + '%')
-                   : '$' + Math.round(v).toLocaleString());
-
-  scResult.textContent =
-    `${leverName}: ${pretty(displayVal)}${unit} ` +
-    `(meets ${scMetric.options[scMetric.selectedIndex].text} ` +
-    `≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
-
-  // PATCH (annual for spend/save; decimal for return; integer commit for age)
-  const s = getSigma();
-  const patch =
-    (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) } :
-    (lever === 'annual_expense') ? { annual_expense: xStar } :
-    (lever === 'annual_saving')  ? { annual_saving:  xStar } :
-      { return_rate_after: xStar, return_mean_after: xStar + 0.5*s*s };
-
-  await commitFull(buildOverrides(xStar), patch);
-}
 
   scSolve.addEventListener('click', solve);
   scClear.addEventListener('click', () => { window.__coach_goals = []; scResult.textContent = ''; ping(); });
