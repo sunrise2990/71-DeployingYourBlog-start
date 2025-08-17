@@ -1159,12 +1159,12 @@ async function solve(){
     if (lever === 'annual_expense')  return { ...base, annual_expense: x };
     if (lever === 'annual_saving')   return { ...base, annual_saving: x };
     if (lever === 'post_ret_return') {
-      const s = getSigma();
+      const s = getSigma();               // σ as a decimal (e.g., 0.18)
       return {
         ...base,
         // x is the user-facing CAGR
         return_rate_after: x,
-        // MC engine needs arithmetic mean
+        // MC engine uses arithmetic mean
         return_mean_after: x + 0.5 * s * s
       };
     }
@@ -1192,15 +1192,13 @@ async function solve(){
   else     { feasible = !(flo < 0); if (fhi >= 0) { lo = hi; flo = fhi; } }
 
   if (!feasible) {
-    const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo)
-                      : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
+    const pick = (inc ? (Math.abs(fhi) <= Math.abs(flo) ? hi : lo) : (Math.abs(flo) <= Math.abs(fhi) ? lo : hi));
     scResult.textContent = "Target not achievable within bounds; using nearest bound.";
     const s = getSigma();
-    const patch =
-      (lever === 'retirement_age') ? { retirement_age: Math.round(pick) } :
-      (lever === 'annual_expense') ? { annual_expense: pick } :
-      (lever === 'annual_saving')  ? { annual_saving:  pick } :
-        { return_rate_after: pick, return_mean_after: pick + 0.5*s*s };
+    const patch = (lever === 'retirement_age') ? { retirement_age: Math.round(pick) }
+                : (lever === 'annual_expense') ? { annual_expense: pick }
+                : (lever === 'annual_saving')  ? { annual_saving: pick }
+                : { return_rate_after: pick, return_mean_after: pick + 0.5 * s * s };
     await commitFull(buildOverrides(pick), patch);
     return;
   }
@@ -1273,7 +1271,7 @@ async function solve(){
     (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) } :
     (lever === 'annual_expense') ? { annual_expense: xStar } :
     (lever === 'annual_saving')  ? { annual_saving:  xStar } :
-      { return_rate_after: xStar, return_mean_after: xStar + 0.5*s*s };
+                                   { return_rate_after: xStar, return_mean_after: xStar + 0.5 * s * s };
 
   await commitFull(buildOverrides(xStar), patch);
 }
