@@ -1144,16 +1144,8 @@ async function solve(){
   targetAge = Math.max(targetAge, cur);
   targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
 
-  // Make What-If lifespan slider FOLLOW the Solver "At age"
-    const clamp = (a, lo, hi) => Math.min(Math.max(a, lo), hi);
-    const clamped = clamp(targetAge, (+elLife.min || 70), (+elLife.max || 105));
-
-    // move the slider + label
-    if (+elLife.value !== clamped) {
-      elLife.value = clamped;
-      lifeVal.textContent = clamped;   // updates the number next to the label
-    }
-    const horizon = clamped;           // and solve/draw to this horizon
+  // Solver evaluates up to max(slider_life, targetAge) WITHOUT moving the slider
+  const horizon = Math.max(+elLife.value || lifeForm, targetAge);
 
   const lever = getLever();
   const bounds = {
