@@ -382,7 +382,8 @@
           </label>
           <input type="range" id="lw_life" class="form-range" min="70" max="105" step="1" value="84">
         </div>
-       <!-- add these two blocks inside the existing <div class="row g-3"> ... </div> of More controls -->
+
+        <!-- Mirrors of the top dropdowns -->
         <div class="col-md-4">
           <label class="form-label">Return Std Dev (%) <span class="text-muted small">(mirror)</span></label>
           <select id="lw_ret_std" class="form-select"></select>
@@ -391,7 +392,6 @@
           <label class="form-label">Inflation Std Dev (%) <span class="text-muted small">(mirror)</span></label>
           <select id="lw_infl_std" class="form-select"></select>
         </div>
-
       </div>
     </details>
 
@@ -614,22 +614,22 @@
         </div>
       </div>
 
-        <div class="row g-3 mt-2">
-          <div class="col-md-9 sc-important">
-            <div class="mb-1 sc-label-strong">Lever (choose one)</div>
-            <div class="d-flex flex-wrap gap-4">
-              <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="retirement_age" checked> Retirement age</label>
-              <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_expense"> Spending</label>
-              <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_saving"> Savings</label>
-              <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="post_ret_return"> Post-ret return (%)</label>
-            </div>
-          </div>
-          <!-- buttons column (Solve first) -->
-          <div class="col-md-3 d-flex justify-content-end gap-2">
-            <button id="sc_solve" type="button" class="btn btn-sm btn-primary">Solve</button>
-            <button id="sc_clear_goals" type="button" class="btn btn-sm btn-outline-secondary">Clear coach goals</button>
+      <div class="row g-3 mt-2">
+        <div class="col-md-9 sc-important">
+          <div class="mb-1 sc-label-strong">Lever (choose one)</div>
+          <div class="d-flex flex-wrap gap-4">
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="retirement_age" checked> Retirement age</label>
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_expense"> Spending</label>
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="annual_saving"> Savings</label>
+            <label class="form-check small"><input class="form-check-input" type="radio" name="sc_lever" value="post_ret_return"> Post-ret return (%)</label>
           </div>
         </div>
+        <!-- buttons column (Solve first) -->
+        <div class="col-md-3 d-flex justify-content-end gap-2">
+          <button id="sc_solve" type="button" class="btn btn-sm btn-primary">Solve</button>
+          <button id="sc_clear_goals" type="button" class="btn btn-sm btn-outline-secondary">Clear coach goals</button>
+        </div>
+      </div>
 
       <div id="sc_result" class="small text-muted mt-2"></div>
     </div>
@@ -661,6 +661,10 @@
   const taxVal   = document.getElementById('lw_tax_val');
   const inflVal  = document.getElementById('lw_infl_val');
   const lifeVal  = document.getElementById('lw_life_val');
+
+  // Std dev mirror selects
+  const elRetStdSel  = document.getElementById('lw_ret_std');
+  const elInflStdSel = document.getElementById('lw_infl_std');
 
   // Strategy Coach UI
   const scMetric   = document.getElementById('sc_metric');
@@ -781,77 +785,60 @@
     return out;
   }
 
+  // Chart
+  const ctx = document.getElementById('lw_assets_chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Deterministic', data: [],
+          borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)',
+          borderWidth: 2, pointRadius: 0, tension: 0.25 },
 
-// Chart
-const ctx = document.getElementById('lw_assets_chart').getContext('2d');
-const chart = new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels: [],
-    datasets: [
-      // Deterministic (solid, medium)
-      { label: 'Deterministic', data: [],
-        borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)',
-        borderWidth: 2, pointRadius: 0, tension: 0.25 },
+        { label: 'MC P10', data: [],
+          borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.05)',
+          borderWidth: 2.0, borderDash: [3,3],
+          borderCapStyle: 'round',
+          pointRadius: 0, tension: 0.25 },
 
-      // MC P10 (thin + dashed)
-      { label: 'MC P10', data: [],
-        borderColor: '#dc2626',
-        backgroundColor: 'rgba(220,38,38,0.05)',
-        borderWidth: 2.0, borderDash: [3,3],
-        borderCapStyle: 'round',
-        pointRadius: 0, tension: 0.25
-      },
+        { label: 'MC Median', data: [],
+          borderColor: '#ec4899', backgroundColor: 'rgba(236,72,153,0.08)',
+          borderWidth: 3, borderDash: [8,4],
+          borderCapStyle: 'round',
+          pointRadius: 0, tension: 0.25 },
 
-      // MC Median — ⭐ make this stand out: thicker + long dash + slight smoothing
-      { label: 'MC Median', data: [],
-        borderColor: '#ec4899',                         // pink
-        backgroundColor: 'rgba(236,72,153,0.08)',
-        borderWidth: 3, borderDash: [8,4],              // make it stand out
-        borderCapStyle: 'round',
-        pointRadius: 0, tension: 0.25
-      },
-
-      // MC P90 (thin + short dash)
-      { label: 'MC P90', data: [],
-        borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.04)',
-        borderWidth: 1.7, borderDash: [4,2], pointRadius: 0, tension: 0.25 },
-    ]
-  },
-
+        { label: 'MC P90', data: [],
+          borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.04)',
+          borderWidth: 1.7, borderDash: [4,2], pointRadius: 0, tension: 0.25 }
+      ]
+    },
     options: {
-        responsive: true,
-        animation: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          tooltip: {
-            // keep tooltips in full dollars
-            callbacks: {
-              label: (ctx) => {
-                const v = ctx.parsed.y ?? 0;
-                return `${ctx.dataset.label}: $${Math.round(v).toLocaleString()}`;
-              }
-            }
-          }
-        },
-        scales: {
-          x: { title: { display: true, text: 'Age' } },
-          y: {
-            // ⬅️ move axis to the right
-            position: 'right',
-            title: { display: true, text: 'Assets (CDN $K)' },
-            ticks: {
-              // format as x,xxxK
-              callback: (val) => {
-                const k = Math.round(Number(val) / 1000);
-                return `${k.toLocaleString()}K`;
-              }
+      responsive: true,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y ?? 0;
+              return `${ctx.dataset.label}: $${Math.round(v).toLocaleString()}`;
             }
           }
         }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Age' } },
+        y: {
+          position: 'right',
+          title: { display: true, text: 'Assets (CDN $K)' },
+          ticks: {
+            callback: (val) => `${Math.round(Number(val)/1000).toLocaleString()}K`
+          }
+        }
       }
-    });
-
+    }
+  });
 
   // labels/sliders
   function setSlidersFromForm(f) {
@@ -877,10 +864,34 @@ const chart = new Chart(ctx, {
     lifeVal.textContent    = elLife.value;
   }
 
-  // init sliders from form
-  const base = gatherForm(); setSlidersFromForm(base); updateLabelsFromSliders();
+  // Mirror the top std-dev dropdowns into the What-If section
+  function hydrateStdMirrors() {
+    const topRet  = findInput({ labelIncludes:['Return Std Dev'],   names:['return_std_dev'] });
+    const topInfl = findInput({ labelIncludes:['Inflation Std Dev'], names:['inflation_std_dev'] });
 
-  // collect params — “At age” ALWAYS overrides horizon
+    function copyOptions(from, to) {
+      if (!from || !to) return;
+      to.innerHTML = '';
+      Array.from(from.options || []).forEach((opt) => {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.text  = opt.text;
+        to.appendChild(o);
+      });
+      to.selectedIndex = from.selectedIndex ?? 0;
+    }
+
+    copyOptions(topRet,  elRetStdSel);
+    copyOptions(topInfl, elInflStdSel);
+  }
+
+  // init sliders & mirrors from form
+  const base = gatherForm();
+  setSlidersFromForm(base);
+  hydrateStdMirrors();
+  updateLabelsFromSliders();
+
+  // collect params — life horizon comes from the What-If slider ONLY
   let lastForm = null;
   function collectParams() {
     const form = gatherForm();
@@ -898,14 +909,15 @@ const chart = new Chart(ctx, {
     form.inflation_rate     = (+elInfl.value) / 100;
     form.inflation_mean     = form.inflation_rate;
 
-    // OVERRIDE horizon from Strategy Coach “At age”
-    const atAge = +scAge.value;
-    if (Number.isFinite(atAge) && atAge > 0) {
-      const clamped = Math.min(Math.max(atAge, (+elLife.min || 70)), (+elLife.max || 105));
-      form.life_expectancy = clamped;
-      if ((+elLife.value || 0) !== clamped) { elLife.value = clamped; lifeVal.textContent = clamped; }
-    } else {
-      form.life_expectancy = +elLife.value;
+    // horizon strictly from slider (solver can extend when needed)
+    form.life_expectancy    = +elLife.value;
+
+    // mirror selects override std-devs if changed here
+    if (elRetStdSel && elRetStdSel.options.length) {
+      const v = numFrom(elRetStdSel); if (Number.isFinite(v)) form.return_std = v/100;
+    }
+    if (elInflStdSel && elInflStdSel.options.length) {
+      const v = numFrom(elInflStdSel); if (Number.isFinite(v)) form.inflation_std = v/100;
     }
 
     // Single-jump sim count
@@ -940,7 +952,7 @@ const chart = new Chart(ctx, {
 
   // === Single debounced FULL request (300 sims) ===
   async function ping() {
-    if (__awaitingSolveCommit) return;        // block while committing solve
+    if (__awaitingSolveCommit) return;
     const payload = collectParams();
     payload.mode = 'full';
     payload.coach_prefs = null;
@@ -981,7 +993,7 @@ const chart = new Chart(ctx, {
     if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
     if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
     if (patch.return_rate_after != null) {
-      elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10; // decimal → %
+      elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
       postVal.textContent = (+elPost.value).toFixed(1);
     }
     if (Array.isArray(patch.goal_events) && patch.goal_events.length){
@@ -1022,7 +1034,13 @@ const chart = new Chart(ctx, {
       el.addEventListener('change', ping);
     });
 
-  // “At age” change already overrides horizon in collectParams()
+  // mirror selects: ping on change
+  [elRetStdSel, elInflStdSel].forEach(el => {
+    if (!el) return;
+    el.addEventListener('change', ping);
+  });
+
+  // Solver "At age" changes DO NOT mutate the slider anymore
   scAge.addEventListener('input', debouncedPing);
   scAge.addEventListener('change', ping);
 
@@ -1049,7 +1067,6 @@ const chart = new Chart(ctx, {
       body: JSON.stringify(payload)
     });
     const data = await res.json();
-    // NO draw here – prevents preview/commit flip
     return { data, startAge: payload.current_age };
   }
   function curveByMetric(data, metric){
@@ -1096,7 +1113,7 @@ const chart = new Chart(ctx, {
         if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
         if (patch.annual_saving != null)  elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
         if (patch.return_rate_after != null) {
-          elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10; // decimal → %
+          elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
           postVal.textContent = (+elPost.value).toFixed(1);
         }
         updateLabelsFromSliders();
@@ -1118,9 +1135,9 @@ const chart = new Chart(ctx, {
     let targetAge = +scAge.value || lifeForm;
     targetAge = Math.max(targetAge, cur);
     targetAge = Math.min(Math.max(targetAge, (+elLife.min || 70)), (+elLife.max || 105));
-    const horizon = targetAge;
 
-    if ((+elLife.value || 0) !== horizon) { elLife.value = horizon; updateLabelsFromSliders(); }
+    // Solver evaluates up to max(slider_life, targetAge) WITHOUT moving the slider
+    const horizon = Math.max(+elLife.value || lifeForm, targetAge);
 
     const lever = getLever();
     const bounds = {
@@ -1180,74 +1197,74 @@ const chart = new Chart(ctx, {
       if (Math.abs(fmid) < tolF) { lo = hi = mid; break; }
     }
 
-const xStar = inc ? hi : lo;
+    const xStar = inc ? hi : lo;
 
-// ---- display value (monthly for spend/save; % for post-ret; fractional age) ----
-const isMonthly = (lever === 'annual_expense' || lever === 'annual_saving');
-const isPercent = (lever === 'post_ret_return');
+    // ---- display value (monthly for spend/save; % for post-ret; fractional age) ----
+    const isMonthly = (lever === 'annual_expense' || lever === 'annual_saving');
+    const isPercent = (lever === 'post_ret_return');
 
-// Interpolate between the final bracketing integer ages for display only.
-// Uses the last residuals flo=f(lo) and fhi=f(hi) where f(x)=assets(x)-targetAssets.
-let displayAge = xStar;
-if (lever === 'retirement_age') {
-  const ageLo = Math.round(lo);
-  const ageHi = Math.round(hi);
-  const assetsLo = targetAssets + flo;
-  const assetsHi = targetAssets + fhi;
+    // Interpolate between the final bracketing integer ages for display only
+    let displayAge = xStar;
+    if (lever === 'retirement_age') {
+      const ageLo = Math.round(lo);
+      const ageHi = Math.round(hi);
+      const assetsLo = targetAssets + flo;
+      const assetsHi = targetAssets + fhi;
 
-  if (
-    ageHi !== ageLo &&
-    Number.isFinite(assetsLo) &&
-    Number.isFinite(assetsHi) &&
-    Math.abs(assetsHi - assetsLo) > 1e-9
-  ) {
-    const t = (targetAssets - assetsLo) / (assetsHi - assetsLo); // 0..1 across [ageLo, ageHi]
-    displayAge = ageLo + Math.min(1, Math.max(0, t));
-  } else {
-    displayAge = Math.round(xStar); // fallback
-  }
-}
+      if (
+        ageHi !== ageLo &&
+        Number.isFinite(assetsLo) &&
+        Number.isFinite(assetsHi) &&
+        Math.abs(assetsHi - assetsLo) > 1e-9
+      ) {
+        const t = (targetAssets - assetsLo) / (assetsHi - assetsLo); // 0..1 across [ageLo, ageHi]
+        displayAge = ageLo + Math.min(1, Math.max(0, t));
+      } else {
+        displayAge = Math.round(xStar); // fallback
+      }
+    }
 
-const leverName = {
-  retirement_age: 'Retirement age',
-  annual_expense: 'Spending (monthly)',
-  annual_saving:  'Savings (monthly)',
-  post_ret_return:'Post-ret return (%)'
-}[lever];
+    const leverName = {
+      retirement_age: 'Retirement age',
+      annual_expense: 'Spending (monthly)',
+      annual_saving:  'Savings (monthly)',
+      post_ret_return:'Post-ret return (%)'
+    }[lever];
 
-const displayVal =
-  (lever === 'retirement_age') ? displayAge
-  : isMonthly ? (xStar / 12)
-  : isPercent ? (xStar * 100)
-  : xStar;
+    const displayVal =
+      (lever === 'retirement_age') ? displayAge
+      : isMonthly ? (xStar / 12)
+      : isPercent ? (xStar * 100)
+      : xStar;
 
-const unit = isMonthly ? ' /mo' : '';
+    const unit = isMonthly ? ' /mo' : '';
 
-const pretty = v =>
-  (lever === 'retirement_age')
-    ? (+Number(v).toFixed(1)).toString()
-    : (isPercent ? ((+Number(v).toFixed(1)) + '%')
-                 : '$' + Math.round(v).toLocaleString());
+    const pretty = v =>
+      (lever === 'retirement_age')
+        ? (+Number(v).toFixed(1)).toString()
+        : (isPercent ? ((+Number(v).toFixed(1)) + '%')
+                     : '$' + Math.round(v).toLocaleString());
 
-scResult.textContent =
-  `${leverName}: ${pretty(displayVal)}${unit} ` +
-  `(meets ${scMetric.options[scMetric.selectedIndex].text} ` +
-  `≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
+    scResult.textContent =
+      `${leverName}: ${pretty(displayVal)}${unit} ` +
+      `(meets ${scMetric.options[scMetric.selectedIndex].text} ` +
+      `≥ $${(+scAssets.value).toLocaleString()} at age ${Math.round(targetAge)})`;
 
-// PATCH (annual for spend/save; decimal for return; integer commit for age)
-const patch =
-  (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) } :
-  (lever === 'annual_expense') ? { annual_expense: xStar } :
-  (lever === 'annual_saving')  ? { annual_saving:  xStar } :
-                                 { return_rate_after: xStar, return_mean_after: xStar };
+    // PATCH (annual for spend/save; decimal for return; integer commit for age)
+    const patch =
+      (lever === 'retirement_age') ? { retirement_age: Math.round(xStar) } :
+      (lever === 'annual_expense') ? { annual_expense: xStar } :
+      (lever === 'annual_saving')  ? { annual_saving:  xStar } :
+                                     { return_rate_after: xStar, return_mean_after: xStar };
 
-await commitFull(buildOverrides(xStar), patch);
-
+    await commitFull(buildOverrides(xStar), patch);
   }
 
   scSolve.addEventListener('click', solve);
   scClear.addEventListener('click', () => { window.__coach_goals = []; scResult.textContent = ''; ping(); });
-  document.getElementById('lw_reset').addEventListener('click', () => { const f = gatherForm(); setSlidersFromForm(f); updateLabelsFromSliders(); ping(); });
+  document.getElementById('lw_reset').addEventListener('click', () => {
+    const f = gatherForm(); setSlidersFromForm(f); hydrateStdMirrors(); updateLabelsFromSliders(); ping();
+  });
 
   // 🔗 Goals -> Live What-If (ensure + Add Goal / toggle triggers ONE redraw)
   (function hookGoalsToLive() {
@@ -1264,11 +1281,12 @@ await commitFull(buildOverrides(xStar), patch);
     }
   })();
 
-  console.log("Live What-If ready (single full request, 300 sims; Post-ret return lever enabled; monthly display for spend/save)");
+  console.log("Live What-If ready (300 sims; horizon from slider; At-age used only for evaluation; std-dev mirrors wired)");
   window.__liveTest = { ping, collectParams };
   ping(); // initial draw
 })();
 </script>
+
 
 
 
