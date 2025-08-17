@@ -314,23 +314,22 @@
         <input type="range" id="lw_ret_age" class="form-range" min="55" max="75" step="1" value="65">
       </div>
 
-        <div class="col-md-4">
-          <label class="form-label">
-            Post-Ret Return (%):
-            <span id="lw_post_val" class="fw-semibold">6.0</span>
-            <span class="help-tip ms-1"
-                  tabindex="0"                      <!-- keyboard focus -->
-                  role="img" aria-label="Help"
-                  data-bs-toggle="tooltip"
-                  data-bs-placement="top"
-                  data-bs-trigger="hover focus"
-                  title="You enter CAGR. Monte Carlo uses an arithmetic mean μ = CAGR + 0.5·σ² (σ from Return Std Dev). The deterministic line uses your CAGR.">
-              ⓘ
-            </span>
-          </label>
+      <div class="col-md-4">
+        <label class="form-label">Monthly Expense ($/mo):
+          <span id="lw_exp_val" class="fw-semibold">6,900</span>
+        </label>
+        <input type="range" id="lw_expense_mo" class="form-range" min="2000" max="20000" step="50" value="6900">
+      </div>
 
-          <input type="range" id="lw_mu_post" class="form-range" min="0" max="12" step="0.1" value="6.0">
-        </div>
+      <div class="col-md-4">
+        <label class="form-label">Post-Ret Return (%):
+          <span id="lw_post_val" class="fw-semibold">6.0</span>
+            <span class="help-tip" data-bs-toggle="tooltip"
+        title="You enter CAGR. Monte Carlo uses an arithmetic mean μ = CAGR + 0.5·σ² (σ from Return Std Dev). The deterministic line uses the CAGR directly."></span>
+        </label>
+        <input type="range" id="lw_mu_post" class="form-range" min="0" max="12" step="0.1" value="6.0">
+      </div>
+    </div>
 
     <!-- Reset toolbar -->
     <div class="d-flex align-items-center gap-2 mt-2">
