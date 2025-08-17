@@ -11118,12 +11118,3 @@ header.masthead.post-banner .post-heading .subheading {
      or uncomment next line to override it here */
   /* color: var(--bs-emphasis-color); */
 }
-
-/* little circular "?" badge for inline tooltips */
-.help-tip{
-  display:inline-flex; align-items:center; justify-content:center;
-  width:16px; height:16px; font-size:10px; line-height:1;
-  border-radius:999px; border:1px solid #6c757d; color:#6c757d;
-  margin-left:.35rem; cursor:help; user-select:none;
-}
-.help-tip::before{ content:"?"; transform:translateY(-.5px); }
