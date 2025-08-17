@@ -1,0 +1,11 @@
+<!-- templates/category_posts.html -->
+{% extends "base.html" %}
+
+{% block content %}
+  <h2 class="text-xl mb-4">Posts in "{{ category }}"</h2>
+  {% for post in posts %}
+    {% include "post_snippet.html" %}
+  {% else %}
+    <p>No posts found under this category.</p>
+  {% endfor %}
+{% endblock %}

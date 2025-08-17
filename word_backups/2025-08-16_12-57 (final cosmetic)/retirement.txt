@@ -382,16 +382,6 @@
           </label>
           <input type="range" id="lw_life" class="form-range" min="70" max="105" step="1" value="84">
         </div>
-       <!-- add these two blocks inside the existing <div class="row g-3"> ... </div> of More controls -->
-        <div class="col-md-4">
-          <label class="form-label">Return Std Dev (%) <span class="text-muted small">(mirror)</span></label>
-          <select id="lw_ret_std" class="form-select"></select>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Inflation Std Dev (%) <span class="text-muted small">(mirror)</span></label>
-          <select id="lw_infl_std" class="form-select"></select>
-        </div>
-
       </div>
     </details>
 
