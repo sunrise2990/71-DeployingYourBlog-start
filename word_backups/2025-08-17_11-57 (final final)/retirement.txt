@@ -1561,6 +1561,8 @@ async function solve(){
 
 
 
+
+<!-- ==== Compare Saved Scenarios (plain POST) ==== -->
 <!-- ==== Compare Saved Scenarios (plain POST) ==== -->
 <hr class="my-4">
 <h5 class="text-center mb-3">🔄 Compare Saved Scenarios</h5>
@@ -1610,8 +1612,6 @@ async function solve(){
   <div class="card mb-4">
     <div class="card-header">Monte Carlo Simulation</div>
     <div class="card-body">
-      <!-- NEW: age spans go here -->
-      <p id="compare-age-spans" class="text-muted small mb-2 d-none"></p>
       <div id="mc-compare-plot" style="height:400px;"></div>
     </div>
   </div>
@@ -1651,7 +1651,7 @@ async function solve(){
 
     const bId = document.getElementById('scenario_b').value || '';
 
-    // A-only: clone MC; hide sensitivity blocks and age spans
+    // A-only: clone MC; hide sensitivity blocks
     if (!bId) {
       const src = document.getElementById('monte-carlo-chart');
       if (!src || !src.data) { alert('Main MC chart not found on page.'); return; }
@@ -1660,7 +1660,6 @@ async function solve(){
       ensureLayout(layout);
       showCompareBlock();
       showTitle(`🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`);
-      updateAgeSpans(null); // hide (no backend meta in A-only clone)
       Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
       hideSensitivity();
       return;
@@ -1683,9 +1682,6 @@ async function solve(){
 
     const cd = await res.json();
     if (!res.ok) { alert(cd.error || 'Compare failed.'); return; }
-
-    // NEW: show the age spans from backend meta
-    updateAgeSpans(cd.meta);
 
     renderOverlay(cd);
     renderSensitivitySplit(cd);
@@ -1752,6 +1748,7 @@ async function solve(){
       A.splice(raIdx, 1);
       if (B) B.splice(raIdx, 1);
     }
+
 
     // Core labels → match table wording
     const LABELS = {
@@ -1901,24 +1898,8 @@ async function solve(){
     if (sensChartCore) { sensChartCore.destroy(); sensChartCore = null; }
     if (sensChartRA)   { sensChartRA.destroy();   sensChartRA   = null; }
   }
-
-  // NEW: show/hide spans from backend meta
-  function updateAgeSpans(meta){
-    const el = document.getElementById('compare-age-spans');
-    if (!el) return;
-    if (meta && (meta.A || meta.B)) {
-      const a = meta.A ? `${meta.A.label}: ${meta.A.start_age}–${meta.A.end_age}` : '';
-      const b = meta.B ? `${meta.B.label}: ${meta.B.start_age}–${meta.B.end_age}` : '';
-      el.textContent = b ? `${a}  |  ${b}` : a;
-      el.classList.remove('d-none');
-    } else {
-      el.textContent = '';
-      el.classList.add('d-none');
-    }
-  }
 })();
 </script>
-
 
 
 

@@ -542,10 +542,6 @@ def compare_retirement():
     Compare Monte Carlo between two saved scenarios.
     Adds Sensitivity Compare (dollar impact + elasticity) below MC.
     Robust normalization for BOTH scenarios; never 500s because of B.
-
-    STEP 1 addition:
-    - Capture each scenario's age span (start_age, end_age) from inputs/MC
-      and return it under payload["meta"] for A and (optionally) B.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -623,11 +619,6 @@ def compare_retirement():
             return a
 
         def _run_mc_for(scn):
-            """
-            Runs MC and returns arrays + args + detected age span.
-            Age span prefers mc_args.start_age/end_age (or current_age/lifespan),
-            falling back to MC ages first/last.
-            """
             params = to_canonical_inputs(scn.inputs_json or {})
             mc_args = _normalize_args(_mc_args_from_params(params))
             if current_app.debug:
@@ -640,22 +631,6 @@ def compare_retirement():
             p50  = [float(x) for x in mc["percentiles"]["p50"]]
             p90  = [float(x) for x in mc["percentiles"]["p90"]]
             n = min(len(ages), len(p10), len(p50), len(p90))
-
-            # --- NEW: detect age span robustly
-            start_age = (
-                mc_args.get("start_age")
-                or mc_args.get("current_age")
-                or (ages[0] if ages else None)
-            )
-            end_age = (
-                mc_args.get("end_age")
-                or mc_args.get("lifespan")
-                or mc_args.get("lifespan_age")
-                or (ages[-1] if ages else None)
-            )
-            if start_age is not None: start_age = int(start_age)
-            if end_age   is not None: end_age   = int(end_age)
-
             return {
                 "label": scn.scenario_name,
                 "ages": ages[:n],
@@ -663,8 +638,6 @@ def compare_retirement():
                 "p50":  p50[:n],
                 "p90":  p90[:n],
                 "_args": mc_args,
-                "start_age": start_age,
-                "end_age": end_age,
             }
 
         # ---------- A (required) ----------
@@ -681,14 +654,6 @@ def compare_retirement():
                 "p10": {"A": A["p10"]},
                 "p50": {"A": A["p50"]},
                 "p90": {"A": A["p90"]},
-            },
-            # --- NEW: meta spans
-            "meta": {
-                "A": {
-                    "label": A["label"],
-                    "start_age": A["start_age"],
-                    "end_age": A["end_age"],
-                }
             }
         }
         warning = None
@@ -702,7 +667,7 @@ def compare_retirement():
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-            # align both to same ages (unchanged for Step 1)
+            # align both to same ages
             m = min(len(A["ages"]), len(B["ages"]))
             ages = A["ages"][:m]
             payload["mc"]["ages"] = ages
@@ -713,13 +678,6 @@ def compare_retirement():
             payload["mc"]["p50"]["B"] = B["p50"][:m]
             payload["mc"]["p90"]["B"] = B["p90"][:m]
             payload["labels"]["B"] = B["label"]
-
-            # --- NEW: meta for B
-            payload["meta"]["B"] = {
-                "label": B["label"],
-                "start_age": B["start_age"],
-                "end_age": B["end_age"],
-            }
 
             # Soft warning (don’t block render)
             maxA = max(A["p50"][:m] or [0])
@@ -801,7 +759,6 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
-
 
 
 
