@@ -1563,7 +1563,6 @@ async function solve(){
 
 
 <!-- ==== Compare Saved Scenarios (plain POST) ==== -->
-<!-- ==== Compare Saved Scenarios (plain POST) ==== -->
 <hr class="my-4">
 <h5 class="text-center mb-3">🔄 Compare Saved Scenarios</h5>
 
@@ -1612,6 +1611,8 @@ async function solve(){
   <div class="card mb-4">
     <div class="card-header">Monte Carlo Simulation</div>
     <div class="card-body">
+      <!-- Optional: shows “Initial Budget: 45–90 | baseline2: 52–84” if backend sends meta -->
+      <p id="compare-age-spans" class="text-muted small mb-2 d-none"></p>
       <div id="mc-compare-plot" style="height:400px;"></div>
     </div>
   </div>
@@ -1651,7 +1652,7 @@ async function solve(){
 
     const bId = document.getElementById('scenario_b').value || '';
 
-    // A-only: clone MC; hide sensitivity blocks
+    // A-only: clone MC; hide sensitivity blocks and spans
     if (!bId) {
       const src = document.getElementById('monte-carlo-chart');
       if (!src || !src.data) { alert('Main MC chart not found on page.'); return; }
@@ -1660,6 +1661,7 @@ async function solve(){
       ensureLayout(layout);
       showCompareBlock();
       showTitle(`🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`);
+      updateAgeSpans(null); // hide
       Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
       hideSensitivity();
       return;
@@ -1683,6 +1685,9 @@ async function solve(){
     const cd = await res.json();
     if (!res.ok) { alert(cd.error || 'Compare failed.'); return; }
 
+    // If backend includes meta with A/B spans, show them; otherwise hide.
+    updateAgeSpans(cd.meta || null);
+
     renderOverlay(cd);
     renderSensitivitySplit(cd);
   });
@@ -1694,27 +1699,34 @@ async function solve(){
     const ages  = (cd.mc.ages || []).map(Number);
 
     const A = {
-      p10: (cd.mc.p10.A || []).map(Number),
-      p50: (cd.mc.p50.A || []).map(Number),
-      p90: (cd.mc.p90.A || []).map(Number)
+      p10: (cd.mc.p10.A || []).map(v => v === null ? null : Number(v)),
+      p50: (cd.mc.p50.A || []).map(v => v === null ? null : Number(v)),
+      p90: (cd.mc.p90.A || []).map(v => v === null ? null : Number(v))
     };
     const B = (cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B) ? {
-      p10: (cd.mc.p10.B || []).map(Number),
-      p50: (cd.mc.p50.B || []).map(Number),
-      p90: (cd.mc.p90.B || []).map(Number)
+      p10: (cd.mc.p10.B || []).map(v => v === null ? null : Number(v)),
+      p50: (cd.mc.p50.B || []).map(v => v === null ? null : Number(v)),
+      p90: (cd.mc.p90.B || []).map(v => v === null ? null : Number(v))
     } : null;
 
+    // IMPORTANT: connectgaps=false so padding with nulls creates visible gaps
     const traces = [
-      { x: ages, y: A.p10, fill: 'none', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: ages, y: A.p90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: ages, y: A.p50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } }
+      { x: ages, y: A.p10, connectgaps: false, fill: 'none',
+        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: A.p90, connectgaps: false, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)',
+        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: A.p50, connectgaps: false, mode: 'lines+markers',
+        name: `${labelA} – Median`, line: { color: 'blue' } }
     ];
 
     if (B) {
       traces.push(
-        { x: ages, y: B.p10, fill: 'none', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-        { x: ages, y: B.p90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-        { x: ages, y: B.p50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
+        { x: ages, y: B.p10, connectgaps: false, fill: 'none',
+          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: ages, y: B.p90, connectgaps: false, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)',
+          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: ages, y: B.p50, connectgaps: false, mode: 'lines+markers',
+          name: `${labelB} – Median`, line: { color: 'orange' } }
       );
     }
 
@@ -1749,8 +1761,6 @@ async function solve(){
       if (B) B.splice(raIdx, 1);
     }
 
-
-    // Core labels → match table wording
     const LABELS = {
       current_assets:        'Current Assets',
       return_rate:           'Pre-Retire Return Rate',
@@ -1767,7 +1777,6 @@ async function solve(){
     const coreA = A.map(Number);
     const coreB = B ? B.map(Number) : null;
 
-    // common tick styling
     const tickStyle = { color: '#111', font: { size: 12, weight: 'bold' } };
 
     // Core chart
@@ -1898,8 +1907,24 @@ async function solve(){
     if (sensChartCore) { sensChartCore.destroy(); sensChartCore = null; }
     if (sensChartRA)   { sensChartRA.destroy();   sensChartRA   = null; }
   }
+
+  // Optional: show/hide spans when backend sends meta
+  function updateAgeSpans(meta){
+    const el = document.getElementById('compare-age-spans');
+    if (!el) return;
+    if (meta && (meta.A || meta.B)) {
+      const a = meta.A ? `${meta.A.label}: ${meta.A.start_age}–${meta.A.end_age}` : '';
+      const b = meta.B ? `${meta.B.label}: ${meta.B.start_age}–${meta.B.end_age}` : '';
+      el.textContent = b ? `${a}  |  ${b}` : a;
+      el.classList.remove('d-none');
+    } else {
+      el.textContent = '';
+      el.classList.add('d-none');
+    }
+  }
 })();
 </script>
+
 
 
 

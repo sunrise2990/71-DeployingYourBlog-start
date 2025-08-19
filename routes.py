@@ -542,6 +542,11 @@ def compare_retirement():
     Compare Monte Carlo between two saved scenarios.
     Adds Sensitivity Compare (dollar impact + elasticity) below MC.
     Robust normalization for BOTH scenarios; never 500s because of B.
+
+    UPDATED:
+    - Use the UNION of age spans (e.g., 45–90) for the x-axis.
+    - Pad each scenario's series with None outside its own span so Plotly
+      shows gaps (B only draws over 52–84, A over 45–90, etc.).
     """
 
     def jerr(msg, code=400, extra=None):
@@ -618,6 +623,13 @@ def compare_retirement():
 
             return a
 
+        # --- helpers to pad series to a shared axis ---
+        def _to_map(ages, values):
+            return {int(a): (float(v) if v is not None else None) for a, v in zip(ages, values)}
+
+        def _pad_series(series_map, axis_ages):
+            return [series_map.get(age, None) for age in axis_ages]
+
         def _run_mc_for(scn):
             params = to_canonical_inputs(scn.inputs_json or {})
             mc_args = _normalize_args(_mc_args_from_params(params))
@@ -631,6 +643,13 @@ def compare_retirement():
             p50  = [float(x) for x in mc["percentiles"]["p50"]]
             p90  = [float(x) for x in mc["percentiles"]["p90"]]
             n = min(len(ages), len(p10), len(p50), len(p90))
+
+            # span from args (fallback to arrays)
+            start_age = mc_args.get("current_age") or (ages[0] if ages else None)
+            end_age   = mc_args.get("life_expectancy") or (ages[-1] if ages else None)
+            if start_age is not None: start_age = int(start_age)
+            if end_age   is not None: end_age   = int(end_age)
+
             return {
                 "label": scn.scenario_name,
                 "ages": ages[:n],
@@ -638,6 +657,8 @@ def compare_retirement():
                 "p50":  p50[:n],
                 "p90":  p90[:n],
                 "_args": mc_args,
+                "start_age": start_age,
+                "end_age": end_age,
             }
 
         # ---------- A (required) ----------
@@ -647,18 +668,8 @@ def compare_retirement():
             current_app.logger.exception("compare_retirement A failed")
             return jerr(f"MC failed for scenario '{scen_a.scenario_name}': {e}", 400)
 
-        payload = {
-            "labels": {"A": A["label"]},
-            "mc": {
-                "ages": A["ages"],
-                "p10": {"A": A["p10"]},
-                "p50": {"A": A["p50"]},
-                "p90": {"A": A["p90"]},
-            }
-        }
-        warning = None
-
         # ---------- B (optional) ----------
+        B = None
         if scen_b:
             try:
                 B = _run_mc_for(scen_b)
@@ -667,21 +678,47 @@ def compare_retirement():
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-            # align both to same ages
-            m = min(len(A["ages"]), len(B["ages"]))
-            ages = A["ages"][:m]
-            payload["mc"]["ages"] = ages
-            payload["mc"]["p10"]["A"] = A["p10"][:m]
-            payload["mc"]["p50"]["A"] = A["p50"][:m]
-            payload["mc"]["p90"]["A"] = A["p90"][:m]
-            payload["mc"]["p10"]["B"] = B["p10"][:m]
-            payload["mc"]["p50"]["B"] = B["p50"][:m]
-            payload["mc"]["p90"]["B"] = B["p90"][:m]
+        # ---------- Build UNION axis & pad series (NEW) ----------
+        axis_start = A["start_age"]
+        axis_end   = A["end_age"]
+        if B:
+            axis_start = min(axis_start, B["start_age"])
+            axis_end   = max(axis_end,   B["end_age"])
+        axis_ages = list(range(int(axis_start), int(axis_end) + 1))
+
+        # A padded
+        A_p10 = _pad_series(_to_map(A["ages"], A["p10"]), axis_ages)
+        A_p50 = _pad_series(_to_map(A["ages"], A["p50"]), axis_ages)
+        A_p90 = _pad_series(_to_map(A["ages"], A["p90"]), axis_ages)
+
+        payload = {
+            "labels": {"A": A["label"]},
+            "mc": {
+                "ages": axis_ages,
+                "p10": {"A": A_p10},
+                "p50": {"A": A_p50},
+                "p90": {"A": A_p90},
+            }
+        }
+        warning = None
+
+        if B:
+            # B padded (None outside its span)
+            B_p10 = _pad_series(_to_map(B["ages"], B["p10"]), axis_ages)
+            B_p50 = _pad_series(_to_map(B["ages"], B["p50"]), axis_ages)
+            B_p90 = _pad_series(_to_map(B["ages"], B["p90"]), axis_ages)
+
+            payload["mc"]["p10"]["B"] = B_p10
+            payload["mc"]["p50"]["B"] = B_p50
+            payload["mc"]["p90"]["B"] = B_p90
             payload["labels"]["B"] = B["label"]
 
-            # Soft warning (don’t block render)
-            maxA = max(A["p50"][:m] or [0])
-            maxB = max(B["p50"][:m] or [0])
+            # Soft warning (ignore None values)
+            def _max_or_zero(arr):
+                vals = [x for x in arr if x is not None]
+                return max(vals) if vals else 0
+            maxA = _max_or_zero(A_p50)
+            maxB = _max_or_zero(B_p50)
             if maxB > 1e9 or (maxA > 0 and maxB > 20 * maxA):
                 warning = "Scenario B may be using different units (rates/years). Overlay shown; please review inputs."
                 current_app.logger.warning(
@@ -762,8 +799,6 @@ def compare_retirement():
 
 
 
-
-
 # ==== Live-WhatIf: minimal POST endpoint (append-only) ====
 from flask import request, session, jsonify
 import secrets
@@ -829,7 +864,7 @@ def _merge(d):
 def _harmonize(params: dict) -> dict:
     """
     If the UI doesn't provide an explicit CPP window, infer a window that
-    matches the main app semantics: start at retirement, end at life expectancy.
+    matches the main calculator: start at retirement, end at life expectancy.
     """
     ra = int(params.get("retirement_age", 65))
     le = int(params.get("life_expectancy", ra + 30))
@@ -841,16 +876,12 @@ def _harmonize(params: dict) -> dict:
 
 
 
-
-
-
 # Goals helpers
 from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
 # Coach helpers (still available, optional)
 from models.retirement.coach import coach_suggestions
 
 # ---------- shared helpers (coalesce + goal merge) ----------
-
 def _coalesce_liqs(liqs: list[dict]) -> list[dict]:
     """Coalesce liquidations by age exactly like live_update already does."""
     if not liqs:
@@ -868,7 +899,6 @@ def _coalesce_liqs(liqs: list[dict]) -> list[dict]:
         if abs(amt) >= 0.005:
             out.append({"age": age_i, "amount": amt})
     return out
-
 
 def _merge_goals_into_liqs(params: dict) -> list[dict]:
     """
@@ -895,7 +925,6 @@ def _merge_goals_into_liqs(params: dict) -> list[dict]:
 
 
 # --- tiny helpers for the solver & sims ---
-
 def _build_det_args(p):
     keys = [
         "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
@@ -1210,6 +1239,7 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 
