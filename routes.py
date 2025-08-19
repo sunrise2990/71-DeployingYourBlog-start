@@ -1097,7 +1097,7 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     }
 
 
-@bp_for_live.post("/api/live-update")
+@projects_bp.post("/api/live-update")
 def live_update():
     payload = request.get_json(silent=True) or {}
 
