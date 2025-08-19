@@ -1561,6 +1561,8 @@ async function solve(){
 
 
 
+
+<!-- ==== Compare Saved Scenarios (plain POST) ==== -->
 <!-- ==== Compare Saved Scenarios (plain POST) ==== -->
 <hr class="my-4">
 <h5 class="text-center mb-3">🔄 Compare Saved Scenarios</h5>
@@ -1610,8 +1612,6 @@ async function solve(){
   <div class="card mb-4">
     <div class="card-header">Monte Carlo Simulation</div>
     <div class="card-body">
-      <!-- age spans line -->
-      <p id="compare-age-spans" class="text-muted small mb-2 d-none"></p>
       <div id="mc-compare-plot" style="height:400px;"></div>
     </div>
   </div>
@@ -1651,7 +1651,7 @@ async function solve(){
 
     const bId = document.getElementById('scenario_b').value || '';
 
-    // A-only: clone MC; hide sensitivity blocks and age spans
+    // A-only: clone MC; hide sensitivity blocks
     if (!bId) {
       const src = document.getElementById('monte-carlo-chart');
       if (!src || !src.data) { alert('Main MC chart not found on page.'); return; }
@@ -1660,7 +1660,6 @@ async function solve(){
       ensureLayout(layout);
       showCompareBlock();
       showTitle(`🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`);
-      updateAgeSpans(null); // hide (no backend meta in A-only clone)
       Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
       hideSensitivity();
       return;
@@ -1684,7 +1683,6 @@ async function solve(){
     const cd = await res.json();
     if (!res.ok) { alert(cd.error || 'Compare failed.'); return; }
 
-    updateAgeSpans(cd.meta);   // show spans
     renderOverlay(cd);
     renderSensitivitySplit(cd);
   });
@@ -1693,56 +1691,35 @@ async function solve(){
   function renderOverlay(cd){
     const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
     const labelB = (cd.labels && cd.labels.B) || 'Scenario B';
+    const ages  = (cd.mc.ages || []).map(Number);
 
-    // FULL union axis from backend (e.g., 45..90)
-    const ages = (cd.mc.ages || []).map(Number);
-
-    // Preserve nulls from backend padding (do NOT map null -> 0)
-    const norm = v => (v === null ? null : Number(v));
     const A = {
-      p10: (cd.mc.p10.A || []).map(norm),
-      p50: (cd.mc.p50.A || []).map(norm),
-      p90: (cd.mc.p90.A || []).map(norm)
+      p10: (cd.mc.p10.A || []).map(Number),
+      p50: (cd.mc.p50.A || []).map(Number),
+      p90: (cd.mc.p90.A || []).map(Number)
     };
     const B = (cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B) ? {
-      p10: (cd.mc.p10.B || []).map(norm),
-      p50: (cd.mc.p50.B || []).map(norm),
-      p90: (cd.mc.p90.B || []).map(norm)
+      p10: (cd.mc.p10.B || []).map(Number),
+      p50: (cd.mc.p50.B || []).map(Number),
+      p90: (cd.mc.p90.B || []).map(Number)
     } : null;
 
     const traces = [
-      // A band
-      { x: ages, y: A.p10, type:'scatter', mode:'lines',
-        line:{ width:0, color:'rgba(0,100,200,0.2)' }, hoverinfo:'skip', showlegend:false, connectgaps:false },
-      { x: ages, y: A.p90, type:'scatter', mode:'lines',
-        fill:'tonexty', fillcolor:'rgba(0,100,200,0.2)',
-        line:{ width:0, color:'rgba(0,100,200,0.2)' }, hoverinfo:'skip', showlegend:false, connectgaps:false },
-      // A median
-      { x: ages, y: A.p50, type:'scatter', mode:'lines+markers',
-        name: `${labelA} – Median`, line:{ color:'blue' }, connectgaps:false }
+      { x: ages, y: A.p10, fill: 'none', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: A.p90, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)', line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: A.p50, mode: 'lines+markers', name: `${labelA} – Median`, line: { color: 'blue' } }
     ];
 
     if (B) {
       traces.push(
-        // B band
-        { x: ages, y: B.p10, type:'scatter', mode:'lines',
-          line:{ width:0, color:'rgba(255,159,64,0.2)' }, hoverinfo:'skip', showlegend:false, connectgaps:false },
-        { x: ages, y: B.p90, type:'scatter', mode:'lines',
-          fill:'tonexty', fillcolor:'rgba(255,159,64,0.2)',
-          line:{ width:0, color:'rgba(255,159,64,0.2)' }, hoverinfo:'skip', showlegend:false, connectgaps:false },
-        // B median
-        { x: ages, y: B.p50, type:'scatter', mode:'lines+markers',
-          name: `${labelB} – Median`, line:{ color:'orange' }, connectgaps:false }
+        { x: ages, y: B.p10, fill: 'none', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: ages, y: B.p90, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)', line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+        { x: ages, y: B.p50, mode: 'lines+markers', name: `${labelB} – Median`, line: { color: 'orange' } }
       );
     }
 
-    // Force full x-range to match union ages
     const layout = {};
     ensureLayout(layout);
-    if (ages.length) {
-      layout.xaxis = Object.assign({}, layout.xaxis, { range: [ages[0], ages[ages.length - 1]] });
-    }
-
     showCompareBlock();
     showTitle(B ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`);
     Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
@@ -1771,6 +1748,7 @@ async function solve(){
       A.splice(raIdx, 1);
       if (B) B.splice(raIdx, 1);
     }
+
 
     // Core labels → match table wording
     const LABELS = {
@@ -1920,25 +1898,8 @@ async function solve(){
     if (sensChartCore) { sensChartCore.destroy(); sensChartCore = null; }
     if (sensChartRA)   { sensChartRA.destroy();   sensChartRA   = null; }
   }
-
-  // Show/hide spans from backend meta
-  function updateAgeSpans(meta){
-    const el = document.getElementById('compare-age-spans');
-    if (!el) return;
-    if (meta && (meta.A || meta.B)) {
-      const a = meta.A ? `${meta.A.label}: ${meta.A.start_age}–${meta.A.end_age}` : '';
-      const b = meta.B ? `${meta.B.label}: ${meta.B.start_age}–${meta.B.end_age}` : '';
-      el.textContent = b ? `${a}  |  ${b}` : a;
-      el.classList.remove('d-none');
-    } else {
-      el.textContent = '';
-      el.classList.add('d-none');
-    }
-  }
 })();
 </script>
-
-
 
 
 

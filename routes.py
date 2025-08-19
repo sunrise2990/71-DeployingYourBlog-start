@@ -542,13 +542,6 @@ def compare_retirement():
     Compare Monte Carlo between two saved scenarios.
     Adds Sensitivity Compare (dollar impact + elasticity) below MC.
     Robust normalization for BOTH scenarios; never 500s because of B.
-
-    UPDATE:
-    - Capture each scenario's age span (start_age, end_age) from inputs/MC
-    - Force x-axis to the FULL UNION of ages across scenarios (e.g., 45–90)
-    - Pad each series to that axis; Scenario B will naturally start at its own
-      start_age (e.g., 52) with nulls before/after so the line does NOT draw
-      outside its span.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -625,21 +618,7 @@ def compare_retirement():
 
             return a
 
-        # ---------- series alignment helpers (NEW) ----------
-        def _to_map(ages, values):
-            """Zip ages -> value map (ints), preserve None for gaps."""
-            return {int(a): (float(v) if v is not None else None) for a, v in zip(ages, values)}
-
-        def _pad_series(series_map, axis_ages):
-            """Return values aligned to axis_ages; missing → None (Plotly gap)."""
-            return [series_map.get(age, None) for age in axis_ages]
-
         def _run_mc_for(scn):
-            """
-            Runs MC and returns arrays + args + detected age span.
-            Age span prefers mc_args.start_age/end_age (or current_age/lifespan),
-            falling back to MC ages first/last.
-            """
             params = to_canonical_inputs(scn.inputs_json or {})
             mc_args = _normalize_args(_mc_args_from_params(params))
             if current_app.debug:
@@ -652,22 +631,6 @@ def compare_retirement():
             p50  = [float(x) for x in mc["percentiles"]["p50"]]
             p90  = [float(x) for x in mc["percentiles"]["p90"]]
             n = min(len(ages), len(p10), len(p50), len(p90))
-
-            # --- detect age span robustly
-            start_age = (
-                mc_args.get("start_age")
-                or mc_args.get("current_age")
-                or (ages[0] if ages else None)
-            )
-            end_age = (
-                mc_args.get("end_age")
-                or mc_args.get("lifespan")
-                or mc_args.get("lifespan_age")
-                or (ages[-1] if ages else None)
-            )
-            if start_age is not None: start_age = int(start_age)
-            if end_age   is not None: end_age   = int(end_age)
-
             return {
                 "label": scn.scenario_name,
                 "ages": ages[:n],
@@ -675,8 +638,6 @@ def compare_retirement():
                 "p50":  p50[:n],
                 "p90":  p90[:n],
                 "_args": mc_args,
-                "start_age": start_age,
-                "end_age": end_age,
             }
 
         # ---------- A (required) ----------
@@ -686,8 +647,18 @@ def compare_retirement():
             current_app.logger.exception("compare_retirement A failed")
             return jerr(f"MC failed for scenario '{scen_a.scenario_name}': {e}", 400)
 
+        payload = {
+            "labels": {"A": A["label"]},
+            "mc": {
+                "ages": A["ages"],
+                "p10": {"A": A["p10"]},
+                "p50": {"A": A["p50"]},
+                "p90": {"A": A["p90"]},
+            }
+        }
+        warning = None
+
         # ---------- B (optional) ----------
-        B = None
         if scen_b:
             try:
                 B = _run_mc_for(scen_b)
@@ -696,59 +667,21 @@ def compare_retirement():
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- Build shared axis (UNION) & pad (NEW) ----------
-        axis_start = A["start_age"]
-        axis_end   = A["end_age"]
-        if B:
-            axis_start = min(axis_start, B["start_age"])
-            axis_end   = max(axis_end,   B["end_age"])
-        axis_ages = list(range(int(axis_start), int(axis_end) + 1))
-
-        # Pad A to full axis
-        A_p10 = _pad_series(_to_map(A["ages"], A["p10"]), axis_ages)
-        A_p50 = _pad_series(_to_map(A["ages"], A["p50"]), axis_ages)
-        A_p90 = _pad_series(_to_map(A["ages"], A["p90"]), axis_ages)
-
-        payload = {
-            "labels": {"A": A["label"]},
-            "mc": {
-                "ages": axis_ages,
-                "p10": {"A": A_p10},
-                "p50": {"A": A_p50},
-                "p90": {"A": A_p90},
-            },
-            "meta": {
-                "A": {
-                    "label": A["label"],
-                    "start_age": A["start_age"],
-                    "end_age": A["end_age"],
-                }
-            }
-        }
-        warning = None
-
-        if B:
-            # Pad B to full axis (null outside 52–84 etc.)
-            B_p10 = _pad_series(_to_map(B["ages"], B["p10"]), axis_ages)
-            B_p50 = _pad_series(_to_map(B["ages"], B["p50"]), axis_ages)
-            B_p90 = _pad_series(_to_map(B["ages"], B["p90"]), axis_ages)
-
+            # align both to same ages
+            m = min(len(A["ages"]), len(B["ages"]))
+            ages = A["ages"][:m]
+            payload["mc"]["ages"] = ages
+            payload["mc"]["p10"]["A"] = A["p10"][:m]
+            payload["mc"]["p50"]["A"] = A["p50"][:m]
+            payload["mc"]["p90"]["A"] = A["p90"][:m]
+            payload["mc"]["p10"]["B"] = B["p10"][:m]
+            payload["mc"]["p50"]["B"] = B["p50"][:m]
+            payload["mc"]["p90"]["B"] = B["p90"][:m]
             payload["labels"]["B"] = B["label"]
-            payload["mc"]["p10"]["B"] = B_p10
-            payload["mc"]["p50"]["B"] = B_p50
-            payload["mc"]["p90"]["B"] = B_p90
-            payload["meta"]["B"] = {
-                "label": B["label"],
-                "start_age": B["start_age"],
-                "end_age": B["end_age"],
-            }
 
-            # Soft warning (ignore None values)
-            def _max_or_zero(arr):
-                vals = [x for x in arr if x is not None]
-                return max(vals) if vals else 0
-            maxA = _max_or_zero(A_p50)
-            maxB = _max_or_zero(B_p50)
+            # Soft warning (don’t block render)
+            maxA = max(A["p50"][:m] or [0])
+            maxB = max(B["p50"][:m] or [0])
             if maxB > 1e9 or (maxA > 0 and maxB > 20 * maxA):
                 warning = "Scenario B may be using different units (rates/years). Overlay shown; please review inputs."
                 current_app.logger.warning(
@@ -827,6 +760,84 @@ def compare_retirement():
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
 
+
+
+
+
+# ==== Live-WhatIf: minimal POST endpoint (append-only) ====
+from flask import request, session, jsonify
+import secrets
+
+# Reuse your projects blueprint if it exists; otherwise create a tiny one.
+try:
+    bp_for_live = projects_bp
+except NameError:
+    from flask import Blueprint
+    bp_for_live = Blueprint("live_whatif", __name__)
+
+# Seed wrapper
+from models.retirement.retirement_calc import run_mc_with_seed
+
+# --- 🔁 USE YOUR REAL FUNCTION NAMES & MODULE PATH ---
+from models.retirement.retirement_calc import run_retirement_projection as _DET
+from models.retirement.retirement_calc import run_monte_carlo_simulation_locked_inputs as _MC
+# ----------------------------------------------------
+
+def _get_or_create_seed():
+    if "mc_seed" not in session:
+        session["mc_seed"] = secrets.randbits(32)
+    return int(session["mc_seed"])
+
+def _defaults():
+    # Must include required params for BOTH deterministic + MC
+    return dict(
+        # shared
+        current_age=53,
+        retirement_age=65,
+        annual_saving=48000,
+        saving_increase_rate=0.02,
+        current_assets=850000,
+        annual_expense=72000,
+        cpp_monthly=1200,
+        cpp_start_age=65,
+        cpp_end_age=70,
+        asset_liquidations=[],           # e.g. [{"age": 60, "amount": 100000}]
+        inflation_rate=0.025,
+        life_expectancy=92,
+        income_tax_rate=0.15,
+
+        # deterministic-specific
+        return_rate=0.065,
+        return_rate_after=0.045,
+
+        # MC-specific (mapped below)
+        return_mean=0.065,
+        return_mean_after=0.045,
+        return_std=0.10,
+        inflation_mean=0.025,
+        inflation_std=0.01,
+        num_simulations=2000,
+    )
+
+def _merge(d):
+    base = _defaults()
+    for k, v in (d or {}).items():
+        if k in base:
+            base[k] = v
+    return base
+
+def _harmonize(params: dict) -> dict:
+    """
+    If the UI doesn't provide an explicit CPP window, infer a window that
+    matches the main app semantics: start at retirement, end at life expectancy.
+    """
+    ra = int(params.get("retirement_age", 65))
+    le = int(params.get("life_expectancy", ra + 30))
+    if "cpp_start_age" not in params or params.get("cpp_start_age") is None:
+        params["cpp_start_age"] = ra
+    if "cpp_end_age" not in params or params.get("cpp_end_age") is None:
+        params["cpp_end_age"] = le
+    return params
 
 
 
@@ -1097,7 +1108,7 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     }
 
 
-@projects_bp.post("/api/live-update")
+@bp_for_live.post("/api/live-update")
 def live_update():
     payload = request.get_json(silent=True) or {}
 
@@ -1199,6 +1210,7 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 
