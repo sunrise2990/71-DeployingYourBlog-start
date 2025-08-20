@@ -515,29 +515,30 @@ def _mu_from_cagr(g, sigma):
         sigma = 0.0
     return g + 0.5 * sigma * sigma
 
+def _pick_mu(p, rate_key, mean_key, sigma, g_default):
+    """
+    Prefer CAGR (rate_key) -> convert to arithmetic once.
+    If CAGR absent but arithmetic (mean_key) is present -> pass through as-is.
+    """
+    if rate_key in p and p[rate_key] is not None:
+        return _mu_from_cagr(float(p[rate_key]), float(sigma))
+    if mean_key in p and p[mean_key] is not None:
+        return float(p[mean_key])
+    # fallback: treat default as CAGR and convert
+    return _mu_from_cagr(float(g_default), float(sigma))
+
 def _mc_args_from_params(p):
     """
     Build MC args from canonical params.
     IMPORTANT: MC needs arithmetic means; users provide CAGR (g).
-      We map: mu = g + 0.5*sigma^2
-    If explicit arithmetic means are already provided (return_mean/_after) and the
-    CAGR fields (return_rate/_after) are absent, we pass those through unchanged.
+      Mapping: mu = g + 0.5*sigma^2
+    If explicit arithmetic means are already provided *and the CAGR fields are
+    absent*, pass them through unchanged.
     """
     sigma = float(p.get("return_std", 0.08))
 
-    # Pre-ret mean
-    if "return_mean" in p and "return_rate" not in p:
-        mu_pre = float(p["return_mean"])
-    else:
-        g_pre = float(p.get("return_rate", p.get("return_mean", 0.06)))
-        mu_pre = _mu_from_cagr(g_pre, sigma)
-
-    # Post-ret mean
-    if "return_mean_after" in p and "return_rate_after" not in p:
-        mu_post = float(p["return_mean_after"])
-    else:
-        g_post = float(p.get("return_rate_after", p.get("return_mean_after", 0.04)))
-        mu_post = _mu_from_cagr(g_post, sigma)
+    mu_pre  = _pick_mu(p, "return_rate",       "return_mean",       sigma, g_default=0.06)
+    mu_post = _pick_mu(p, "return_rate_after", "return_mean_after", sigma, g_default=0.04)
 
     return {
         "current_age":          p["current_age"],
@@ -664,6 +665,8 @@ def compare_retirement():
 
         def _run_mc_for(scn):
             params = to_canonical_inputs(scn.inputs_json or {})
+
+            # Build MC args (now with correct CAGR->mean mapping)
             mc_args = _normalize_args(_mc_args_from_params(params))
             if current_app.debug:
                 current_app.logger.info("COMPARE mc_args for %s: %s", scn.scenario_name, mc_args)
@@ -710,7 +713,7 @@ def compare_retirement():
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- Build UNION axis & pad series (NEW) ----------
+        # ---------- Build UNION axis & pad series ----------
         axis_start = A["start_age"]
         axis_end   = A["end_age"]
         if B:
@@ -877,7 +880,7 @@ def _defaults():
         return_rate=0.065,
         return_rate_after=0.045,
 
-        # MC-specific (mapped below)
+        # MC-specific (these may be overridden by payload)
         return_mean=0.065,
         return_mean_after=0.045,
         return_std=0.10,
@@ -974,19 +977,8 @@ def _build_mc_args(p, n_sims):
     """
     sigma = float(p.get("return_std", 0.08))
 
-    # pre-ret
-    if "return_mean" in p and "return_rate" not in p:
-        mu_pre = float(p["return_mean"])
-    else:
-        g_pre = float(p.get("return_mean", p.get("return_rate", 0.06)))
-        mu_pre = _mu_from_cagr(g_pre, sigma)
-
-    # post-ret
-    if "return_mean_after" in p and "return_rate_after" not in p:
-        mu_post = float(p["return_mean_after"])
-    else:
-        g_post = float(p.get("return_mean_after", p.get("return_rate_after", 0.04)))
-        mu_post = _mu_from_cagr(g_post, sigma)
+    mu_pre  = _pick_mu(p, "return_rate",       "return_mean",       sigma, g_default=0.06)
+    mu_post = _pick_mu(p, "return_rate_after", "return_mean_after", sigma, g_default=0.04)
 
     return dict(
         current_age=int(p["current_age"]),
@@ -1009,6 +1001,7 @@ def _build_mc_args(p, n_sims):
         num_simulations=int(n_sims),
         income_tax_rate=float(p["income_tax_rate"]),
     )
+
 
 
 def _series_value_for(metric, det_curve, pct, idx):
