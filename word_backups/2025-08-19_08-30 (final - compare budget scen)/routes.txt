@@ -503,65 +503,33 @@ _PROJECTION_KEYS = {
 def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
-# --- CAGR -> arithmetic mean mapping for MC ---
-def _mu_from_cagr(g, sigma):
-    try:
-        g = float(g)
-    except Exception:
-        g = 0.0
-    try:
-        sigma = float(sigma)
-    except Exception:
-        sigma = 0.0
-    return g + 0.5 * sigma * sigma
-
 def _mc_args_from_params(p):
-    """
-    Build MC args from canonical params.
-    IMPORTANT: MC needs arithmetic means; users provide CAGR (g).
-      We map: mu = g + 0.5*sigma^2
-    If explicit arithmetic means are already provided (return_mean/_after) and the
-    CAGR fields (return_rate/_after) are absent, we pass those through unchanged.
-    """
-    sigma = float(p.get("return_std", 0.08))
-
-    # Pre-ret mean
-    if "return_mean" in p and "return_rate" not in p:
-        mu_pre = float(p["return_mean"])
-    else:
-        g_pre = float(p.get("return_rate", p.get("return_mean", 0.06)))
-        mu_pre = _mu_from_cagr(g_pre, sigma)
-
-    # Post-ret mean
-    if "return_mean_after" in p and "return_rate_after" not in p:
-        mu_post = float(p["return_mean_after"])
-    else:
-        g_post = float(p.get("return_rate_after", p.get("return_mean_after", 0.04)))
-        mu_post = _mu_from_cagr(g_post, sigma)
-
+    # MC-only params (std devs) may not be saved; default them here.
     return {
         "current_age":          p["current_age"],
         "retirement_age":       p["retirement_age"],
         "annual_saving":        p["annual_saving"],
         "saving_increase_rate": p["saving_increase_rate"],
         "current_assets":       p["current_assets"],
-        # arithmetic means fed to MC
-        "return_mean":          mu_pre,
-        "return_mean_after":    mu_post,
-        "return_std":           sigma,
+        "return_mean":          p["return_rate"],
+        "return_mean_after":    p["return_rate_after"],
+        "return_std":           p.get("return_std", 0.08),
         "annual_expense":       p["annual_expense"],
         "inflation_mean":       p["inflation_rate"],
-        "inflation_std":        float(p.get("inflation_std", 0.005)),
+        "inflation_std":        p.get("inflation_std", 0.005),
         "cpp_monthly":          p["cpp_monthly"],
         "cpp_start_age":        p["cpp_start_age"],
         "cpp_end_age":          p["cpp_end_age"],
         "asset_liquidations":   p.get("asset_liquidations", []),
         "life_expectancy":      p["life_expectancy"],
         "income_tax_rate":      p.get("income_tax_rate", 0.0),
-        "num_simulations":      int(p.get("num_simulations", 1000)),
+        "num_simulations":      1000,
     }
 
-
+# routes.py
+from flask import request, jsonify, current_app
+from flask_login import current_user
+import re
 
 # routes.py
 from flask import request, jsonify, current_app
@@ -967,37 +935,15 @@ def _build_det_args(p):
     return {k: p[k] for k in keys if k in p}
 
 def _build_mc_args(p, n_sims):
-    """
-    Live builder with the same CAGR->arithmetic mapping rule used elsewhere.
-    Guard against double-adding when arithmetic means are already present and
-    the CAGR fields are absent.
-    """
-    sigma = float(p.get("return_std", 0.08))
-
-    # pre-ret
-    if "return_mean" in p and "return_rate" not in p:
-        mu_pre = float(p["return_mean"])
-    else:
-        g_pre = float(p.get("return_mean", p.get("return_rate", 0.06)))
-        mu_pre = _mu_from_cagr(g_pre, sigma)
-
-    # post-ret
-    if "return_mean_after" in p and "return_rate_after" not in p:
-        mu_post = float(p["return_mean_after"])
-    else:
-        g_post = float(p.get("return_mean_after", p.get("return_rate_after", 0.04)))
-        mu_post = _mu_from_cagr(g_post, sigma)
-
     return dict(
         current_age=int(p["current_age"]),
         retirement_age=int(p["retirement_age"]),
         annual_saving=float(p["annual_saving"]),
         saving_increase_rate=float(p["saving_increase_rate"]),
         current_assets=float(p["current_assets"]),
-        # arithmetic means
-        return_mean=mu_pre,
-        return_mean_after=mu_post,
-        return_std=sigma,
+        return_mean=float(p.get("return_mean", p["return_rate"])),
+        return_mean_after=float(p.get("return_mean_after", p["return_rate_after"])),
+        return_std=float(p["return_std"]),
         annual_expense=float(p["annual_expense"]),
         inflation_mean=float(p.get("inflation_mean", p["inflation_rate"])),
         inflation_std=float(p["inflation_std"]),
@@ -1009,7 +955,6 @@ def _build_mc_args(p, n_sims):
         num_simulations=int(n_sims),
         income_tax_rate=float(p["income_tax_rate"]),
     )
-
 
 def _series_value_for(metric, det_curve, pct, idx):
     """Safe value lookup: clamp idx to the last known point to avoid None when target age > horizon."""
