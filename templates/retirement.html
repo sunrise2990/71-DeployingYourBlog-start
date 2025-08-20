@@ -958,178 +958,198 @@
     chart.update('none');
   }
 
-  // === Single debounced FULL request (300 sims) ===
-  async function ping() {
-    if (__awaitingSolveCommit) return;
-    const payload = collectParams();
-    payload.mode = 'full';
-    payload.coach_prefs = null;
+// --- small helper to read numeric inputs (with fallbacks) ---
+function readNum(sel, fallback = null) {
+  const el = document.querySelector(sel);
+  const v = (el && el.value != null) ? +el.value : NaN;
+  return Number.isFinite(v) ? v : fallback;
+}
 
-    const url = "{{ url_for('projects.live_update') }}";
-    const myId = ++__lastReqId;
-    const paintToken = ++__lastPaintToken;
+// When you *don't* have explicit CPP start/end inputs, we fall back to
+// retirement_age and life_expectancy so the Live window matches the main calc.
+function injectCPP(payload) {
+  const raFallback = readNum('#retirement_age', payload.retirement_age ?? 65);
+  const leFallback = readNum('#life_expectancy', payload.life_expectancy ?? (raFallback + 30));
 
-    if (__ctrl) { try { __ctrl.abort(); } catch {} }
-    __ctrl = new AbortController();
+  payload.cpp_monthly   = readNum('#cpp_monthly',   0);
+  payload.cpp_start_age = readNum('#cpp_start_age', raFallback);
+  payload.cpp_end_age   = readNum('#cpp_end_age',   leFallback);
+  return payload;
+}
 
-    const headers = { "Content-Type": "application/json" };
-    if (CSRF) headers["X-CSRFToken"] = CSRF;
+// === Single debounced FULL request (300 sims) ===
+async function ping() {
+  if (__awaitingSolveCommit) return;
 
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-        signal: __ctrl.signal
-      });
-      if (!res.ok) { console.error("live-update failed", res.status, await res.text()); return; }
-      if (myId !== __lastReqId) return;
-      const data = await res.json();
-      if (myId !== __lastReqId) return;
-      drawFromData(data, payload.current_age, paintToken);
-      renderCoach(data.coach || []);
-    } catch (e) {
-      if (e?.name !== 'AbortError') console.error("live-update error", e);
-    }
-  }
-  const debouncedPing = (() => { let t; return () => { clearTimeout(t); t = setTimeout(ping, 300); }; })();
+  const payload = injectCPP(collectParams());   // <-- NEW: mirror CPP
+  payload.mode = 'full';
+  payload.coach_prefs = null;
 
-  // Coach UI helpers
-  function applyPatch(patch){
-    if (!patch) return;
-    if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
-    if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
-    if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
-    if (patch.return_rate_after != null) {
-      elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
-      postVal.textContent = (+elPost.value).toFixed(1);
-    }
-    if (Array.isArray(patch.goal_events) && patch.goal_events.length){
-      window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
-    }
-    updateLabelsFromSliders();
-    debouncedPing();
-  }
-  function renderCoach(list){
-    const area = document.getElementById('coach_area');
-    if (!area) return;
-    area.innerHTML = '';
-    (list || []).forEach(s => {
-      const row = document.createElement('div');
-      if (s.type === 'status') {
-        row.className = 'alert alert-secondary py-2 mb-0';
-        row.textContent = s.detail || s.title || 'Status';
-      } else {
-        row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
-        row.innerHTML = `
-          <div>
-            <div class="fw-semibold">${s.title || 'Suggestion'}</div>
-            <div class="text-muted small">${s.why || ''}</div>
-          </div>
-          <div class="d-flex gap-2">
-            <button type="button" class="btn btn-sm btn-primary">Try it</button>
-          </div>`;
-        row.querySelector('button').addEventListener('click', () => applyPatch(s.patch));
-      }
-      area.appendChild(row);
-    });
-  }
+  const url = "{{ url_for('projects.live_update') }}";
+  const myId = ++__lastReqId;
+  const paintToken = ++__lastPaintToken;
 
-  // Event wiring — ONE request per change
-  [elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
-    .forEach(el => {
-      el.addEventListener('input', debouncedPing);
-      el.addEventListener('change', ping);
-    });
+  if (__ctrl) { try { __ctrl.abort(); } catch {} }
+  __ctrl = new AbortController();
 
-  // mirror selects: ping on change
-  [elRetStdSel, elInflStdSel].forEach(el => {
-    if (!el) return;
-    el.addEventListener('change', ping);
-  });
+  const headers = { "Content-Type": "application/json" };
+  if (CSRF) headers["X-CSRFToken"] = CSRF;
 
-  // Solver "At age" changes DO NOT mutate the slider anymore
-  scAge.addEventListener('input', debouncedPing);
-  scAge.addEventListener('change', ping);
-
-  // Solver evals — use FULL (300 sims) but DO NOT DRAW
-  async function evalWithOverrides(overrides){
-    const payload = collectParams();
-    Object.assign(payload, overrides || {});
-    if (overrides && Array.isArray(overrides.goal_events)) {
-      const manualLiqs = (gatherForm().asset_liquidations || []);
-      const allGoals = (payload.goal_events || []);
-      const fromGoals = goalsToLiquidations(allGoals, payload);
-      payload.asset_liquidations = [...manualLiqs, ...fromGoals];
-    }
-    payload.mode = 'full';
-    payload.coach_prefs = null;
-
-    const headers = { "Content-Type": "application/json" };
-    if (CSRF) headers["X-CSRFToken"] = CSRF;
-
-    const url = "{{ url_for('projects.live_update') }}";
+  try {
     const res = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: __ctrl.signal
     });
+    if (!res.ok) { console.error("live-update failed", res.status, await res.text()); return; }
+    if (myId !== __lastReqId) return;
     const data = await res.json();
-    return { data, startAge: payload.current_age };
+    if (myId !== __lastReqId) return;
+    drawFromData(data, payload.current_age, paintToken);
+    renderCoach(data.coach || []);
+  } catch (e) {
+    if (e?.name !== 'AbortError') console.error("live-update error", e);
   }
-  function curveByMetric(data, metric){
-    if (metric === 'det') return data.deterministic || [];
-    if (metric === 'p10') return data.p10 || [];
-    if (metric === 'p90') return data.p90 || [];
-    return data.p50 || [];
+}
+const debouncedPing = (() => { let t; return () => { clearTimeout(t); t = setTimeout(ping, 300); }; })();
+
+// Coach UI helpers
+function applyPatch(patch){
+  if (!patch) return;
+  if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
+  if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
+  if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
+  if (patch.return_rate_after != null) {
+    elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
+    postVal.textContent = (+elPost.value).toFixed(1);
   }
-  function valueAtAge(curve, startAge, age){
-    const idx = Math.max(0, Math.min(curve.length - 1, Math.round(age - startAge)));
-    return Number(curve[idx] ?? 0);
+  if (Array.isArray(patch.goal_events) && patch.goal_events.length){
+    window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
   }
-
-  async function commitFull(overrides, patch){
-    __awaitingSolveCommit = true;
-    if (__ctrl) { try { __ctrl.abort(); } catch {} }
-
-    const payload = collectParams();
-    Object.assign(payload, overrides || {});
-    payload.mode = 'full';
-    payload.coach_prefs = null;
-
-    const url = "{{ url_for('projects.live_update') }}";
-    const paintToken = ++__lastPaintToken;
-    __ctrl = new AbortController();
-
-    const headers = { "Content-Type": "application/json" };
-    if (CSRF) headers["X-CSRFToken"] = CSRF;
-
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-        signal: __ctrl.signal
-      });
-      if (!res.ok) { console.error("full-commit failed", res.status, await res.text()); return; }
-      const data = await res.json();
-      drawFromData(data, payload.current_age, paintToken);
-
-      // reflect patch without firing extra pings
-      if (patch) {
-        if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
-        if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
-        if (patch.annual_saving != null)  elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
-        if (patch.return_rate_after != null) {
-          elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
-          postVal.textContent = (+elPost.value).toFixed(1);
-        }
-        updateLabelsFromSliders();
-      }
-    } finally {
-      __awaitingSolveCommit = false;
+  updateLabelsFromSliders();
+  debouncedPing();
+}
+function renderCoach(list){
+  const area = document.getElementById('coach_area');
+  if (!area) return;
+  area.innerHTML = '';
+  (list || []).forEach(s => {
+    const row = document.createElement('div');
+    if (s.type === 'status') {
+      row.className = 'alert alert-secondary py-2 mb-0';
+      row.textContent = s.detail || s.title || 'Status';
+    } else {
+      row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
+      row.innerHTML = `
+        <div>
+          <div class="fw-semibold">${s.title || 'Suggestion'}</div>
+          <div class="text-muted small">${s.why || ''}</div>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-primary">Try it</button>
+        </div>`;
+      row.querySelector('button').addEventListener('click', () => applyPatch(s.patch));
     }
+    area.appendChild(row);
+  });
+}
+
+// Event wiring — ONE request per change
+[elAge, elExpMo, elPost, elPre, elSaveMo, elAssets, elTax, elInfl, elLife]
+  .forEach(el => {
+    el.addEventListener('input', debouncedPing);
+    el.addEventListener('change', ping);
+  });
+
+// mirror selects: ping on change
+[elRetStdSel, elInflStdSel].forEach(el => {
+  if (!el) return;
+  el.addEventListener('change', ping);
+});
+
+// Solver "At age" changes DO NOT mutate the slider anymore
+scAge.addEventListener('input', debouncedPing);
+scAge.addEventListener('change', ping);
+
+// Solver evals — use FULL (300 sims) but DO NOT DRAW
+async function evalWithOverrides(overrides){
+  const payload = injectCPP(collectParams());   // <-- NEW: mirror CPP
+  Object.assign(payload, overrides || {});
+  if (overrides && Array.isArray(overrides.goal_events)) {
+    const manualLiqs = (gatherForm().asset_liquidations || []);
+    const allGoals = (payload.goal_events || []);
+    const fromGoals = goalsToLiquidations(allGoals, payload);
+    payload.asset_liquidations = [...manualLiqs, ...fromGoals];
   }
+  payload.mode = 'full';
+  payload.coach_prefs = null;
+
+  const headers = { "Content-Type": "application/json" };
+  if (CSRF) headers["X-CSRFToken"] = CSRF;
+
+  const url = "{{ url_for('projects.live_update') }}";
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  return { data, startAge: payload.current_age };
+}
+function curveByMetric(data, metric){
+  if (metric === 'det') return data.deterministic || [];
+  if (metric === 'p10') return data.p10 || [];
+  if (metric === 'p90') return data.p90 || [];
+  return data.p50 || [];
+}
+function valueAtAge(curve, startAge, age){
+  const idx = Math.max(0, Math.min(curve.length - 1, Math.round(age - startAge)));
+  return Number(curve[idx] ?? 0);
+}
+
+async function commitFull(overrides, patch){
+  __awaitingSolveCommit = true;
+  if (__ctrl) { try { __ctrl.abort(); } catch {} }
+
+  const payload = injectCPP(collectParams());   // <-- NEW: mirror CPP
+  Object.assign(payload, overrides || {});
+  payload.mode = 'full';
+  payload.coach_prefs = null;
+
+  const url = "{{ url_for('projects.live_update') }}";
+  const paintToken = ++__lastPaintToken;
+  __ctrl = new AbortController();
+
+  const headers = { "Content-Type": "application/json" };
+  if (CSRF) headers["X-CSRFToken"] = CSRF;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: __ctrl.signal
+    });
+    if (!res.ok) { console.error("full-commit failed", res.status, await res.text()); return; }
+    const data = await res.json();
+    drawFromData(data, payload.current_age, paintToken);
+
+    // reflect patch without firing extra pings
+    if (patch) {
+      if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
+      if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
+      if (patch.annual_saving != null)  elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
+      if (patch.return_rate_after != null) {
+        elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
+        postVal.textContent = (+elPost.value).toFixed(1);
+      }
+      updateLabelsFromSliders();
+    }
+  } finally {
+    __awaitingSolveCommit = false;
+  }
+}
 
 async function solve(){
   scResult.textContent = 'Solving…';
