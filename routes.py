@@ -503,60 +503,33 @@ _PROJECTION_KEYS = {
 def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
-# --- CAGR -> arithmetic mean mapping for MC ---
-def _mu_from_cagr(g, sigma):
-    try:
-        g = float(g)
-    except Exception:
-        g = 0.0
-    try:
-        sigma = float(sigma)
-    except Exception:
-        sigma = 0.0
-    return g + 0.5 * sigma * sigma
-
-def _pick_mu(p, rate_key, mean_key, sigma, g_default):
-    """
-    Prefer CAGR (rate_key) -> convert once.
-    If CAGR absent but arithmetic (mean_key) present -> pass through.
-    """
-    if rate_key in p and p[rate_key] is not None:
-        return _mu_from_cagr(float(p[rate_key]), float(sigma))
-    if mean_key in p and p[mean_key] is not None:
-        return float(p[mean_key])
-    return _mu_from_cagr(float(g_default), float(sigma))
-
 def _mc_args_from_params(p):
-    """
-    Build MC args from canonical params.
-    Mapping: mu = g + 0.5*sigma^2
-    """
-    sigma = float(p.get("return_std", 0.08))
-    mu_pre  = _pick_mu(p, "return_rate",       "return_mean",       sigma, g_default=0.06)
-    mu_post = _pick_mu(p, "return_rate_after", "return_mean_after", sigma, g_default=0.04)
-
+    # MC-only params (std devs) may not be saved; default them here.
     return {
         "current_age":          p["current_age"],
         "retirement_age":       p["retirement_age"],
         "annual_saving":        p["annual_saving"],
         "saving_increase_rate": p["saving_increase_rate"],
         "current_assets":       p["current_assets"],
-        "return_mean":          mu_pre,
-        "return_mean_after":    mu_post,
-        "return_std":           sigma,
+        "return_mean":          p["return_rate"],
+        "return_mean_after":    p["return_rate_after"],
+        "return_std":           p.get("return_std", 0.08),
         "annual_expense":       p["annual_expense"],
         "inflation_mean":       p["inflation_rate"],
-        "inflation_std":        float(p.get("inflation_std", 0.005)),
+        "inflation_std":        p.get("inflation_std", 0.005),
         "cpp_monthly":          p["cpp_monthly"],
         "cpp_start_age":        p["cpp_start_age"],
         "cpp_end_age":          p["cpp_end_age"],
         "asset_liquidations":   p.get("asset_liquidations", []),
         "life_expectancy":      p["life_expectancy"],
         "income_tax_rate":      p.get("income_tax_rate", 0.0),
-        "num_simulations":      int(p.get("num_simulations", 1000)),
+        "num_simulations":      1000,
     }
 
-
+# routes.py
+from flask import request, jsonify, current_app
+from flask_login import current_user
+import re
 
 # routes.py
 from flask import request, jsonify, current_app
@@ -626,8 +599,8 @@ def compare_retirement():
             """
             Generic normalizer:
               - numeric strings -> numbers
-              - keys containing rate|mean|std: if 2..100 => divide by 100
-              - keys containing age|year|iter|seed|step|horizon|projection: -> int
+              - any key containing 'rate|mean|std': if 2..100 => divide by 100
+              - any key containing 'age|year|iter|seed|step|horizon|projection': -> int
               - keep end_age >= start_age
             """
             if not args:
@@ -635,11 +608,14 @@ def compare_retirement():
             a = {k: _to_num(v) for k, v in (args or {}).items()}
 
             for k, v in list(a.items()):
+                # percent-looking → decimal (7 -> 0.07)
                 if rate_like.search(k) and isinstance(v, (int, float)) and 2 <= v <= 1000:
                     a[k] = v / 100.0
+                # integers for ranges/sizes
                 if int_like.search(k) and isinstance(a[k], (int, float)):
                     a[k] = int(round(a[k]))
 
+            # keep ages sane
             if "start_age" in a and "end_age" in a:
                 sa, ea = a["start_age"], a["end_age"]
                 if isinstance(sa, int) and isinstance(ea, int) and ea < sa:
@@ -668,6 +644,7 @@ def compare_retirement():
             p90  = [float(x) for x in mc["percentiles"]["p90"]]
             n = min(len(ages), len(p10), len(p50), len(p90))
 
+            # span from args (fallback to arrays)
             start_age = mc_args.get("current_age") or (ages[0] if ages else None)
             end_age   = mc_args.get("life_expectancy") or (ages[-1] if ages else None)
             if start_age is not None: start_age = int(start_age)
@@ -684,7 +661,7 @@ def compare_retirement():
                 "end_age": end_age,
             }
 
-        # ---------- A ----------
+        # ---------- A (required) ----------
         try:
             A = _run_mc_for(scen_a)
         except Exception as e:
@@ -697,10 +674,11 @@ def compare_retirement():
             try:
                 B = _run_mc_for(scen_b)
             except Exception as e:
+                # Don’t 500—return A plus a clear message
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- UNION axis & pad ----------
+        # ---------- Build UNION axis & pad series (NEW) ----------
         axis_start = A["start_age"]
         axis_end   = A["end_age"]
         if B:
@@ -708,6 +686,7 @@ def compare_retirement():
             axis_end   = max(axis_end,   B["end_age"])
         axis_ages = list(range(int(axis_start), int(axis_end) + 1))
 
+        # A padded
         A_p10 = _pad_series(_to_map(A["ages"], A["p10"]), axis_ages)
         A_p50 = _pad_series(_to_map(A["ages"], A["p50"]), axis_ages)
         A_p90 = _pad_series(_to_map(A["ages"], A["p90"]), axis_ages)
@@ -724,6 +703,7 @@ def compare_retirement():
         warning = None
 
         if B:
+            # B padded (None outside its span)
             B_p10 = _pad_series(_to_map(B["ages"], B["p10"]), axis_ages)
             B_p50 = _pad_series(_to_map(B["ages"], B["p50"]), axis_ages)
             B_p90 = _pad_series(_to_map(B["ages"], B["p90"]), axis_ages)
@@ -733,6 +713,7 @@ def compare_retirement():
             payload["mc"]["p90"]["B"] = B_p90
             payload["labels"]["B"] = B["label"]
 
+            # Soft warning (ignore None values)
             def _max_or_zero(arr):
                 vals = [x for x in arr if x is not None]
                 return max(vals) if vals else 0
@@ -745,7 +726,8 @@ def compare_retirement():
                     maxA, maxB, A.get("_args"), B.get("_args")
                 )
 
-        # ---------- Sensitivity Compare ----------
+        # ---------- Sensitivity Compare (modular block) ----------
+        # Variables must match what you chart on the main page
         SENS_VARS = [
             "current_assets", "return_rate", "return_rate_after",
             "annual_saving", "annual_expense", "saving_increase_rate",
@@ -753,16 +735,24 @@ def compare_retirement():
         ]
 
         def _proj_args_for(scn):
+            """
+            Build deterministic projection args for sensitivity using the
+            same numeric normalization rules as MC.
+            """
             params = to_canonical_inputs(scn.inputs_json or {})
             cleaned = _normalize_args(params)
             return _projection_args_from_params(cleaned)
 
         def _run_sensitivity_for(proj_args):
+            """
+            Returns aligned arrays for dollar impact and elasticity (%).
+            """
             s = sensitivity_analysis(proj_args, SENS_VARS, delta=0.01)
             dollar = [s[v]["dollar_impact"] if v in s else 0 for v in SENS_VARS]
             pct    = [s[v]["sensitivity_pct"] if v in s else 0 for v in SENS_VARS]
             return dollar, pct
 
+        # A sensitivity
         sensA_dollar, sensA_pct = [], []
         try:
             proj_a = _proj_args_for(scen_a)
@@ -770,6 +760,7 @@ def compare_retirement():
         except Exception as e:
             current_app.logger.exception("Sensitivity A failed: %s", e)
 
+        # B sensitivity (optional)
         sensB_dollar, sensB_pct = None, None
         if scen_b:
             try:
@@ -787,6 +778,7 @@ def compare_retirement():
             payload["sens"]["B"] = sensB_dollar
             payload["sens"]["B_pct"] = sensB_pct
 
+        # ---------- warnings / debug ----------
         if warning:
             payload["warning"] = warning
 
@@ -811,15 +803,20 @@ def compare_retirement():
 from flask import request, session, jsonify
 import secrets
 
+# Reuse your projects blueprint if it exists; otherwise create a tiny one.
 try:
     bp_for_live = projects_bp
 except NameError:
     from flask import Blueprint
     bp_for_live = Blueprint("live_whatif", __name__)
 
+# Seed wrapper
 from models.retirement.retirement_calc import run_mc_with_seed
+
+# --- 🔁 USE YOUR REAL FUNCTION NAMES & MODULE PATH ---
 from models.retirement.retirement_calc import run_retirement_projection as _DET
 from models.retirement.retirement_calc import run_monte_carlo_simulation_locked_inputs as _MC
+# ----------------------------------------------------
 
 def _get_or_create_seed():
     if "mc_seed" not in session:
@@ -827,30 +824,28 @@ def _get_or_create_seed():
     return int(session["mc_seed"])
 
 def _defaults():
-    # neutral defaults so missing fields don't inflate results
+    # Must include required params for BOTH deterministic + MC
     return dict(
+        # shared
         current_age=53,
         retirement_age=65,
         annual_saving=48000,
         saving_increase_rate=0.02,
         current_assets=850000,
         annual_expense=72000,
-
-        # CPP neutral by default; client should send real values
-        cpp_monthly=0.0,
-        cpp_start_age=None,
-        cpp_end_age=None,
-
-        asset_liquidations=[],
+        cpp_monthly=1200,
+        cpp_start_age=65,
+        cpp_end_age=70,
+        asset_liquidations=[],           # e.g. [{"age": 60, "amount": 100000}]
         inflation_rate=0.025,
         life_expectancy=92,
         income_tax_rate=0.15,
 
-        # deterministic
+        # deterministic-specific
         return_rate=0.065,
         return_rate_after=0.045,
 
-        # MC (may be overridden)
+        # MC-specific (mapped below)
         return_mean=0.065,
         return_mean_after=0.045,
         return_std=0.10,
@@ -868,22 +863,14 @@ def _merge(d):
 
 def _harmonize(params: dict) -> dict:
     """
-    Only fill a CPP window if monthly > 0 and start/end are missing.
-    If monthly <= 0, neutralize and set a degenerate window to avoid surprises.
+    If the UI doesn't provide an explicit CPP window, infer a window that
+    matches the main calculator: start at retirement, end at life expectancy.
     """
     ra = int(params.get("retirement_age", 65))
     le = int(params.get("life_expectancy", ra + 30))
-
-    cm = float(params.get("cpp_monthly", 0) or 0)
-    if cm <= 0:
-        params["cpp_monthly"] = 0.0
+    if "cpp_start_age" not in params or params.get("cpp_start_age") is None:
         params["cpp_start_age"] = ra
-        params["cpp_end_age"] = ra
-        return params
-
-    if params.get("cpp_start_age") is None:
-        params["cpp_start_age"] = ra
-    if params.get("cpp_end_age") is None:
+    if "cpp_end_age" not in params or params.get("cpp_end_age") is None:
         params["cpp_end_age"] = le
     return params
 
@@ -891,9 +878,12 @@ def _harmonize(params: dict) -> dict:
 
 # Goals helpers
 from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
+# Coach helpers (still available, optional)
 from models.retirement.coach import coach_suggestions
 
+# ---------- shared helpers (coalesce + goal merge) ----------
 def _coalesce_liqs(liqs: list[dict]) -> list[dict]:
+    """Coalesce liquidations by age exactly like live_update already does."""
     if not liqs:
         return []
     liqs = sorted(liqs, key=lambda r: int(r.get("age", 0)))
@@ -911,6 +901,11 @@ def _coalesce_liqs(liqs: list[dict]) -> list[dict]:
     return out
 
 def _merge_goals_into_liqs(params: dict) -> list[dict]:
+    """
+    Expand params['goal_events'] to per-age and merge into existing
+    params['asset_liquidations'], returning a coalesced list.
+    Safe to call even if there are no goals.
+    """
     base_liqs = list(params.get("asset_liquidations") or [])
     goals = list(params.get("goal_events") or [])
     if not goals:
@@ -925,65 +920,41 @@ def _merge_goals_into_liqs(params: dict) -> list[dict]:
         merged = goals_to_liquidations_adapter(current_liqs=base_liqs, per_age=per_age)
         return _coalesce_liqs(merged)
     except Exception:
+        # Never fail hard on goal merge during solver/live calc
         return base_liqs
 
 
 # --- tiny helpers for the solver & sims ---
 def _build_det_args(p):
-    # safe CPP window defaults
-    ra = int(p["retirement_age"])
-    le = int(p["life_expectancy"])
-    cpp_start = int(p.get("cpp_start_age", ra))
-    cpp_end   = int(p.get("cpp_end_age",   le))
-    if cpp_end < cpp_start:
-        cpp_end = cpp_start
-
     keys = [
         "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
         "current_assets", "return_rate", "return_rate_after", "annual_expense",
+        "cpp_monthly", "cpp_start_age", "cpp_end_age",
         "asset_liquidations", "inflation_rate", "life_expectancy", "income_tax_rate",
     ]
-    out = {k: p[k] for k in keys if k in p}
-    out["cpp_monthly"] = float(p.get("cpp_monthly", 0) or 0)
-    out["cpp_start_age"] = cpp_start
-    out["cpp_end_age"] = cpp_end
-    return out
+    return {k: p[k] for k in keys if k in p}
 
 def _build_mc_args(p, n_sims):
-    sigma = float(p.get("return_std", 0.08))
-    mu_pre  = _pick_mu(p, "return_rate",       "return_mean",       sigma, g_default=0.06)
-    mu_post = _pick_mu(p, "return_rate_after", "return_mean_after", sigma, g_default=0.04)
-
-    ra = int(p["retirement_age"])
-    le = int(p["life_expectancy"])
-    cpp_start = int(p.get("cpp_start_age", ra))
-    cpp_end   = int(p.get("cpp_end_age",   le))
-    if cpp_end < cpp_start:
-        cpp_end = cpp_start
-
     return dict(
         current_age=int(p["current_age"]),
-        retirement_age=ra,
+        retirement_age=int(p["retirement_age"]),
         annual_saving=float(p["annual_saving"]),
         saving_increase_rate=float(p["saving_increase_rate"]),
         current_assets=float(p["current_assets"]),
-        return_mean=mu_pre,
-        return_mean_after=mu_post,
-        return_std=sigma,
+        return_mean=float(p.get("return_mean", p["return_rate"])),
+        return_mean_after=float(p.get("return_mean_after", p["return_rate_after"])),
+        return_std=float(p["return_std"]),
         annual_expense=float(p["annual_expense"]),
         inflation_mean=float(p.get("inflation_mean", p["inflation_rate"])),
         inflation_std=float(p["inflation_std"]),
-        cpp_monthly=float(p.get("cpp_monthly", 0) or 0),
-        cpp_start_age=cpp_start,
-        cpp_end_age=cpp_end,
+        cpp_monthly=float(p["cpp_monthly"]),
+        cpp_start_age=int(p["cpp_start_age"]),
+        cpp_end_age=int(p["cpp_end_age"]),
         asset_liquidations=list(p.get("asset_liquidations") or []),
-        life_expectancy=le,
+        life_expectancy=int(p["life_expectancy"]),
         num_simulations=int(n_sims),
         income_tax_rate=float(p["income_tax_rate"]),
     )
-
-
-
 
 def _series_value_for(metric, det_curve, pct, idx):
     """Safe value lookup: clamp idx to the last known point to avoid None when target age > horizon."""
@@ -1170,33 +1141,37 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
 def live_update():
     payload = request.get_json(silent=True) or {}
 
+    # speed mode: "lite" while dragging, "full" after user pauses or presses Solve
     mode = payload.get("mode", "full")
     is_lite = (mode == "lite")
+
+    # optional target/lever preferences for the solver/coach
     coach_prefs = payload.get("coach_prefs", {}) or {}
 
     params = _merge(payload)
-    params = _harmonize(params)  # now safe: won’t inflate CPP unless monthly>0
+    params = _harmonize(params)  # keep CPP window aligned with main calculator
 
     goal_events = params.get("goal_events") or []
 
-    # Goals -> liquidations
+    # ---- Expand goals to per-age cashflows (post-tax via liquidations) ----
     per_age = {}
     goals_error = None
     try:
         already_merged = bool(params.get("asset_liquidations"))
         if goal_events and not already_merged:
+            # Use the same merge+coalesce the coach uses
             params["asset_liquidations"] = _merge_goals_into_liqs(params)
     except Exception as e:
         goals_error = str(e)
         params["asset_liquidations"] = list(params.get("asset_liquidations") or [])
 
-    # Deterministic
+    # ---- Deterministic ----
     det_out = _DET(**_build_det_args(params))
     det_table = det_out.get("table", [])
     labels = [row.get("Year") for row in det_table]
     det_curve = [row.get("Asset") for row in det_table]
 
-    # Monte Carlo
+    # ---- Monte Carlo ----
     mc_params = _build_mc_args(
         params,
         n_sims=(500 if is_lite else params.get("num_simulations", params.get("n_sims", 2000)))
@@ -1206,15 +1181,16 @@ def live_update():
     pct = mc_out.get("percentiles", {})
     det_last = det_curve[-1] if det_curve else None
 
-    # Solve (optional)
+    # ---- Targeted solve (single lever) when FULL + prefs present ----
     solution = {}
     if not is_lite and coach_prefs:
         try:
+            # expected schema: {"target":{"metric":"det|p10|p50|p90","assets":..., "age":...}, "lever":...}
             solution = _solve_single_lever(params, coach_prefs, seed, _DET, _MC, run_mc_with_seed)
         except Exception as e:
             solution = {"error": str(e)}
 
-    # Coach (optional)
+    # ---- Coach suggestions (optional) only on FULL ----
     coach = []
     if not is_lite:
         try:
@@ -1236,8 +1212,8 @@ def live_update():
             "cpp_monthly": params["cpp_monthly"],
             "cpp_start_age": params["cpp_start_age"],
             "cpp_end_age": params["cpp_end_age"],
-            "return_rate": params.get("return_rate"),
-            "return_rate_after": params.get("return_rate_after"),
+            "return_rate": params["return_rate"],
+            "return_rate_after": params["return_rate_after"],
             "return_std": params["return_std"],
             "inflation_std": params["inflation_std"],
             "asset_liquidations": params["asset_liquidations"],
