@@ -521,37 +521,26 @@ def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
 def _mc_args_from_params(p):
-    """
-    Build MC kwargs from canonical scenario params.
-    Use the same rule as Live/What-If:
-      arithmetic mean = CAGR + 0.5 * sigma^2
-    where sigma is return_std (decimal).
-    """
-    std = float(p.get("return_std", 0.08) or 0.0)
-
-    # p["return_rate"] and p["return_rate_after"] are CAGR decimals (e.g., 0.09)
-    mean_pre  = float(p.get("return_rate", 0.0))       + 0.5 * (std ** 2)
-    mean_post = float(p.get("return_rate_after", 0.0)) + 0.5 * (std ** 2)
-
+    # MC-only params (std devs) may not be saved; default them here.
     return {
-        "current_age": int(p["current_age"]),
-        "retirement_age": int(p["retirement_age"]),
-        "annual_saving": float(p["annual_saving"]),
-        "saving_increase_rate": float(p["saving_increase_rate"]),
-        "current_assets": float(p["current_assets"]),
-        "return_mean": mean_pre,
-        "return_mean_after": mean_post,
-        "return_std": std,
-        "annual_expense": float(p["annual_expense"]),
-        "inflation_mean": float(p["inflation_rate"]),
-        "inflation_std": float(p.get("inflation_std", 0.005) or 0.0),
-        "cpp_monthly": float(p["cpp_monthly"]),
-        "cpp_start_age": int(p["cpp_start_age"]),
-        "cpp_end_age": int(p["cpp_end_age"]),
-        "asset_liquidations": list(p.get("asset_liquidations", [])),
-        "life_expectancy": int(p["life_expectancy"]),
-        "income_tax_rate": float(p.get("income_tax_rate", 0.0) or 0.0),
-        "num_simulations": 1000,
+        "current_age":          p["current_age"],
+        "retirement_age":       p["retirement_age"],
+        "annual_saving":        p["annual_saving"],
+        "saving_increase_rate": p["saving_increase_rate"],
+        "current_assets":       p["current_assets"],
+        "return_mean":          p["return_rate"],
+        "return_mean_after":    p["return_rate_after"],
+        "return_std":           p.get("return_std", 0.08),
+        "annual_expense":       p["annual_expense"],
+        "inflation_mean":       p["inflation_rate"],
+        "inflation_std":        p.get("inflation_std", 0.005),
+        "cpp_monthly":          p["cpp_monthly"],
+        "cpp_start_age":        p["cpp_start_age"],
+        "cpp_end_age":          p["cpp_end_age"],
+        "asset_liquidations":   p.get("asset_liquidations", []),
+        "life_expectancy":      p["life_expectancy"],
+        "income_tax_rate":      p.get("income_tax_rate", 0.0),
+        "num_simulations":      1000,
     }
 
 # routes.py
