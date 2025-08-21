@@ -770,6 +770,7 @@
       current_age, retirement_age, annual_saving, saving_increase_rate, current_assets,
       return_rate, return_rate_after, annual_expense, cpp_monthly, cpp_start_age, cpp_end_age,
       asset_liquidations, inflation_rate, life_expectancy, income_tax_rate,
+      // placeholders; will be recomputed by recalcMeans()
       return_mean: return_rate, return_mean_after: return_rate_after,
       return_std, inflation_mean: inflation_rate, inflation_std,
     };
@@ -791,6 +792,17 @@
       }
     }
     return out;
+  }
+
+  // ---------- NEW: central place to compute MC means from CAGR + σ ----------
+  function recalcMeans(formObj){
+    const s = Number(formObj.return_std) || 0;           // decimal (0.08, 0.12, ...)
+    const gPre  = Number(formObj.return_rate) || 0;      // CAGR (decimal)
+    const gPost = Number(formObj.return_rate_after) || 0;
+    formObj.return_mean       = gPre  + 0.5 * s * s;     // arithmetic means for MC draws
+    formObj.return_mean_after = gPost + 0.5 * s * s;
+    formObj.inflation_mean    = Number(formObj.inflation_rate) || 0;
+    return formObj;
   }
 
   // Chart
@@ -907,15 +919,12 @@
     // slider overrides
     form.retirement_age     = +elAge.value;
     form.annual_expense     = (+elExpMo.value) * 12;
-    form.return_rate_after  = (+elPost.value) / 100;
-    form.return_mean_after  = form.return_rate_after + 0.5 * Math.pow(form.return_std || 0, 2);
-    form.return_rate        = (+elPre.value) / 100;
-    form.return_mean        = form.return_rate       + 0.5 * Math.pow(form.return_std || 0, 2);
+    form.return_rate_after  = (+elPost.value) / 100;  // CAGR (decimal)
+    form.return_rate        = (+elPre.value) / 100;   // CAGR (decimal)
     form.annual_saving      = (+elSaveMo.value) * 12;
     form.current_assets     = +elAssets.value;
     form.income_tax_rate    = (+elTax.value) / 100;
     form.inflation_rate     = (+elInfl.value) / 100;
-    form.inflation_mean     = form.inflation_rate;
 
     // horizon strictly from slider (solver can extend when needed)
     form.life_expectancy    = +elLife.value;
@@ -927,6 +936,9 @@
     if (elInflStdSel && elInflStdSel.options.length) {
       const v = numFrom(elInflStdSel); if (Number.isFinite(v)) form.inflation_std = v/100;
     }
+
+    // recompute MC means from current sliders + σ (single source of truth)
+    recalcMeans(form);
 
     // Single-jump sim count
     form.num_simulations = 300;
@@ -1004,9 +1016,6 @@
       elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
       postVal.textContent = (+elPost.value).toFixed(1);
     }
-    if (Array.isArray(patch.goal_events) && patch.goal_events.length){
-      window.__coach_goals = (window.__coach_goals || []).concat(patch.goal_events);
-    }
     updateLabelsFromSliders();
     debouncedPing();
   }
@@ -1042,7 +1051,7 @@
       el.addEventListener('change', ping);
     });
 
-  // mirror selects: ping on change
+  // mirror selects: ping on change (values might be '8%' or '8', we normalize in collectParams)
   [elRetStdSel, elInflStdSel].forEach(el => {
     if (!el) return;
     el.addEventListener('change', ping);
@@ -1339,6 +1348,7 @@ async function solve(){
   }
 })();
 </script>
+
 
 
 
