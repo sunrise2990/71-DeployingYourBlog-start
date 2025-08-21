@@ -25,6 +25,14 @@ _CANON_KEYS = {
     "inflation_rate", "life_expectancy", "income_tax_rate",
 }
 
+
+def _arith_from_cagr(cagr: float, std: float) -> float:
+    """Convert geometric CAGR (r) to arithmetic mean (μ) used by MC. Inputs are decimals."""
+    r = float(cagr or 0.0)
+    s = float(std or 0.0)
+    return r + 0.5 * (s * s)
+
+
 def _to_int(v, d=0):
     try:
         return int(float(v))
@@ -315,7 +323,9 @@ def retirement():
                     ]
                 }
 
-
+                # --- Monte Carlo simulation (align MC mean with entered CAGR + vol) ---
+                mu_pre = _arith_from_cagr(return_rate, return_std)
+                mu_post = _arith_from_cagr(return_rate_after, return_std)
 
                 # Run Monte Carlo simulation
                 mc_output = run_monte_carlo_simulation_locked_inputs(
@@ -324,8 +334,8 @@ def retirement():
                     annual_saving=monthly_saving * 12,
                     saving_increase_rate=saving_increase_rate,
                     current_assets=current_assets,
-                    return_mean=return_rate,
-                    return_mean_after=return_rate_after,
+                    return_mean=mu_pre,
+                    return_mean_after=mu_post,
                     return_std=return_std,
                     annual_expense=monthly_living_expense * 12,
                     inflation_mean=inflation_rate,
@@ -504,16 +514,22 @@ def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
 def _mc_args_from_params(p):
-    # MC-only params (std devs) may not be saved; default them here.
+    std = float(p.get("return_std", 0.08))
+
+    mean_pre  = p.get("return_mean")
+    mean_post = p.get("return_mean_after")
+    if mean_pre  is None: mean_pre  = _arith_from_cagr(float(p["return_rate"]),       std)
+    if mean_post is None: mean_post = _arith_from_cagr(float(p["return_rate_after"]), std)
+
     return {
         "current_age":          p["current_age"],
         "retirement_age":       p["retirement_age"],
         "annual_saving":        p["annual_saving"],
         "saving_increase_rate": p["saving_increase_rate"],
         "current_assets":       p["current_assets"],
-        "return_mean":          p["return_rate"],
-        "return_mean_after":    p["return_rate_after"],
-        "return_std":           p.get("return_std", 0.08),
+        "return_mean":          float(mean_pre),
+        "return_mean_after":    float(mean_post),
+        "return_std":           std,
         "annual_expense":       p["annual_expense"],
         "inflation_mean":       p["inflation_rate"],
         "inflation_std":        p.get("inflation_std", 0.005),
@@ -935,15 +951,19 @@ def _build_det_args(p):
     return {k: p[k] for k in keys if k in p}
 
 def _build_mc_args(p, n_sims):
+    std = float(p["return_std"])
+    mean_pre  = float(p["return_mean"])       if "return_mean"       in p else _arith_from_cagr(float(p["return_rate"]),       std)
+    mean_post = float(p["return_mean_after"]) if "return_mean_after" in p else _arith_from_cagr(float(p["return_rate_after"]), std)
+
     return dict(
         current_age=int(p["current_age"]),
         retirement_age=int(p["retirement_age"]),
         annual_saving=float(p["annual_saving"]),
         saving_increase_rate=float(p["saving_increase_rate"]),
         current_assets=float(p["current_assets"]),
-        return_mean=float(p.get("return_mean", p["return_rate"])),
-        return_mean_after=float(p.get("return_mean_after", p["return_rate_after"])),
-        return_std=float(p["return_std"]),
+        return_mean=mean_pre,
+        return_mean_after=mean_post,
+        return_std=std,
         annual_expense=float(p["annual_expense"]),
         inflation_mean=float(p.get("inflation_mean", p["inflation_rate"])),
         inflation_std=float(p["inflation_std"]),
