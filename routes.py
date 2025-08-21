@@ -934,16 +934,23 @@ def _build_det_args(p):
     ]
     return {k: p[k] for k in keys if k in p}
 
+def _arith_from_cagr(cagr: float, sigma: float) -> float:
+    # for lognormal step: mu = CAGR + 0.5 * sigma^2
+    return float(cagr) + 0.5 * float(sigma) * float(sigma)
+
 def _build_mc_args(p, n_sims):
+    std = float(p["return_std"])
+    mean_pre  = _arith_from_cagr(float(p["return_rate"]),       std)
+    mean_post = _arith_from_cagr(float(p["return_rate_after"]), std)
     return dict(
         current_age=int(p["current_age"]),
         retirement_age=int(p["retirement_age"]),
         annual_saving=float(p["annual_saving"]),
         saving_increase_rate=float(p["saving_increase_rate"]),
         current_assets=float(p["current_assets"]),
-        return_mean=float(p.get("return_mean", p["return_rate"])),
-        return_mean_after=float(p.get("return_mean_after", p["return_rate_after"])),
-        return_std=float(p["return_std"]),
+        return_mean=mean_pre,                 # ← recomputed here
+        return_mean_after=mean_post,          # ← recomputed here
+        return_std=std,
         annual_expense=float(p["annual_expense"]),
         inflation_mean=float(p.get("inflation_mean", p["inflation_rate"])),
         inflation_std=float(p["inflation_std"]),
