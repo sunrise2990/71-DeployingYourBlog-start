@@ -324,8 +324,8 @@ def retirement():
                 }
 
                 # MC: use arithmetic means derived from CAGR + 0.5σ²
-                mean_pre  = _arith_from_cagr(return_rate,       return_std)
-                mean_post = _arith_from_cagr(return_rate_after, return_std)
+                mean_pre = float(p["return_rate"])
+                mean_post = float(p["return_rate_after"])
 
                 mc_output = run_monte_carlo_simulation_locked_inputs(
                     current_age=current_age,
