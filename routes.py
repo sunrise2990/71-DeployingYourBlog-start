@@ -23,6 +23,7 @@ _CANON_KEYS = {
     "cpp_monthly", "cpp_start_age", "cpp_end_age",
     "asset_liquidations",
     "inflation_rate", "life_expectancy", "income_tax_rate",
+    "return_std", "inflation_std",
 }
 
 
@@ -84,13 +85,21 @@ def to_canonical_inputs(raw: dict) -> dict:
     floats = {
         "annual_saving", "saving_increase_rate", "current_assets",
         "return_rate", "return_rate_after", "annual_expense",
-        "inflation_rate", "income_tax_rate", "cpp_monthly"
+        "inflation_rate", "income_tax_rate", "cpp_monthly",
+        "return_std", "inflation_std",
     }
     for k in list(p.keys()):
         if k in ints:
             p[k] = _to_int(p.get(k))
         elif k in floats:
             p[k] = _to_float(p.get(k))
+
+    # ===== EXACTLY HERE: % → decimal for std devs if user sent percenty values =====
+    if "return_std" in p and p["return_std"] > 1:
+        p["return_std"] /= 100.0
+    if "inflation_std" in p and p["inflation_std"] > 1:
+        p["inflation_std"] /= 100.0
+    # =============================================================================
 
     p.setdefault("asset_liquidations", [])
 
@@ -145,11 +154,11 @@ def canonical_to_form_inputs(canon: dict) -> dict:
         out[f"asset_liquidation_{i+1}"] = amt
         out[f"asset_liquidation_age_{i+1}"] = age
 
-    # Optional MC fields
+    # Optional MC fields — convert decimals back to % for the form dropdowns
     if "return_std" in d:
-        out["return_std"] = d["return_std"]
+        out["return_std"] = _to_float(d["return_std"]) * 100.0
     if "inflation_std" in d:
-        out["inflation_std"] = d["inflation_std"]
+        out["inflation_std"] = _to_float(d["inflation_std"]) * 100.0
 
     return out
 
@@ -1259,6 +1268,7 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 
