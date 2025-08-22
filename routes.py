@@ -896,7 +896,7 @@ def _defaults():
         return_std=0.10,
         inflation_mean=0.025,
         inflation_std=0.01,
-        num_simulations=1000,
+        num_simulations=2000,
     )
 
 def _merge(d):
@@ -1226,7 +1226,7 @@ def live_update():
     # ---- Monte Carlo ----
     mc_params = _build_mc_args(
         params,
-        n_sims=(500 if is_lite else params.get("num_simulations", params.get("n_sims", 1000)))
+        n_sims=(500 if is_lite else params.get("num_simulations", params.get("n_sims", 2000)))
     )
     seed = _get_or_create_seed()
     mc_out = run_mc_with_seed(seed, _MC, **mc_params)
@@ -1291,7 +1291,6 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
-
 
 
 
