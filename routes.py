@@ -326,18 +326,23 @@ def retirement():
 
                 # ---- Monte Carlo (TOP chart) -----------------------------------
                 # IMPORTANT: stochastic engine expects arithmetic drift.
-                sigma = max(0.0, float(return_std))            # σ (decimal)
-                mean_pre  = float(return_rate)       + 0.5 * sigma * sigma
+                sigma = max(0.0, float(return_std))  # σ (decimal)
+                mean_pre = float(return_rate) + 0.5 * sigma * sigma
                 mean_post = float(return_rate_after) + 0.5 * sigma * sigma
 
-                mc_output = run_monte_carlo_simulation_locked_inputs(
+                # use same session seed as Live What-If so medians match
+                seed = _get_or_create_seed()  # this is already defined below in the file
+
+                mc_output = run_mc_with_seed(
+                    seed,
+                    run_monte_carlo_simulation_locked_inputs,
                     current_age=int(current_age),
                     retirement_age=int(retirement_age),
                     annual_saving=float(monthly_saving_ui) * 12.0,
                     saving_increase_rate=float(saving_increase_rate),
                     current_assets=float(current_assets),
 
-                    # arithmetic means for the lognormal simulator
+                    # arithmetic means for the simulator
                     return_mean=mean_pre,
                     return_mean_after=mean_post,
                     return_std=sigma,
@@ -351,7 +356,7 @@ def retirement():
                     asset_liquidations=asset_liquidation,
                     life_expectancy=life_expectancy,
                     income_tax_rate=float(income_tax_rate),
-                    num_simulations=300,   # ← unified to 300
+                    num_simulations=300,  # keep 300 here
                 )
 
                 monte_carlo_data = {
@@ -523,24 +528,16 @@ def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
 def _mc_args_from_params(p):
-    """
-    MC args for Compare — unified with Live/Top:
-      - arithmetic drift = CAGR + 0.5 * sigma^2
-      - sigma = return_std (decimal)
-      - 300 simulations
-    """
-    sigma = float(p.get("return_std", 0.08) or 0.08)
-    mean_pre  = float(p["return_rate"])       + 0.5 * sigma * sigma
-    mean_post = float(p["return_rate_after"]) + 0.5 * sigma * sigma
+    # MC-only params (std devs) may not be saved; default them here.
     return {
         "current_age":          p["current_age"],
         "retirement_age":       p["retirement_age"],
         "annual_saving":        p["annual_saving"],
         "saving_increase_rate": p["saving_increase_rate"],
         "current_assets":       p["current_assets"],
-        "return_mean":          mean_pre,
-        "return_mean_after":    mean_post,
-        "return_std":           sigma,
+        "return_mean":          p["return_rate"],         # ← REVERT: no +0.5*σ² here
+        "return_mean_after":    p["return_rate_after"],   # ← REVERT: pass through
+        "return_std":           p.get("return_std", 0.08),
         "annual_expense":       p["annual_expense"],
         "inflation_mean":       p["inflation_rate"],
         "inflation_std":        p.get("inflation_std", 0.005),
@@ -550,13 +547,9 @@ def _mc_args_from_params(p):
         "asset_liquidations":   p.get("asset_liquidations", []),
         "life_expectancy":      p["life_expectancy"],
         "income_tax_rate":      p.get("income_tax_rate", 0.0),
-        "num_simulations":      300,   # ← unified to 300
+        "num_simulations":      300,   # ← REVERT to your prior working count (change to 300 if you want)
     }
 
-# routes.py
-from flask import request, jsonify, current_app
-from flask_login import current_user
-import re
 
 # routes.py
 from flask import request, jsonify, current_app
