@@ -23,8 +23,6 @@ _CANON_KEYS = {
     "cpp_monthly", "cpp_start_age", "cpp_end_age",
     "asset_liquidations",
     "inflation_rate", "life_expectancy", "income_tax_rate",
-    # MC-only (persist so Compare uses what you selected)
-    "return_std", "inflation_std", "num_simulations",
 }
 
 def _to_int(v, d=0):
@@ -78,9 +76,7 @@ def to_canonical_inputs(raw: dict) -> dict:
     floats = {
         "annual_saving", "saving_increase_rate", "current_assets",
         "return_rate", "return_rate_after", "annual_expense",
-        "inflation_rate", "income_tax_rate", "cpp_monthly",
-        # NEW:
-        "return_std","inflation_std"
+        "inflation_rate", "income_tax_rate", "cpp_monthly"
     }
     for k in list(p.keys()):
         if k in ints:
@@ -525,21 +521,19 @@ def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
 def _mc_args_from_params(p):
-    sigma = float(p.get("return_std", 0.08))
-    mean_pre  = float(p["return_rate"])       + 0.5 * sigma * sigma
-    mean_post = float(p["return_rate_after"]) + 0.5 * sigma * sigma
+    # MC-only params (std devs) may not be saved; default them here.
     return {
         "current_age":          p["current_age"],
         "retirement_age":       p["retirement_age"],
         "annual_saving":        p["annual_saving"],
         "saving_increase_rate": p["saving_increase_rate"],
         "current_assets":       p["current_assets"],
-        "return_mean":          mean_pre,          # arithmetic drift
-        "return_mean_after":    mean_post,         # arithmetic drift
-        "return_std":           sigma,
+        "return_mean":          p["return_rate"],
+        "return_mean_after":    p["return_rate_after"],
+        "return_std":           p.get("return_std", 0.08),
         "annual_expense":       p["annual_expense"],
         "inflation_mean":       p["inflation_rate"],
-        "inflation_std":        float(p.get("inflation_std", 0.005)),
+        "inflation_std":        p.get("inflation_std", 0.005),
         "cpp_monthly":          p["cpp_monthly"],
         "cpp_start_age":        p["cpp_start_age"],
         "cpp_end_age":          p["cpp_end_age"],
@@ -548,6 +542,11 @@ def _mc_args_from_params(p):
         "income_tax_rate":      p.get("income_tax_rate", 0.0),
         "num_simulations":      1000,
     }
+
+# routes.py
+from flask import request, jsonify, current_app
+from flask_login import current_user
+import re
 
 # routes.py
 from flask import request, jsonify, current_app
@@ -1264,6 +1263,7 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 
