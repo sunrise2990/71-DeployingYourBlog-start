@@ -163,6 +163,7 @@ def retirement():
     # Initialize all outputs and defaults
     result = None
     table = []
+
     # Default‐init chart and MC data to avoid missing‐key errors
     chart_data = {
         "Age": [],
@@ -176,12 +177,8 @@ def retirement():
         "Percentile_50": [],
         "Percentile_90": []
     }
-    depletion_stats = {
-        "age_75": 0.0,
-        "age_85": 0.0,
-        "age_90": 0.0,
-        "ever":   0.0
-    }
+    depletion_stats = {"age_75": 0.0, "age_85": 0.0, "age_90": 0.0, "ever": 0.0}
+
     reset = False
     retirement_age = None
 
@@ -196,7 +193,7 @@ def retirement():
         "Asset – Retirement", "Investment Return", "Return Rate", "Withdrawal Rate"
     ]
 
-    # Prepare sensitivity‐analysis headers and container
+    # Sensitivity table scaffolding
     sensitivity_headers = ["Variable", "Sensitivity (%)", "Dollar Impact ($)"]
     sensitivity_table = []
 
@@ -206,156 +203,175 @@ def retirement():
             reset = True
         elif action == "calculate":
             try:
-                # Helper to fetch+cast form inputs
-                def get_form_value(name, cast_func, default=0):
+                # ---- helpers ---------------------------------------------------
+                def get_form_value(name, caster, default=0):
                     val = request.form.get(name)
                     form_inputs[name] = val
-                    return cast_func(val) if val else default
+                    try:
+                        return caster(val) if val not in (None, "") else default
+                    except Exception:
+                        return default
 
-                # --- Gather form inputs ---
-                current_age            = get_form_value("current_age", int)
-                retirement_age         = get_form_value("retirement_age", int)
-                monthly_saving         = get_form_value("annual_saving", float)  # form field name kept as-is
-                return_rate            = get_form_value("return_rate", float) / 100
-                return_rate_after      = get_form_value("return_rate_after", float) / 100
-                lifespan               = get_form_value("lifespan", int)
-                monthly_living_expense = get_form_value("monthly_living_expense", float)
-                inflation_rate         = get_form_value("inflation_rate", float) / 100
-                current_assets         = get_form_value("current_assets", float)
-                saving_increase_rate   = get_form_value("saving_increase_rate", float) / 100
-                income_tax_rate        = get_form_value("income_tax_rate", float) / 100
+                def pct_to_dec(name):
+                    return get_form_value(name, float, 0.0) / 100.0
 
-                cpp_monthly = get_form_value("cpp_support", float)
-                cpp_from    = get_form_value("cpp_from_age", int)
-                cpp_to      = get_form_value("cpp_to_age", int)
+                # ---- gather inputs (UI units) --------------------------------
+                current_age            = get_form_value("current_age", int, 50)
+                retirement_age         = get_form_value("retirement_age", int, current_age + 10)
+                monthly_saving_ui      = get_form_value("annual_saving", float, 0.0)  # UI holds *monthly*
+                return_rate            = pct_to_dec("return_rate")        # CAGR pre-ret (decimal)
+                return_rate_after      = pct_to_dec("return_rate_after")  # CAGR post-ret (decimal)
+                lifespan               = get_form_value("lifespan", int, retirement_age + 25)
+                monthly_living_expense = get_form_value("monthly_living_expense", float, 0.0)
+                inflation_rate         = pct_to_dec("inflation_rate")
+                current_assets         = get_form_value("current_assets", float, 0.0)
+                saving_increase_rate   = pct_to_dec("saving_increase_rate")
+                income_tax_rate        = pct_to_dec("income_tax_rate")
 
-                return_std    = get_form_value("return_std", float) / 100
-                inflation_std = get_form_value("inflation_std", float) / 100
+                cpp_monthly = get_form_value("cpp_support", float, 0.0)
+                cpp_from    = get_form_value("cpp_from_age", int, retirement_age)
+                cpp_to      = get_form_value("cpp_to_age", int, lifespan)
 
-                # --- Collect asset liquidation events ---
+                return_std    = pct_to_dec("return_std")     # σ as decimal
+                inflation_std = pct_to_dec("inflation_std")  # σ for inflation (decimal)
+
+                # collect up to 3 liquidation events
                 asset_liquidation = []
                 for i in range(1, 4):
-                    amt = get_form_value(f"asset_liquidation_{i}", float)
-                    age = get_form_value(f"asset_liquidation_age_{i}", int)
-                    if amt != 0 and age > 0:
-                        asset_liquidation.append({"amount": amt, "age": age})
+                    amt = get_form_value(f"asset_liquidation_{i}", float, 0.0)
+                    age = get_form_value(f"asset_liquidation_age_{i}", int, 0)
+                    if amt and age:
+                        asset_liquidation.append({"amount": float(amt), "age": int(age)})
 
-                # --- Build baseline parameter dict ---
+                # guard horizon
+                life_expectancy = max(int(lifespan), int(retirement_age))
+
+                # ---- deterministic baseline (uses CAGR directly) --------------
                 baseline_params = {
-                    "current_age": current_age,
-                    "retirement_age": retirement_age,
-                    "annual_saving": monthly_saving * 12,  # convert form value to annual
-                    "saving_increase_rate": saving_increase_rate,
-                    "current_assets": current_assets,
-                    "return_rate": return_rate,
-                    "return_rate_after": return_rate_after,
-                    "annual_expense": monthly_living_expense * 12,
-                    "cpp_monthly": cpp_monthly,
-                    "cpp_start_age": cpp_from,
-                    "cpp_end_age": cpp_to,
+                    "current_age": int(current_age),
+                    "retirement_age": int(retirement_age),
+                    "annual_saving": float(monthly_saving_ui) * 12.0,  # UI monthly -> annual
+                    "saving_increase_rate": float(saving_increase_rate),
+                    "current_assets": float(current_assets),
+                    "return_rate": float(return_rate),                   # CAGR
+                    "return_rate_after": float(return_rate_after),       # CAGR
+                    "annual_expense": float(monthly_living_expense) * 12.0,
+                    "cpp_monthly": float(cpp_monthly),
+                    "cpp_start_age": int(cpp_from),
+                    "cpp_end_age": int(cpp_to),
                     "asset_liquidations": asset_liquidation,
-                    "inflation_rate": inflation_rate,
-                    "life_expectancy": lifespan,
-                    "income_tax_rate": income_tax_rate
+                    "inflation_rate": float(inflation_rate),
+                    "life_expectancy": life_expectancy,
+                    "income_tax_rate": float(income_tax_rate),
                 }
 
-                # Variables to test in sensitivity analysis
+                # ---- sensitivity (deterministic params) -----------------------
                 variables = [
                     "current_assets", "return_rate", "return_rate_after",
                     "annual_saving", "annual_expense", "saving_increase_rate",
                     "inflation_rate", "income_tax_rate", "retirement_age",
                 ]
-
-                # Run sensitivity analysis (includes dollar impact)
-                sensitivities = sensitivity_analysis(baseline_params, variables, delta=0.01)
-                sensitivity_table = [
-                    [
-                        var,
-                        f"{vals['sensitivity_pct']:.2f}%",
-                        f"${vals['dollar_impact']:,.0f}"
+                try:
+                    sensitivities = sensitivity_analysis(baseline_params, variables, delta=0.01)
+                    sensitivity_table = [
+                        [
+                            var,
+                            f"{vals.get('sensitivity_pct', 0.0):.2f}%",
+                            f"${vals.get('dollar_impact', 0.0):,.0f}",
+                        ]
+                        for var, vals in sensitivities.items()
                     ]
-                    for var, vals in sensitivities.items()
-                ]
+                except Exception:
+                    sensitivities = {}
+                    sensitivity_table = []
 
-                # --- Main projection run ---
+                # ---- deterministic projection/table ---------------------------
                 output = run_retirement_projection(**baseline_params)
-                result = output["final_assets"]
+                result = output.get("final_assets")
 
-                # Ensure Living_Exp_Retirement exists for every row
-                for row in output["table"]:
-                    if not row.get("Living_Exp_Retirement"):
+                # safety: ensure keys exist
+                rows = output.get("table", []) or []
+                for row in rows:
+                    if "Living_Exp_Retirement" not in row or row["Living_Exp_Retirement"] is None:
                         row["Living_Exp_Retirement"] = row.get("Living_Exp", 0)
 
-                # Build the projection table
                 table = [[
-                    row.get("Age"),
-                    row.get("Year"),
-                    row.get("Retire"),
-                    f"${row.get('Living_Exp', 0):,.0f}",
-                    f"${row.get('CPP_Support', 0):,.0f}" if row.get("CPP_Support") else "",
-                    f"${row.get('Income_Tax_Payment', 0):,.0f}",
-                    f"${row.get('Living_Exp_Retirement', 0):,.0f}",
-                    f"${row.get('Asset_Liquidation', 0):,.0f}" if row.get("Asset_Liquidation") else "",
-                    f"${row.get('Savings', 0):,.0f}" if row.get("Savings") else "",
-                    f"${row.get('Asset', 0):,.0f}",
-                    f"${row.get('Asset_Retirement', 0):,.0f}" if row.get("Asset_Retirement") else "",
-                    f"${row.get('Investment_Return', 0):,.0f}" if row.get("Investment_Return") is not None else "",
-                    f"{row.get('Return_Rate'):.1f}%" if row.get("Return_Rate") is not None else "",
-                    f"{row.get('Withdrawal_Rate'):.1f}%" if row.get("Withdrawal_Rate") is not None else ""
-                ] for row in output["table"]]
+                    r.get("Age"),
+                    r.get("Year"),
+                    r.get("Retire"),
+                    f"${(r.get('Living_Exp') or 0):,.0f}",
+                    f"${(r.get('CPP_Support') or 0):,.0f}" if r.get("CPP_Support") else "",
+                    f"${(r.get('Income_Tax_Payment') or 0):,.0f}",
+                    f"${(r.get('Living_Exp_Retirement') or 0):,.0f}",
+                    f"${(r.get('Asset_Liquidation') or 0):,.0f}" if r.get("Asset_Liquidation") else "",
+                    f"${(r.get('Savings') or 0):,.0f}" if r.get("Savings") else "",
+                    f"${(r.get('Asset') or 0):,.0f}",
+                    f"${(r.get('Asset_Retirement') or 0):,.0f}" if r.get("Asset_Retirement") else "",
+                    f"${(r.get('Investment_Return') or 0):,.0f}" if r.get("Investment_Return") is not None else "",
+                    f"{(r.get('Return_Rate') or 0):.1f}%" if r.get("Return_Rate") is not None else "",
+                    f"{(r.get('Withdrawal_Rate') or 0):.1f}%" if r.get("Withdrawal_Rate") is not None else "",
+                ] for r in rows]
 
-                # Prepare chart data
                 chart_data = {
-                    "Age": [r["Age"] for r in output["table"]],
-                    "Living_Exp_Retirement": [r["Living_Exp_Retirement"] for r in output["table"]],
-                    "Asset_Retirement": [r["Asset_Retirement"] or 0 for r in output["table"]],
+                    "Age": [r.get("Age") for r in rows],
+                    "Living_Exp_Retirement": [r.get("Living_Exp_Retirement") or 0 for r in rows],
+                    "Asset_Retirement": [r.get("Asset_Retirement") or 0 for r in rows],
                     "Withdrawal_Rate": [
-                        (r["Withdrawal_Rate"] / 100) if r["Withdrawal_Rate"] else None
-                        for r in output["table"]
-                    ]
+                        ((r.get("Withdrawal_Rate") or 0) / 100.0) if r.get("Withdrawal_Rate") is not None else None
+                        for r in rows
+                    ],
                 }
 
+                # ---- Monte Carlo (TOP chart) -----------------------------------
+                # IMPORTANT: stochastic engine expects arithmetic drift.
+                sigma = max(0.0, float(return_std))            # σ (decimal)
+                mean_pre  = float(return_rate)       + 0.5 * sigma * sigma
+                mean_post = float(return_rate_after) + 0.5 * sigma * sigma
 
-
-                # Run Monte Carlo simulation
                 mc_output = run_monte_carlo_simulation_locked_inputs(
-                    current_age=current_age,
-                    retirement_age=retirement_age,
-                    annual_saving=monthly_saving * 12,
-                    saving_increase_rate=saving_increase_rate,
-                    current_assets=current_assets,
-                    return_mean=return_rate,
-                    return_mean_after=return_rate_after,
-                    return_std=return_std,
-                    annual_expense=monthly_living_expense * 12,
-                    inflation_mean=inflation_rate,
-                    inflation_std=inflation_std,
-                    cpp_monthly=cpp_monthly,
-                    cpp_start_age=cpp_from,
-                    cpp_end_age=cpp_to,
+                    current_age=int(current_age),
+                    retirement_age=int(retirement_age),
+                    annual_saving=float(monthly_saving_ui) * 12.0,
+                    saving_increase_rate=float(saving_increase_rate),
+                    current_assets=float(current_assets),
+
+                    # arithmetic means for the lognormal simulator
+                    return_mean=mean_pre,
+                    return_mean_after=mean_post,
+                    return_std=sigma,
+
+                    annual_expense=float(monthly_living_expense) * 12.0,
+                    inflation_mean=float(inflation_rate),
+                    inflation_std=float(inflation_std),
+                    cpp_monthly=float(cpp_monthly),
+                    cpp_start_age=int(cpp_from),
+                    cpp_end_age=int(cpp_to),
                     asset_liquidations=asset_liquidation,
-                    life_expectancy=lifespan,
-                    income_tax_rate=income_tax_rate,
-                    num_simulations=1000
+                    life_expectancy=life_expectancy,
+                    income_tax_rate=float(income_tax_rate),
+                    num_simulations=1000,
                 )
+
                 monte_carlo_data = {
-                    "Age": mc_output["ages"],
-                    "Percentile_10": mc_output["percentiles"]["p10"],
-                    "Percentile_50": mc_output["percentiles"]["p50"],
-                    "Percentile_90": mc_output["percentiles"]["p90"]
+                    "Age": mc_output.get("ages", []),
+                    "Percentile_10": (mc_output.get("percentiles", {}) or {}).get("p10", []),
+                    "Percentile_50": (mc_output.get("percentiles", {}) or {}).get("p50", []),
+                    "Percentile_90": (mc_output.get("percentiles", {}) or {}).get("p90", []),
                 }
+                dp = mc_output.get("depletion_probs", {}) or {}
                 depletion_stats = {
-                    "age_75": mc_output["depletion_probs"].get(75, 0.0),
-                    "age_85": mc_output["depletion_probs"].get(85, 0.0),
-                    "age_90": mc_output["depletion_probs"].get(90, 0.0),
-                    "ever":   mc_output["depletion_probs"].get("ever", 0.0)
+                    "age_75": float(dp.get(75, 0.0)),
+                    "age_85": float(dp.get(85, 0.0)),
+                    "age_90": float(dp.get(90, 0.0)),
+                    "ever":   float(dp.get("ever", 0.0)),
                 }
 
             except Exception as e:
-                print("❌ Error in retirement projection:", e)
+                # Keep page rendering even if something went wrong
+                current_app.logger.exception("retirement POST failed: %s", e)
                 result = None
                 table = []
-                # chart_data, monte_carlo_data, depletion_stats remain at default
+                # chart_data, monte_carlo_data, depletion_stats remain defaults
 
     # Load saved scenarios for the user
     selected_scenario_id = request.form.get("load_scenario_select", "")
@@ -381,8 +397,9 @@ def retirement():
         saved_scenarios=saved_scenarios,
         sensitivities=sensitivities,
         sensitivity_headers=sensitivity_headers,
-        sensitivity_table=sensitivity_table
+        sensitivity_table=sensitivity_table,
     )
+
 
 
 
@@ -1246,6 +1263,7 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
+
 
 
 
