@@ -648,57 +648,31 @@ def compare_retirement():
             return [series_map.get(age, None) for age in axis_ages]
 
         def _run_mc_for(scn):
-            # Canonicalize scenario inputs (handles legacy keys/units)
             params = to_canonical_inputs(scn.inputs_json or {})
-
-            # Normalized copy for reading user-facing rates (CAGR) and ints
-            cleaned = _normalize_args(params)
-
-            # Base MC args scaffold (includes std devs, horizons, etc.)
             mc_args = _normalize_args(_mc_args_from_params(params))
-
-            # ── FIX: convert CAGR → arithmetic mean for the lognormal MC ──
-            # sigma is decimal (e.g., 0.12 after normalization)
-            sigma = float(mc_args.get("return_std", 0.0) or 0.0)
-
-            # CAGR (decimal) from the cleaned params
-            cagr_pre = float(cleaned.get("return_rate", 0.0) or 0.0)
-            cagr_post = float(cleaned.get("return_rate_after", 0.0) or 0.0)
-
-            # μ = g + ½·σ²
-            mc_args["return_mean"] = cagr_pre + 0.5 * sigma * sigma
-            mc_args["return_mean_after"] = cagr_post + 0.5 * sigma * sigma
-
-            # Keep inflation mean equal to its rate (no ½σ² on inflation)
-            mc_args["inflation_mean"] = float(
-                cleaned.get("inflation_rate", mc_args.get("inflation_mean", 0.0))
-            )
-
             if current_app.debug:
-                current_app.logger.info("COMPARE mc_args (fixed) for %s: %s",
-                                        scn.scenario_name, mc_args)
-            # ─────────────────────────────────────────────────────────────
+                current_app.logger.info("COMPARE mc_args for %s: %s", scn.scenario_name, mc_args)
 
             mc = run_monte_carlo_simulation_locked_inputs(**mc_args)
 
             ages = [int(x) for x in mc["ages"]]
-            p10 = [float(x) for x in mc["percentiles"]["p10"]]
-            p50 = [float(x) for x in mc["percentiles"]["p50"]]
-            p90 = [float(x) for x in mc["percentiles"]["p90"]]
+            p10  = [float(x) for x in mc["percentiles"]["p10"]]
+            p50  = [float(x) for x in mc["percentiles"]["p50"]]
+            p90  = [float(x) for x in mc["percentiles"]["p90"]]
             n = min(len(ages), len(p10), len(p50), len(p90))
 
             # span from args (fallback to arrays)
             start_age = mc_args.get("current_age") or (ages[0] if ages else None)
-            end_age = mc_args.get("life_expectancy") or (ages[-1] if ages else None)
+            end_age   = mc_args.get("life_expectancy") or (ages[-1] if ages else None)
             if start_age is not None: start_age = int(start_age)
-            if end_age is not None: end_age = int(end_age)
+            if end_age   is not None: end_age   = int(end_age)
 
             return {
                 "label": scn.scenario_name,
                 "ages": ages[:n],
-                "p10": p10[:n],
-                "p50": p50[:n],
-                "p90": p90[:n],
+                "p10":  p10[:n],
+                "p50":  p50[:n],
+                "p90":  p90[:n],
                 "_args": mc_args,
                 "start_age": start_age,
                 "end_age": end_age,
@@ -723,10 +697,10 @@ def compare_retirement():
 
         # ---------- Build UNION axis & pad series (NEW) ----------
         axis_start = A["start_age"]
-        axis_end = A["end_age"]
+        axis_end   = A["end_age"]
         if B:
             axis_start = min(axis_start, B["start_age"])
-            axis_end = max(axis_end, B["end_age"])
+            axis_end   = max(axis_end,   B["end_age"])
         axis_ages = list(range(int(axis_start), int(axis_end) + 1))
 
         # A padded
@@ -760,7 +734,6 @@ def compare_retirement():
             def _max_or_zero(arr):
                 vals = [x for x in arr if x is not None]
                 return max(vals) if vals else 0
-
             maxA = _max_or_zero(A_p50)
             maxB = _max_or_zero(B_p50)
             if maxB > 1e9 or (maxA > 0 and maxB > 20 * maxA):
@@ -769,7 +742,6 @@ def compare_retirement():
                     "Compare soft warning: maxA=%s maxB=%s | A_args=%s | B_args=%s",
                     maxA, maxB, A.get("_args"), B.get("_args")
                 )
-
 
         # ---------- Sensitivity Compare (modular block) ----------
         # Variables must match what you chart on the main page
@@ -1291,6 +1263,8 @@ def live_update():
         "debug": debug,
     }
     return jsonify(out), 200
+
+
 
 
 
