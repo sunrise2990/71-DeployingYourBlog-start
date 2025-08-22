@@ -1,16 +1,24 @@
-from flask import Blueprint, request, render_template, jsonify, flash, redirect, url_for
-import json
+from flask import Blueprint, request, render_template, jsonify, flash, redirect, url_for, current_app, session
 from flask_login import login_required, current_user
+from copy import deepcopy
+import json
+import logging
 import numpy as np
+import re
+import secrets
+
+from models import db
 from models.retirement.retirement_calc import (
     run_retirement_projection,
-    run_monte_carlo_simulation_locked_inputs, sensitivity_analysis
+    run_monte_carlo_simulation_locked_inputs,
+    sensitivity_analysis,
+    run_mc_with_seed,  # seed wrapper for live_update
 )
-from models import db
-from models.retirement.retirement_scenario import RetirementScenario  # adjust import path as needed
+from models.retirement.retirement_scenario import RetirementScenario  # adjust path if needed
+from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
+from models.retirement.coach import coach_suggestions
 
-from copy import deepcopy
-from flask import current_app
+logger = logging.getLogger(__name__)
 
 # -------------------------
 # Canonical keys + adapters
@@ -23,6 +31,8 @@ _CANON_KEYS = {
     "cpp_monthly", "cpp_start_age", "cpp_end_age",
     "asset_liquidations",
     "inflation_rate", "life_expectancy", "income_tax_rate",
+    # keep MC dispersion in DB too (decimals)
+    "return_std", "inflation_std",
 }
 
 def _to_int(v, d=0):
@@ -36,6 +46,17 @@ def _to_float(v, d=0.0):
         return float(v)
     except Exception:
         return d
+
+def _pct_to_dec_value(x, default=0.0):
+    """
+    Accept either decimals (0.12) or percents (12) and return a decimal.
+    Non-numeric returns default.
+    """
+    try:
+        v = float(x)
+        return v / 100.0 if v > 1.0 else v
+    except Exception:
+        return default
 
 def to_canonical_inputs(raw: dict) -> dict:
     """
@@ -76,7 +97,8 @@ def to_canonical_inputs(raw: dict) -> dict:
     floats = {
         "annual_saving", "saving_increase_rate", "current_assets",
         "return_rate", "return_rate_after", "annual_expense",
-        "inflation_rate", "income_tax_rate", "cpp_monthly"
+        "inflation_rate", "income_tax_rate", "cpp_monthly",
+        "return_std", "inflation_std",
     }
     for k in list(p.keys()):
         if k in ints:
@@ -84,13 +106,26 @@ def to_canonical_inputs(raw: dict) -> dict:
         elif k in floats:
             p[k] = _to_float(p.get(k))
 
+    # Normalize percent-like fields to decimals for storage
+    for k in [
+        "return_rate", "return_rate_after", "inflation_rate",
+        "income_tax_rate", "saving_increase_rate",
+        "return_std", "inflation_std",
+    ]:
+        if k in p:
+            p[k] = _pct_to_dec_value(p[k], p[k])
+
     p.setdefault("asset_liquidations", [])
 
     # keep only what engine accepts
     return {k: p[k] for k in _CANON_KEYS if k in p}
 
-
 def canonical_to_form_inputs(canon: dict) -> dict:
+    """
+    Convert canonical (DB; decimals) to the form's expected names/units.
+    - monthly living expense/saving shown in form
+    - return_std/inflation_std shown as percent strings matching select values
+    """
     d = dict(canon or {})
     out = {}
 
@@ -98,15 +133,14 @@ def canonical_to_form_inputs(canon: dict) -> dict:
     if "life_expectancy" in d:
         out["lifespan"] = _to_int(d["life_expectancy"])
 
-    # --- Living expense display: show MONTHLY in the form ---
+    # Living expense display: MONTHLY in the form
     if "annual_expense" in d:
         out["monthly_living_expense"] = _to_float(d["annual_expense"]) / 12.0
     elif "monthly_living_expense" in d:  # legacy rows
         out["monthly_living_expense"] = _to_float(d["monthly_living_expense"])
 
-    # --- Savings display: show MONTHLY in the form ---
+    # Savings display: MONTHLY in the form (canonical annual -> divide by 12)
     if "annual_saving" in d:
-        # If we have canonical fields (annual_expense present), treat as canonical annual and divide by 12.
         if "annual_expense" in d:
             out["annual_saving"] = _to_float(d["annual_saving"]) / 12.0
         else:
@@ -121,7 +155,7 @@ def canonical_to_form_inputs(canon: dict) -> dict:
     if "cpp_end_age" in d:
         out["cpp_to_age"] = _to_int(d["cpp_end_age"])
 
-    # Direct pass-throughs
+    # Direct pass-throughs (decimals ok; form will show as numbers/percents)
     for k in [
         "current_age", "retirement_age", "saving_increase_rate", "current_assets",
         "return_rate", "return_rate_after", "inflation_rate", "income_tax_rate"
@@ -137,34 +171,34 @@ def canonical_to_form_inputs(canon: dict) -> dict:
         out[f"asset_liquidation_{i+1}"] = amt
         out[f"asset_liquidation_age_{i+1}"] = age
 
-    # Optional MC fields
+    # MC std-dev fields: convert decimals -> strings the selects expect
     if "return_std" in d:
-        out["return_std"] = d["return_std"]
+        out["return_std"] = str(int(round(_to_float(d["return_std"]) * 100)))  # "8" / "12" / "18"
     if "inflation_std" in d:
-        out["inflation_std"] = d["inflation_std"]
+        out["inflation_std"] = f"{_to_float(d['inflation_std'])*100:.1f}"     # "0.5" / "1.0" / "2.0"
 
     return out
 
-# Define main projects blueprint (existing)
+# Define main blueprint (existing)
 projects_bp = Blueprint('projects', __name__, template_folder='templates')
 
-# Budget Reforecast route
+# ----------------- Misc routes (unchanged) -----------------
 @projects_bp.route("/projects/budget-reforecast")
 def budget_reforecast():
     return render_template("budget_reforecast.html")
 
-# Leasing pipeline route
 @projects_bp.route("/projects/budget-reforecast/leasing")
 def leasing_pipeline():
     return render_template("leasing_pipeline.html")
 
+# -------------------------- Retirement main --------------------------
 @projects_bp.route("/retirement", methods=["GET", "POST"])
 def retirement():
     # Initialize all outputs and defaults
     result = None
     table = []
 
-    # Default‐init chart and MC data to avoid missing‐key errors
+    # Default chart and MC containers
     chart_data = {
         "Age": [],
         "Living_Exp_Retirement": [],
@@ -277,7 +311,7 @@ def retirement():
                         [
                             var,
                             f"{vals.get('sensitivity_pct', 0.0):.2f}%",
-                            f"${vals.get('dollar_impact', 0.0):,.0f}",
+                            f\"${vals.get('dollar_impact', 0.0):,.0f}\",
                         ]
                         for var, vals in sensitivities.items()
                     ]
@@ -323,7 +357,7 @@ def retirement():
                 }
 
                 # ---- Monte Carlo (TOP chart) -----------------------------------
-                # IMPORTANT: stochastic engine expects arithmetic drift.
+                # stochastic engine expects arithmetic drift: μ = CAGR + 0.5·σ²
                 sigma = max(0.0, float(return_std))            # σ (decimal)
                 mean_pre  = float(return_rate)       + 0.5 * sigma * sigma
                 mean_post = float(return_rate_after) + 0.5 * sigma * sigma
@@ -367,11 +401,9 @@ def retirement():
                 }
 
             except Exception as e:
-                # Keep page rendering even if something went wrong
                 current_app.logger.exception("retirement POST failed: %s", e)
                 result = None
                 table = []
-                # chart_data, monte_carlo_data, depletion_stats remain defaults
 
     # Load saved scenarios for the user
     selected_scenario_id = request.form.get("load_scenario_select", "")
@@ -400,16 +432,8 @@ def retirement():
         sensitivity_table=sensitivity_table,
     )
 
-
-
-
 # ===== New Scenario Blueprint and Routes =====
-
-import logging
-import traceback
-
 scenarios_bp = Blueprint("scenarios", __name__, url_prefix="/scenarios")
-logger = logging.getLogger(__name__)
 
 @scenarios_bp.route("/save", methods=["POST"])
 @login_required
@@ -421,17 +445,15 @@ def save_scenario():
     if not scenario_name or inputs_json is None:
         return jsonify({"error": "Missing scenario_name or inputs_json"}), 400
 
-    # >>> ADD THIS: treat form's "Monthly Savings" as monthly, convert to annual for storage
+    # Convert form's "Monthly Savings" to annual for storage when saving raw form payloads
     try:
         if isinstance(inputs_json, dict) and "annual_saving" in inputs_json:
-            # Heuristic: presence of monthly_living_expense indicates a raw form payload
             if "monthly_living_expense" in inputs_json:
                 inputs_json["annual_saving"] = float(inputs_json["annual_saving"] or 0) * 12.0
     except Exception:
         pass
-    # <<< END ADD
 
-    # ✅ Normalize BEFORE persisting so rows are always canonical
+    # ✅ Normalize BEFORE persisting so rows are always canonical (decimals, σ kept)
     canon = to_canonical_inputs(inputs_json)
 
     existing = RetirementScenario.query.filter_by(
@@ -451,7 +473,6 @@ def save_scenario():
     db.session.commit()
     return jsonify({"message": "Scenario saved successfully."}), 200
 
-
 @scenarios_bp.route("/list", methods=["GET"])
 @login_required
 def list_scenarios():
@@ -467,7 +488,6 @@ def list_scenarios():
     ]
     return jsonify(result), 200
 
-
 @scenarios_bp.route("/load/<int:scenario_id>", methods=["GET"])
 @login_required
 def load_scenario(scenario_id):
@@ -480,6 +500,7 @@ def load_scenario(scenario_id):
 
     return jsonify(
         {
+            "id": scenario.id,
             "scenario_name": scenario.scenario_name,
             "inputs_json": form_inputs,  # form-ready keys
             "created_at": scenario.created_at.isoformat(),
@@ -487,8 +508,6 @@ def load_scenario(scenario_id):
         }
     ), 200
 
-
-# === DELETE a scenario ===
 @scenarios_bp.route("/delete/<int:scenario_id>", methods=["DELETE"])
 @login_required
 def delete_scenario(scenario_id):
@@ -504,10 +523,7 @@ def delete_scenario(scenario_id):
         db.session.rollback()
         return jsonify({"error": "Failed to delete scenario.", "details": str(e)}), 500
 
-
-# -------------------------------
-# Compare Two Scenarios (A vs. B)
-# -------------------------------
+# ------------------------------- Compare Two Scenarios -------------------------------
 
 # Whitelists for each engine
 _PROJECTION_KEYS = {
@@ -521,49 +537,45 @@ def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
 def _mc_args_from_params(p):
-    # MC-only params (std devs) may not be saved; default them here.
+    """
+    Build MC args from canonical params (all decimals).
+    Uses arithmetic means: μ = CAGR + 0.5·σ².
+    """
+    s = float(p.get("return_std", 0.08) or 0.0)               # σ (decimal)
+    mean_pre  = float(p["return_rate"])       + 0.5 * s * s   # μ_pre
+    mean_post = float(p["return_rate_after"]) + 0.5 * s * s   # μ_post
+
     return {
-        "current_age":          p["current_age"],
-        "retirement_age":       p["retirement_age"],
-        "annual_saving":        p["annual_saving"],
-        "saving_increase_rate": p["saving_increase_rate"],
-        "current_assets":       p["current_assets"],
-        "return_mean":          p["return_rate"],
-        "return_mean_after":    p["return_rate_after"],
-        "return_std":           p.get("return_std", 0.08),
-        "annual_expense":       p["annual_expense"],
-        "inflation_mean":       p["inflation_rate"],
-        "inflation_std":        p.get("inflation_std", 0.005),
-        "cpp_monthly":          p["cpp_monthly"],
-        "cpp_start_age":        p["cpp_start_age"],
-        "cpp_end_age":          p["cpp_end_age"],
-        "asset_liquidations":   p.get("asset_liquidations", []),
-        "life_expectancy":      p["life_expectancy"],
-        "income_tax_rate":      p.get("income_tax_rate", 0.0),
+        "current_age":          int(p["current_age"]),
+        "retirement_age":       int(p["retirement_age"]),
+        "annual_saving":        float(p["annual_saving"]),
+        "saving_increase_rate": float(p["saving_increase_rate"]),
+        "current_assets":       float(p["current_assets"]),
+        "return_mean":          mean_pre,
+        "return_mean_after":    mean_post,
+        "return_std":           s,
+        "annual_expense":       float(p["annual_expense"]),
+        "inflation_mean":       float(p["inflation_rate"]),
+        "inflation_std":        float(p.get("inflation_std", 0.005) or 0.0),
+        "cpp_monthly":          float(p["cpp_monthly"]),
+        "cpp_start_age":        int(p["cpp_start_age"]),
+        "cpp_end_age":          int(p["cpp_end_age"]),
+        "asset_liquidations":   list(p.get("asset_liquidations") or []),
+        "life_expectancy":      int(p["life_expectancy"]),
+        "income_tax_rate":      float(p.get("income_tax_rate", 0.0)),
         "num_simulations":      1000,
     }
-
-# routes.py
-from flask import request, jsonify, current_app
-from flask_login import current_user
-import re
-
-# routes.py
-from flask import request, jsonify, current_app
-from flask_login import current_user
-import re
 
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
     Adds Sensitivity Compare (dollar impact + elasticity) below MC.
-    Robust normalization for BOTH scenarios; never 500s because of B.
 
     UPDATED:
-    - Use the UNION of age spans (e.g., 45–90) for the x-axis.
-    - Pad each scenario's series with None outside its own span so Plotly
-      shows gaps (B only draws over 52–84, A over 45–90, etc.).
+    - Persist and use σ from DB.
+    - Use arithmetic means (μ = CAGR + 0.5·σ²) so it matches the top chart.
+    - Use UNION of age spans and pad with None outside own span.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -600,7 +612,7 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
-        # ---------- normalization helpers (GENERIC) ----------
+        # ---------- normalization helpers (for projection/sensitivity only) ----------
         rate_like = re.compile(r"(rate|mean|std)", re.I)
         int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection)", re.I)
 
@@ -648,8 +660,9 @@ def compare_retirement():
             return [series_map.get(age, None) for age in axis_ages]
 
         def _run_mc_for(scn):
-            params = to_canonical_inputs(scn.inputs_json or {})
-            mc_args = _normalize_args(_mc_args_from_params(params))
+            params = to_canonical_inputs(scn.inputs_json or {})  # decimals, includes stds if saved
+            mc_args = _mc_args_from_params(params)               # μ computed with σ here
+
             if current_app.debug:
                 current_app.logger.info("COMPARE mc_args for %s: %s", scn.scenario_name, mc_args)
 
@@ -691,11 +704,10 @@ def compare_retirement():
             try:
                 B = _run_mc_for(scen_b)
             except Exception as e:
-                # Don’t 500—return A plus a clear message
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- Build UNION axis & pad series (NEW) ----------
+        # ---------- Build UNION axis & pad series ----------
         axis_start = A["start_age"]
         axis_end   = A["end_age"]
         if B:
@@ -743,8 +755,7 @@ def compare_retirement():
                     maxA, maxB, A.get("_args"), B.get("_args")
                 )
 
-        # ---------- Sensitivity Compare (modular block) ----------
-        # Variables must match what you chart on the main page
+        # ---------- Sensitivity Compare (deterministic) ----------
         SENS_VARS = [
             "current_assets", "return_rate", "return_rate_after",
             "annual_saving", "annual_expense", "saving_increase_rate",
@@ -752,18 +763,11 @@ def compare_retirement():
         ]
 
         def _proj_args_for(scn):
-            """
-            Build deterministic projection args for sensitivity using the
-            same numeric normalization rules as MC.
-            """
-            params = to_canonical_inputs(scn.inputs_json or {})
-            cleaned = _normalize_args(params)
+            params = to_canonical_inputs(scn.inputs_json or {})     # decimals
+            cleaned = _normalize_args(params)                        # cast ints etc (safe)
             return _projection_args_from_params(cleaned)
 
         def _run_sensitivity_for(proj_args):
-            """
-            Returns aligned arrays for dollar impact and elasticity (%).
-            """
             s = sensitivity_analysis(proj_args, SENS_VARS, delta=0.01)
             dollar = [s[v]["dollar_impact"] if v in s else 0 for v in SENS_VARS]
             pct    = [s[v]["sensitivity_pct"] if v in s else 0 for v in SENS_VARS]
@@ -814,26 +818,14 @@ def compare_retirement():
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
 
+# ------------------------- Live What-If API -------------------------
 
+# Reuse your projects blueprint
+bp_for_live = projects_bp
 
-# ==== Live-WhatIf: minimal POST endpoint (append-only) ====
-from flask import request, session, jsonify
-import secrets
-
-# Reuse your projects blueprint if it exists; otherwise create a tiny one.
-try:
-    bp_for_live = projects_bp
-except NameError:
-    from flask import Blueprint
-    bp_for_live = Blueprint("live_whatif", __name__)
-
-# Seed wrapper
-from models.retirement.retirement_calc import run_mc_with_seed
-
-# --- 🔁 USE YOUR REAL FUNCTION NAMES & MODULE PATH ---
+# Deterministic + MC aliases
 from models.retirement.retirement_calc import run_retirement_projection as _DET
 from models.retirement.retirement_calc import run_monte_carlo_simulation_locked_inputs as _MC
-# ----------------------------------------------------
 
 def _get_or_create_seed():
     if "mc_seed" not in session:
@@ -891,14 +883,7 @@ def _harmonize(params: dict) -> dict:
         params["cpp_end_age"] = le
     return params
 
-
-
-# Goals helpers
-from models.retirement.goals import expand_goals_to_per_age, goals_to_liquidations_adapter
-# Coach helpers (still available, optional)
-from models.retirement.coach import coach_suggestions
-
-# ---------- shared helpers (coalesce + goal merge) ----------
+# ---------- shared helpers (goals) ----------
 def _coalesce_liqs(liqs: list[dict]) -> list[dict]:
     """Coalesce liquidations by age exactly like live_update already does."""
     if not liqs:
@@ -937,11 +922,8 @@ def _merge_goals_into_liqs(params: dict) -> list[dict]:
         merged = goals_to_liquidations_adapter(current_liqs=base_liqs, per_age=per_age)
         return _coalesce_liqs(merged)
     except Exception:
-        # Never fail hard on goal merge during solver/live calc
         return base_liqs
 
-
-# --- tiny helpers for the solver & sims ---
 def _build_det_args(p):
     keys = [
         "current_age", "retirement_age", "annual_saving", "saving_increase_rate",
@@ -965,8 +947,8 @@ def _build_mc_args(p, n_sims):
         annual_saving=float(p["annual_saving"]),
         saving_increase_rate=float(p["saving_increase_rate"]),
         current_assets=float(p["current_assets"]),
-        return_mean=mean_pre,                 # ← recomputed here
-        return_mean_after=mean_post,          # ← recomputed here
+        return_mean=mean_pre,                 # recomputed
+        return_mean_after=mean_post,          # recomputed
         return_std=std,
         annual_expense=float(p["annual_expense"]),
         inflation_mean=float(p.get("inflation_mean", p["inflation_rate"])),
@@ -1002,13 +984,12 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
       { "target": { "metric": "det|p10|p50|p90", "assets": 2000000, "age": 90 },
         "lever":  "retirement_age|annual_expense|annual_saving|post_ret_return",
       }
-    Returns {"patch": {...}, "achieved": float, "lever_value": value, "summary": str} or {}
     """
     target = (prefs or {}).get("target") or {}
     metric = target.get("metric") or "p50"
     want_assets = float(target.get("assets") or 0.0)
 
-    # Clamp target age to horizon so asking for age 90 with life=84 doesn't read as None/0
+    # Clamp target age to horizon
     start_age = int(p0["current_age"])
     life = int(p0["life_expectancy"])
     req_age = int(target.get("age") or life)
@@ -1018,16 +999,13 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
 
     # Build a quick evaluator (mirrors server live path + goal merge)
     def eval_assets(p):
-        # Ensure any goal_events are reflected as liquidations for the sim
         p_eval = dict(p)
         p_eval["asset_liquidations"] = _merge_goals_into_liqs(p_eval)
 
-        # deterministic
         det_out = _DET(**_build_det_args(p_eval))
         det_tbl = det_out.get("table", [])
         det_curve = [row.get("Asset") for row in det_tbl]
 
-        # fast MC — honor requested num_simulations if present (default 300)
         n_sims = int(p_eval.get("num_simulations", 300))
         mc = run_mc_with_seed(seed, _MC, **_build_mc_args(p_eval, n_sims=n_sims))
         pct = mc.get("percentiles", {})
@@ -1036,7 +1014,6 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         return _series_value_for(metric, det_curve, pct, idx)
 
     base_val = eval_assets(dict(p0))
-    # If we already exceed target, return no-op patch
     if base_val is not None and base_val >= want_assets:
         return {
             "patch": {},
@@ -1045,7 +1022,7 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
             "summary": f"Already meets target ({metric} @ {target_age} = ${base_val:,.0f})"
         }
 
-    # Define ranges & direction per lever (monotonic assumptions)
+    # Define ranges & direction per lever
     low, high, inc = None, None, +1
 
     def apply_lever(p, x):
@@ -1056,64 +1033,58 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         elif lever == "annual_saving":
             p["annual_saving"] = max(0.0, float(x))
         elif lever == "post_ret_return":
-            xr = max(0.0, float(x))  # decimal (e.g., 0.06 for 6%)
+            xr = max(0.0, float(x))  # decimal
             p["return_rate_after"] = xr
             p["return_mean_after"] = xr
         return p
 
     if lever == "retirement_age":
-        # Honor horizon and current age; never allow retiring at/after life expectancy
         low  = max(int(p0["current_age"]), 50)
         high = min(80, max(int(p0["current_age"]) + 1, life - 1))
-        inc  = +1  # increasing age increases assets
+        inc  = +1
     elif lever == "annual_expense":
-        low, high, inc = 0.0, float(p0["annual_expense"]) * 1.5, -1  # more spend ↓ assets
+        low, high, inc = 0.0, float(p0["annual_expense"]) * 1.5, -1
     elif lever == "annual_saving":
         low, high, inc = 0.0, max(float(p0["annual_saving"]) * 2.0, 120000.0), +1
     elif lever == "post_ret_return":
-        low, high, inc = 0.0, 0.12, +1  # 0% .. 12% post-ret return (decimal)
+        low, high, inc = 0.0, 0.12, +1
     else:
         return {}
 
-    # Check attainability
     p_low  = apply_lever(dict(p0), low)
     v_low  = eval_assets(p_low)
     p_high = apply_lever(dict(p0), high)
     v_high = eval_assets(p_high)
 
-    # Normalize monotonic orientation so "low" is below target and "high" can reach it
     def below(v): return (v is None) or (v < want_assets)
     def above(v): return (v is not None) and (v >= want_assets)
 
     feasible = True
     if inc > 0:
-        if above(v_low):   # already enough at low bound
+        if above(v_low):
             high = low
         elif not above(v_high):
             feasible = False
     else:
-        # decreasing lever value improves assets (spending)
-        if above(v_high):  # already enough at higher spend (unlikely)
+        if above(v_high):
             low = high
         elif not above(v_low):
             feasible = False
 
     if not feasible:
-        # pick closer bound
         pick = (high if (abs((v_high or 0) - want_assets) <= abs((v_low or 0) - want_assets)) else low)
         ach = eval_assets(apply_lever(dict(p0), pick))
-        return {"patch": apply_lever({}, pick), "achieved": float(ach or 0.0),
-                "lever_value": pick, "summary": "Target not reachable within bounds; using nearest bound."}
+        return {
+            "patch": apply_lever({}, pick),
+            "achieved": float(ach or 0.0),
+            "lever_value": pick,
+            "summary": "Target not reachable within bounds; using nearest bound."
+        }
 
-    # Binary search
     best_x, best_v = None, None
     max_iter = 16
-    tolX = (
-        0.25 if lever == "retirement_age"
-        else 0.0005 if lever == "post_ret_return"  # ~0.05%
-        else 50.0                                   # ~$50 annual
-    )
-    tolF = 500.0  # $500 tolerance on assets
+    tolX = 0.25 if lever == "retirement_age" else (0.0005 if lever == "post_ret_return" else 50.0)
+    tolF = 500.0
 
     lo, hi = low, high
     while max_iter > 0 and abs(hi - lo) > tolX:
@@ -1134,7 +1105,6 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
     xStar = (best_x if best_x is not None else (hi if inc > 0 else lo))
     vStar = (best_v if best_v is not None else eval_assets(apply_lever(dict(p0), xStar)))
 
-    # Round/format lever value
     patch = {}
     if lever == "retirement_age":
         patch["retirement_age"] = int(round(xStar))
@@ -1160,30 +1130,24 @@ def _solve_single_lever(p0, prefs, seed, _DET, _MC, run_mc_with_seed):
         "summary": f"{lever.replace('_',' ')} → {patch} gives {metric} @ {target_age} ≈ ${float(vStar or 0.0):,.0f}"
     }
 
-
 @bp_for_live.post("/api/live-update")
 def live_update():
     payload = request.get_json(silent=True) or {}
-
-    # speed mode: "lite" while dragging, "full" after user pauses or presses Solve
     mode = payload.get("mode", "full")
     is_lite = (mode == "lite")
-
-    # optional target/lever preferences for the solver/coach
     coach_prefs = payload.get("coach_prefs", {}) or {}
 
     params = _merge(payload)
-    params = _harmonize(params)  # keep CPP window aligned with main calculator
+    params = _harmonize(params)
 
     goal_events = params.get("goal_events") or []
 
-    # ---- Expand goals to per-age cashflows (post-tax via liquidations) ----
+    # ---- Goals -> liquidations ----
     per_age = {}
     goals_error = None
     try:
         already_merged = bool(params.get("asset_liquidations"))
         if goal_events and not already_merged:
-            # Use the same merge+coalesce the coach uses
             params["asset_liquidations"] = _merge_goals_into_liqs(params)
     except Exception as e:
         goals_error = str(e)
@@ -1209,7 +1173,6 @@ def live_update():
     solution = {}
     if not is_lite and coach_prefs:
         try:
-            # expected schema: {"target":{"metric":"det|p10|p50|p90","assets":..., "age":...}, "lever":...}
             solution = _solve_single_lever(params, coach_prefs, seed, _DET, _MC, run_mc_with_seed)
         except Exception as e:
             solution = {"error": str(e)}
