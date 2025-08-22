@@ -521,32 +521,36 @@ def _projection_args_from_params(p):
     return {k: p[k] for k in _PROJECTION_KEYS if k in p}
 
 def _mc_args_from_params(p):
-    # MC-only params (std devs) may not be saved; default them here.
+    """
+    Build MC kwargs from canonical scenario params.
+    Use arithmetic mean = CAGR + 0.5 * sigma^2, where sigma is return_std (decimal).
+    """
+    std = float(p.get("return_std", 0.08) or 0.0)
+
+    mean_pre  = float(p.get("return_rate", 0.0))       + 0.5 * (std ** 2)
+    mean_post = float(p.get("return_rate_after", 0.0)) + 0.5 * (std ** 2)
+
     return {
-        "current_age":          p["current_age"],
-        "retirement_age":       p["retirement_age"],
-        "annual_saving":        p["annual_saving"],
-        "saving_increase_rate": p["saving_increase_rate"],
-        "current_assets":       p["current_assets"],
-        "return_mean":          p["return_rate"],
-        "return_mean_after":    p["return_rate_after"],
-        "return_std":           p.get("return_std", 0.08),
-        "annual_expense":       p["annual_expense"],
-        "inflation_mean":       p["inflation_rate"],
-        "inflation_std":        p.get("inflation_std", 0.005),
-        "cpp_monthly":          p["cpp_monthly"],
-        "cpp_start_age":        p["cpp_start_age"],
-        "cpp_end_age":          p["cpp_end_age"],
-        "asset_liquidations":   p.get("asset_liquidations", []),
-        "life_expectancy":      p["life_expectancy"],
-        "income_tax_rate":      p.get("income_tax_rate", 0.0),
-        "num_simulations":      1000,
+        "current_age": int(p["current_age"]),
+        "retirement_age": int(p["retirement_age"]),
+        "annual_saving": float(p["annual_saving"]),
+        "saving_increase_rate": float(p["saving_increase_rate"]),
+        "current_assets": float(p["current_assets"]),
+        "return_mean": mean_pre,
+        "return_mean_after": mean_post,
+        "return_std": std,
+        "annual_expense": float(p["annual_expense"]),
+        "inflation_mean": float(p["inflation_rate"]),
+        "inflation_std": float(p.get("inflation_std", 0.005) or 0.0),
+        "cpp_monthly": float(p["cpp_monthly"]),
+        "cpp_start_age": int(p["cpp_start_age"]),
+        "cpp_end_age": int(p["cpp_end_age"]),
+        "asset_liquidations": list(p.get("asset_liquidations", [])),
+        "life_expectancy": int(p["life_expectancy"]),
+        "income_tax_rate": float(p.get("income_tax_rate", 0.0) or 0.0),
+        "num_simulations": 1000,
     }
 
-# routes.py
-from flask import request, jsonify, current_app
-from flask_login import current_user
-import re
 
 # routes.py
 from flask import request, jsonify, current_app
@@ -557,13 +561,14 @@ import re
 def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
-    Adds Sensitivity Compare (dollar impact + elasticity) below MC.
-    Robust normalization for BOTH scenarios; never 500s because of B.
 
-    UPDATED:
-    - Use the UNION of age spans (e.g., 45–90) for the x-axis.
-    - Pad each scenario's series with None outside its own span so Plotly
-      shows gaps (B only draws over 52–84, A over 45–90, etc.).
+    Updates:
+    - Accept page 'mirror' overrides for return_std and inflation_std
+      from either form fields or JSON.
+    - Compute MC means as arithmetic means:
+        return_mean = return_rate + 0.5 * (return_std**2)
+        return_mean_after = return_rate_after + 0.5 * (return_std**2)
+    - Use union of age spans and pad with None so series align.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -600,7 +605,7 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
-        # ---------- normalization helpers (GENERIC) ----------
+        # ---------- helpers ----------
         rate_like = re.compile(r"(rate|mean|std)", re.I)
         int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection)", re.I)
 
@@ -613,17 +618,10 @@ def compare_retirement():
                 return v
 
         def _normalize_args(args: dict) -> dict:
-            """
-            Generic normalizer:
-              - numeric strings -> numbers
-              - any key containing 'rate|mean|std': if 2..100 => divide by 100
-              - any key containing 'age|year|iter|seed|step|horizon|projection': -> int
-              - keep end_age >= start_age
-            """
+            """Generic normalizer for sensitivity (deterministic) args."""
             if not args:
                 return {}
             a = {k: _to_num(v) for k, v in (args or {}).items()}
-
             for k, v in list(a.items()):
                 # percent-looking → decimal (7 -> 0.07)
                 if rate_like.search(k) and isinstance(v, (int, float)) and 2 <= v <= 1000:
@@ -631,14 +629,62 @@ def compare_retirement():
                 # integers for ranges/sizes
                 if int_like.search(k) and isinstance(a[k], (int, float)):
                     a[k] = int(round(a[k]))
-
-            # keep ages sane
             if "start_age" in a and "end_age" in a:
                 sa, ea = a["start_age"], a["end_age"]
                 if isinstance(sa, int) and isinstance(ea, int) and ea < sa:
                     a["end_age"] = sa
-
             return a
+
+        # parse optional std-dev overrides from the request (mirror selects)
+        json_payload = request.get_json(silent=True) or {}
+
+        def _parse_std(v):
+            if v is None or v == "":
+                return None
+            try:
+                x = float(str(v).replace("%", "").strip())
+            except Exception:
+                return None
+            # accept "18" (percent) or "0.18" (decimal)
+            return (x / 100.0) if x > 1.5 else x
+
+        ret_std_override  = _parse_std(request.form.get("return_std")    or json_payload.get("return_std"))
+        infl_std_override = _parse_std(request.form.get("inflation_std") or json_payload.get("inflation_std"))
+
+        # Build MC args from a scenario row + optional std overrides
+        def _build_mc_args_from_scn(scn, ret_std=None, infl_std=None):
+            p = to_canonical_inputs(scn.inputs_json or {})
+
+            # apply page overrides when present
+            if ret_std is not None:
+                p["return_std"] = float(ret_std)
+            if infl_std is not None:
+                p["inflation_std"] = float(infl_std)
+
+            sigma = float(p.get("return_std", 0.08) or 0.0)
+            mean_pre  = float(p.get("return_rate", 0.0))       + 0.5 * (sigma ** 2)
+            mean_post = float(p.get("return_rate_after", 0.0)) + 0.5 * (sigma ** 2)
+
+            return {
+                "current_age":        int(p["current_age"]),
+                "retirement_age":     int(p["retirement_age"]),
+                "annual_saving":      float(p["annual_saving"]),
+                "saving_increase_rate": float(p["saving_increase_rate"]),
+                "current_assets":     float(p["current_assets"]),
+                "return_mean":        mean_pre,
+                "return_mean_after":  mean_post,
+                "return_std":         sigma,
+                "annual_expense":     float(p["annual_expense"]),
+                "inflation_mean":     float(p.get("inflation_rate", 0.0)),
+                "inflation_std":      float(p.get("inflation_std", 0.005) or 0.0),
+                "cpp_monthly":        float(p.get("cpp_monthly", 0.0)),
+                "cpp_start_age":      int(p.get("cpp_start_age", p["retirement_age"])),
+                "cpp_end_age":        int(p.get("cpp_end_age", p["life_expectancy"])),
+                "asset_liquidations": list(p.get("asset_liquidations", [])),
+                "life_expectancy":    int(p["life_expectancy"]),
+                "income_tax_rate":    float(p.get("income_tax_rate", 0.0) or 0.0),
+                "num_simulations":    1000,
+            }
 
         # --- helpers to pad series to a shared axis ---
         def _to_map(ages, values):
@@ -647,9 +693,8 @@ def compare_retirement():
         def _pad_series(series_map, axis_ages):
             return [series_map.get(age, None) for age in axis_ages]
 
-        def _run_mc_for(scn):
-            params = to_canonical_inputs(scn.inputs_json or {})
-            mc_args = _normalize_args(_mc_args_from_params(params))
+        def _run_mc_for(scn, ret_std=None, infl_std=None):
+            mc_args = _build_mc_args_from_scn(scn, ret_std, infl_std)
             if current_app.debug:
                 current_app.logger.info("COMPARE mc_args for %s: %s", scn.scenario_name, mc_args)
 
@@ -661,7 +706,6 @@ def compare_retirement():
             p90  = [float(x) for x in mc["percentiles"]["p90"]]
             n = min(len(ages), len(p10), len(p50), len(p90))
 
-            # span from args (fallback to arrays)
             start_age = mc_args.get("current_age") or (ages[0] if ages else None)
             end_age   = mc_args.get("life_expectancy") or (ages[-1] if ages else None)
             if start_age is not None: start_age = int(start_age)
@@ -680,7 +724,7 @@ def compare_retirement():
 
         # ---------- A (required) ----------
         try:
-            A = _run_mc_for(scen_a)
+            A = _run_mc_for(scen_a, ret_std_override, infl_std_override)
         except Exception as e:
             current_app.logger.exception("compare_retirement A failed")
             return jerr(f"MC failed for scenario '{scen_a.scenario_name}': {e}", 400)
@@ -689,13 +733,12 @@ def compare_retirement():
         B = None
         if scen_b:
             try:
-                B = _run_mc_for(scen_b)
+                B = _run_mc_for(scen_b, ret_std_override, infl_std_override)
             except Exception as e:
-                # Don’t 500—return A plus a clear message
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- Build UNION axis & pad series (NEW) ----------
+        # ---------- Build UNION axis & pad series ----------
         axis_start = A["start_age"]
         axis_end   = A["end_age"]
         if B:
@@ -720,7 +763,6 @@ def compare_retirement():
         warning = None
 
         if B:
-            # B padded (None outside its span)
             B_p10 = _pad_series(_to_map(B["ages"], B["p10"]), axis_ages)
             B_p50 = _pad_series(_to_map(B["ages"], B["p50"]), axis_ages)
             B_p90 = _pad_series(_to_map(B["ages"], B["p90"]), axis_ages)
@@ -730,7 +772,6 @@ def compare_retirement():
             payload["mc"]["p90"]["B"] = B_p90
             payload["labels"]["B"] = B["label"]
 
-            # Soft warning (ignore None values)
             def _max_or_zero(arr):
                 vals = [x for x in arr if x is not None]
                 return max(vals) if vals else 0
@@ -743,8 +784,7 @@ def compare_retirement():
                     maxA, maxB, A.get("_args"), B.get("_args")
                 )
 
-        # ---------- Sensitivity Compare (modular block) ----------
-        # Variables must match what you chart on the main page
+        # ---------- Sensitivity Compare (deterministic) ----------
         SENS_VARS = [
             "current_assets", "return_rate", "return_rate_after",
             "annual_saving", "annual_expense", "saving_increase_rate",
@@ -752,24 +792,16 @@ def compare_retirement():
         ]
 
         def _proj_args_for(scn):
-            """
-            Build deterministic projection args for sensitivity using the
-            same numeric normalization rules as MC.
-            """
             params = to_canonical_inputs(scn.inputs_json or {})
             cleaned = _normalize_args(params)
             return _projection_args_from_params(cleaned)
 
         def _run_sensitivity_for(proj_args):
-            """
-            Returns aligned arrays for dollar impact and elasticity (%).
-            """
             s = sensitivity_analysis(proj_args, SENS_VARS, delta=0.01)
             dollar = [s[v]["dollar_impact"] if v in s else 0 for v in SENS_VARS]
             pct    = [s[v]["sensitivity_pct"] if v in s else 0 for v in SENS_VARS]
             return dollar, pct
 
-        # A sensitivity
         sensA_dollar, sensA_pct = [], []
         try:
             proj_a = _proj_args_for(scen_a)
@@ -777,7 +809,6 @@ def compare_retirement():
         except Exception as e:
             current_app.logger.exception("Sensitivity A failed: %s", e)
 
-        # B sensitivity (optional)
         sensB_dollar, sensB_pct = None, None
         if scen_b:
             try:
@@ -795,7 +826,6 @@ def compare_retirement():
             payload["sens"]["B"] = sensB_dollar
             payload["sens"]["B_pct"] = sensB_pct
 
-        # ---------- warnings / debug ----------
         if warning:
             payload["warning"] = warning
 
@@ -813,6 +843,7 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
