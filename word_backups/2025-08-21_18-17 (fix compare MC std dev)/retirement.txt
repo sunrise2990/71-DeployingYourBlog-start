@@ -941,7 +941,7 @@ function collectParams() {
   form.inflation_mean = form.inflation_rate;
 
   // Single-jump sim count
-  form.num_simulations = 1000;
+  form.num_simulations = 300;
 
   // goals ➜ liqs
   const goalsTable = (window.GoalsModule?.current() || []);
