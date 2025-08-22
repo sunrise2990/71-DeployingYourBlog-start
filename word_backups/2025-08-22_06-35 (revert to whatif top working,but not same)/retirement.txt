@@ -282,7 +282,7 @@
 
         {% if depletion_stats %}
         <div class="mt-4">
-            <h6>⚠️ Depletion Risk Summary (Based on 300 Monte Carlo Simulations)</h6>
+            <h6>⚠️ Depletion Risk Summary (Based on 1,000 Monte Carlo Simulations)</h6>
             <ul class="mb-1">
                 <li><strong>{{ (depletion_stats.age_75 * 100) | round(1) }}%</strong> chance of running out of money by <strong>age 75</strong></li>
                 <li><strong>{{ (depletion_stats.age_85 * 100) | round(1) }}%</strong> chance by <strong>age 85</strong></li>

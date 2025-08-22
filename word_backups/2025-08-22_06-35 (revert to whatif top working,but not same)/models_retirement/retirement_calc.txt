@@ -168,7 +168,7 @@ def run_monte_carlo_simulation_locked_inputs(
     cpp_end_age: int,
     asset_liquidations: list,
     life_expectancy: int,
-    num_simulations: int = 300,
+    num_simulations: int = 1000,
     income_tax_rate=0.15,
 ):
     years = life_expectancy - current_age + 1
