@@ -23,6 +23,7 @@ _CANON_KEYS = {
     "cpp_monthly", "cpp_start_age", "cpp_end_age",
     "asset_liquidations",
     "inflation_rate", "life_expectancy", "income_tax_rate",
+    "return_std", "inflation_std",
 }
 
 def _to_int(v, d=0):
@@ -76,7 +77,8 @@ def to_canonical_inputs(raw: dict) -> dict:
     floats = {
         "annual_saving", "saving_increase_rate", "current_assets",
         "return_rate", "return_rate_after", "annual_expense",
-        "inflation_rate", "income_tax_rate", "cpp_monthly"
+        "inflation_rate", "income_tax_rate", "cpp_monthly",
+        "return_std", "inflation_std",
     }
     for k in list(p.keys()):
         if k in ints:
@@ -324,18 +326,23 @@ def retirement():
 
                 # ---- Monte Carlo (TOP chart) -----------------------------------
                 # IMPORTANT: stochastic engine expects arithmetic drift.
-                sigma = max(0.0, float(return_std))            # σ (decimal)
-                mean_pre  = float(return_rate)       + 0.5 * sigma * sigma
+                sigma = max(0.0, float(return_std))  # σ (decimal)
+                mean_pre = float(return_rate) + 0.5 * sigma * sigma
                 mean_post = float(return_rate_after) + 0.5 * sigma * sigma
 
-                mc_output = run_monte_carlo_simulation_locked_inputs(
+                # use same session seed as Live What-If so medians match
+                seed = _get_or_create_seed()  # this is already defined below in the file
+
+                mc_output = run_mc_with_seed(
+                    seed,
+                    run_monte_carlo_simulation_locked_inputs,
                     current_age=int(current_age),
                     retirement_age=int(retirement_age),
                     annual_saving=float(monthly_saving_ui) * 12.0,
                     saving_increase_rate=float(saving_increase_rate),
                     current_assets=float(current_assets),
 
-                    # arithmetic means for the lognormal simulator
+                    # arithmetic means for the simulator
                     return_mean=mean_pre,
                     return_mean_after=mean_post,
                     return_std=sigma,
@@ -349,7 +356,7 @@ def retirement():
                     asset_liquidations=asset_liquidation,
                     life_expectancy=life_expectancy,
                     income_tax_rate=float(income_tax_rate),
-                    num_simulations=1000,
+                    num_simulations=300,  # keep 300 here
                 )
 
                 monte_carlo_data = {
@@ -528,8 +535,8 @@ def _mc_args_from_params(p):
         "annual_saving":        p["annual_saving"],
         "saving_increase_rate": p["saving_increase_rate"],
         "current_assets":       p["current_assets"],
-        "return_mean":          p["return_rate"],
-        "return_mean_after":    p["return_rate_after"],
+        "return_mean":          p["return_rate"],         # ← REVERT: no +0.5*σ² here
+        "return_mean_after":    p["return_rate_after"],   # ← REVERT: pass through
         "return_std":           p.get("return_std", 0.08),
         "annual_expense":       p["annual_expense"],
         "inflation_mean":       p["inflation_rate"],
@@ -540,13 +547,9 @@ def _mc_args_from_params(p):
         "asset_liquidations":   p.get("asset_liquidations", []),
         "life_expectancy":      p["life_expectancy"],
         "income_tax_rate":      p.get("income_tax_rate", 0.0),
-        "num_simulations":      1000,
+        "num_simulations":      300,   # ← REVERT to your prior working count (change to 300 if you want)
     }
 
-# routes.py
-from flask import request, jsonify, current_app
-from flask_login import current_user
-import re
 
 # routes.py
 from flask import request, jsonify, current_app
@@ -557,13 +560,14 @@ import re
 def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
-    Adds Sensitivity Compare (dollar impact + elasticity) below MC.
-    Robust normalization for BOTH scenarios; never 500s because of B.
 
-    UPDATED:
-    - Use the UNION of age spans (e.g., 45–90) for the x-axis.
-    - Pad each scenario's series with None outside its own span so Plotly
-      shows gaps (B only draws over 52–84, A over 45–90, etc.).
+    Changes:
+    - Use current page vol settings (return_std, inflation_std) when available;
+      otherwise fall back to UI-like defaults (0.18, 0.005) so Compare aligns with
+      Top/What-If instead of scenario-stored vol.
+    - Convert CAGR -> arithmetic mean (g + 0.5*sigma^2), same as other sections.
+    - Seed MC so curves are reproducible across sections.
+    - Keep union x-axis and sensitivity compare.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -600,6 +604,29 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
+        # ----- UI vol (percent text -> decimal). If missing, use UI-style defaults -----
+        def _parse_pct(x):
+            if x is None:
+                return None
+            s = str(x).strip().replace("%", "")
+            # also handle labels like "Aggressive (18%)"
+            if "(" in s and ")" in s:
+                s = s[s.find("(")+1:s.find(")")]
+                s = s.replace("%", "")
+            try:
+                return float(s) / 100.0
+            except Exception:
+                return None
+
+        ui_sigma      = _parse_pct(request.form.get("return_std"))
+        ui_infl_sigma = _parse_pct(request.form.get("inflation_std"))
+
+        # If UI didn't post them, assume the page's current controls (Aggressive 18%, 0.5%) so Compare matches page.
+        if ui_sigma is None:
+            ui_sigma = 0.18
+        if ui_infl_sigma is None:
+            ui_infl_sigma = 0.005
+
         # ---------- normalization helpers (GENERIC) ----------
         rate_like = re.compile(r"(rate|mean|std)", re.I)
         int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection)", re.I)
@@ -613,47 +640,67 @@ def compare_retirement():
                 return v
 
         def _normalize_args(args: dict) -> dict:
-            """
-            Generic normalizer:
-              - numeric strings -> numbers
-              - any key containing 'rate|mean|std': if 2..100 => divide by 100
-              - any key containing 'age|year|iter|seed|step|horizon|projection': -> int
-              - keep end_age >= start_age
-            """
             if not args:
                 return {}
             a = {k: _to_num(v) for k, v in (args or {}).items()}
-
             for k, v in list(a.items()):
-                # percent-looking → decimal (7 -> 0.07)
                 if rate_like.search(k) and isinstance(v, (int, float)) and 2 <= v <= 1000:
                     a[k] = v / 100.0
-                # integers for ranges/sizes
                 if int_like.search(k) and isinstance(a[k], (int, float)):
                     a[k] = int(round(a[k]))
-
-            # keep ages sane
             if "start_age" in a and "end_age" in a:
                 sa, ea = a["start_age"], a["end_age"]
                 if isinstance(sa, int) and isinstance(ea, int) and ea < sa:
                     a["end_age"] = sa
-
             return a
 
-        # --- helpers to pad series to a shared axis ---
+        # --- shared helpers ---
         def _to_map(ages, values):
             return {int(a): (float(v) if v is not None else None) for a, v in zip(ages, values)}
 
         def _pad_series(series_map, axis_ages):
             return [series_map.get(age, None) for age in axis_ages]
 
-        def _run_mc_for(scn):
-            params = to_canonical_inputs(scn.inputs_json or {})
-            mc_args = _normalize_args(_mc_args_from_params(params))
-            if current_app.debug:
-                current_app.logger.info("COMPARE mc_args for %s: %s", scn.scenario_name, mc_args)
+        def _arith_from_cagr(g, sigma):
+            return float(g) + 0.5 * float(sigma) * float(sigma)
 
-            mc = run_monte_carlo_simulation_locked_inputs(**mc_args)
+        # use the same seed as elsewhere so curves are consistent
+        seed = _get_or_create_seed()
+
+        def _run_mc_for(scn):
+            # canonicalize saved inputs
+            p = to_canonical_inputs(scn.inputs_json or {})
+            p = _normalize_args(p)
+
+            # ALWAYS use page vol (ui_sigma/ui_infl_sigma) so Compare aligns with Top/What-If
+            sigma = float(ui_sigma)
+            infl_sigma = float(ui_infl_sigma)
+
+            mc_args = {
+                "current_age":          int(p["current_age"]),
+                "retirement_age":       int(p["retirement_age"]),
+                "annual_saving":        float(p["annual_saving"]),
+                "saving_increase_rate": float(p["saving_increase_rate"]),
+                "current_assets":       float(p["current_assets"]),
+                "return_mean":          _arith_from_cagr(float(p["return_rate"]), sigma),
+                "return_mean_after":    _arith_from_cagr(float(p["return_rate_after"]), sigma),
+                "return_std":           sigma,
+                "annual_expense":       float(p["annual_expense"]),
+                "inflation_mean":       float(p["inflation_rate"]),
+                "inflation_std":        infl_sigma,
+                "cpp_monthly":          float(p["cpp_monthly"]),
+                "cpp_start_age":        int(p["cpp_start_age"]),
+                "cpp_end_age":          int(p["cpp_end_age"]),
+                "asset_liquidations":   list(p.get("asset_liquidations") or []),
+                "life_expectancy":      int(p["life_expectancy"]),
+                "income_tax_rate":      float(p.get("income_tax_rate", 0.0)),
+                "num_simulations":      300,
+            }
+
+            if current_app.debug:
+                current_app.logger.info("COMPARE mc_args (seeded) for %s: %s", scn.scenario_name, mc_args)
+
+            mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
             ages = [int(x) for x in mc["ages"]]
             p10  = [float(x) for x in mc["percentiles"]["p10"]]
@@ -661,7 +708,6 @@ def compare_retirement():
             p90  = [float(x) for x in mc["percentiles"]["p90"]]
             n = min(len(ages), len(p10), len(p50), len(p90))
 
-            # span from args (fallback to arrays)
             start_age = mc_args.get("current_age") or (ages[0] if ages else None)
             end_age   = mc_args.get("life_expectancy") or (ages[-1] if ages else None)
             if start_age is not None: start_age = int(start_age)
@@ -691,11 +737,10 @@ def compare_retirement():
             try:
                 B = _run_mc_for(scen_b)
             except Exception as e:
-                # Don’t 500—return A plus a clear message
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- Build UNION axis & pad series (NEW) ----------
+        # ---------- Build UNION axis & pad series ----------
         axis_start = A["start_age"]
         axis_end   = A["end_age"]
         if B:
@@ -720,7 +765,6 @@ def compare_retirement():
         warning = None
 
         if B:
-            # B padded (None outside its span)
             B_p10 = _pad_series(_to_map(B["ages"], B["p10"]), axis_ages)
             B_p50 = _pad_series(_to_map(B["ages"], B["p50"]), axis_ages)
             B_p90 = _pad_series(_to_map(B["ages"], B["p90"]), axis_ages)
@@ -730,7 +774,6 @@ def compare_retirement():
             payload["mc"]["p90"]["B"] = B_p90
             payload["labels"]["B"] = B["label"]
 
-            # Soft warning (ignore None values)
             def _max_or_zero(arr):
                 vals = [x for x in arr if x is not None]
                 return max(vals) if vals else 0
@@ -743,8 +786,7 @@ def compare_retirement():
                     maxA, maxB, A.get("_args"), B.get("_args")
                 )
 
-        # ---------- Sensitivity Compare (modular block) ----------
-        # Variables must match what you chart on the main page
+        # ---------- Sensitivity Compare ----------
         SENS_VARS = [
             "current_assets", "return_rate", "return_rate_after",
             "annual_saving", "annual_expense", "saving_increase_rate",
@@ -752,24 +794,16 @@ def compare_retirement():
         ]
 
         def _proj_args_for(scn):
-            """
-            Build deterministic projection args for sensitivity using the
-            same numeric normalization rules as MC.
-            """
             params = to_canonical_inputs(scn.inputs_json or {})
             cleaned = _normalize_args(params)
             return _projection_args_from_params(cleaned)
 
         def _run_sensitivity_for(proj_args):
-            """
-            Returns aligned arrays for dollar impact and elasticity (%).
-            """
             s = sensitivity_analysis(proj_args, SENS_VARS, delta=0.01)
             dollar = [s[v]["dollar_impact"] if v in s else 0 for v in SENS_VARS]
             pct    = [s[v]["sensitivity_pct"] if v in s else 0 for v in SENS_VARS]
             return dollar, pct
 
-        # A sensitivity
         sensA_dollar, sensA_pct = [], []
         try:
             proj_a = _proj_args_for(scen_a)
@@ -777,7 +811,6 @@ def compare_retirement():
         except Exception as e:
             current_app.logger.exception("Sensitivity A failed: %s", e)
 
-        # B sensitivity (optional)
         sensB_dollar, sensB_pct = None, None
         if scen_b:
             try:
@@ -795,7 +828,6 @@ def compare_retirement():
             payload["sens"]["B"] = sensB_dollar
             payload["sens"]["B_pct"] = sensB_pct
 
-        # ---------- warnings / debug ----------
         if warning:
             payload["warning"] = warning
 
@@ -813,6 +845,8 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
+
 
 
 
@@ -867,8 +901,8 @@ def _defaults():
         return_mean_after=0.045,
         return_std=0.10,
         inflation_mean=0.025,
-        inflation_std=0.01,
-        num_simulations=2000,
+        inflation_std=0.005,
+        num_simulations=300,   # ← unified to 300
     )
 
 def _merge(d):
@@ -1198,7 +1232,7 @@ def live_update():
     # ---- Monte Carlo ----
     mc_params = _build_mc_args(
         params,
-        n_sims=(500 if is_lite else params.get("num_simulations", params.get("n_sims", 2000)))
+        n_sims=300  # ← unified to 300 for both lite and full
     )
     seed = _get_or_create_seed()
     mc_out = run_mc_with_seed(seed, _MC, **mc_params)
