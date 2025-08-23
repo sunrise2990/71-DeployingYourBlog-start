@@ -665,33 +665,35 @@ def retirement():
                     p = _normalize_args(p)
 
                     # 🔸 If this is the "Initial Budget" scenario, reflect the latest top input
-                    if scn.scenario_name.lower().startswith("initial budget") and ui_current_assets is not None:
+                    if scn.scenario_name and scn.scenario_name.lower().startswith(
+                            "initial budget") and ui_current_assets is not None:
                         p["current_assets"] = float(ui_current_assets)
 
                     # ALWAYS use page vol (ui_sigma/ui_infl_sigma) so Compare aligns with Top/What-If
                     sigma = float(ui_sigma)
                     infl_sigma = float(ui_infl_sigma)
 
+                    # Provide robust defaults to avoid 502s if an older row is missing a field
                     mc_args = {
-                        "current_age": int(p["current_age"]),
-                        "retirement_age": int(p["retirement_age"]),
-                        "annual_saving": float(p["annual_saving"]),
-                        "saving_increase_rate": float(p["saving_increase_rate"]),
-                        "current_assets": float(p["current_assets"]),
+                        "current_age": int(p.get("current_age", 45)),
+                        "retirement_age": int(p.get("retirement_age", 65)),
+                        "annual_saving": float(p.get("annual_saving", 0.0)),
+                        "saving_increase_rate": float(p.get("saving_increase_rate", 0.0)),
+                        "current_assets": float(p.get("current_assets", 0.0)),
                         # SAME drift as deterministic (no +0.5σ²)
-                        "return_mean": float(p["return_rate"]),
-                        "return_mean_after": float(p["return_rate_after"]),
+                        "return_mean": float(p.get("return_rate", 0.05)),
+                        "return_mean_after": float(p.get("return_rate_after", p.get("return_rate", 0.05))),
                         "return_std": sigma,
-                        "annual_expense": float(p["annual_expense"]),
-                        "inflation_mean": float(p["inflation_rate"]),
+                        "annual_expense": float(p.get("annual_expense", 0.0)),
+                        "inflation_mean": float(p.get("inflation_rate", 0.02)),
                         "inflation_std": infl_sigma,
-                        "cpp_monthly": float(p["cpp_monthly"]),
-                        "cpp_start_age": int(p["cpp_start_age"]),
-                        "cpp_end_age": int(p["cpp_end_age"]),
+                        "cpp_monthly": float(p.get("cpp_monthly", 0.0)),
+                        "cpp_start_age": int(p.get("cpp_start_age", p.get("retirement_age", 65))),
+                        "cpp_end_age": int(p.get("cpp_end_age", p.get("life_expectancy", 90))),
                         "asset_liquidations": list(p.get("asset_liquidations") or []),
-                        "life_expectancy": int(p["life_expectancy"]),
+                        "life_expectancy": int(p.get("life_expectancy", 90)),
                         "income_tax_rate": float(p.get("income_tax_rate", 0.0)),
-                        "num_simulations": 300,
+                        "num_simulations": int(300),
                     }
 
                     if current_app.debug:
@@ -699,10 +701,11 @@ def retirement():
 
                     mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
-                    ages = [int(x) for x in mc["ages"]]
-                    p10 = [float(x) for x in mc["percentiles"]["p10"]]
-                    p50 = [float(x) for x in mc["percentiles"]["p50"]]
-                    p90 = [float(x) for x in mc["percentiles"]["p90"]]
+                    ages = [int(x) for x in mc.get("ages", [])]
+                    pct = mc.get("percentiles", {}) or {}
+                    p10 = [float(x) for x in (pct.get("p10") or [])]
+                    p50 = [float(x) for x in (pct.get("p50") or [])]
+                    p90 = [float(x) for x in (pct.get("p90") or [])]
                     n = min(len(ages), len(p10), len(p50), len(p90))
 
                     start_age = mc_args.get("current_age") or (ages[0] if ages else None)
@@ -711,7 +714,7 @@ def retirement():
                     if end_age is not None: end_age = int(end_age)
 
                     return {
-                        "label": scn.scenario_name,
+                        "label": scn.scenario_name or "Scenario",
                         "ages": ages[:n],
                         "p10": p10[:n],
                         "p50": p50[:n],
@@ -726,7 +729,7 @@ def retirement():
                     A = _run_mc_for(scen_a)
                 except Exception as e:
                     current_app.logger.exception("compare_retirement A failed")
-                    return jerr(f"MC failed for scenario '{scen_a.scenario_name}': {e}", 400)
+                    return jerr(f"MC failed for scenario '{getattr(scen_a, 'scenario_name', 'A')}': {e}", 400)
 
                 # ---------- B (optional) ----------
                 B = None
@@ -735,7 +738,7 @@ def retirement():
                         B = _run_mc_for(scen_b)
                     except Exception as e:
                         current_app.logger.exception("compare_retirement B failed")
-                        return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
+                        return jerr(f"MC failed for scenario '{getattr(scen_b, 'scenario_name', 'B')}': {e}", 400)
 
                 # ---------- Build UNION axis & pad series ----------
                 axis_start = A["start_age"]
@@ -796,7 +799,8 @@ def retirement():
                     cleaned = _normalize_args(params)
 
                     # Keep sensitivity aligned with the asset override for Initial Budget
-                    if scn.scenario_name.lower().startswith("initial budget") and ui_current_assets is not None:
+                    if scn.scenario_name and scn.scenario_name.lower().startswith(
+                            "initial budget") and ui_current_assets is not None:
                         cleaned["current_assets"] = float(ui_current_assets)
 
                     return _projection_args_from_params(cleaned)
@@ -848,7 +852,6 @@ def retirement():
                 if current_app.debug:
                     msg += f" ({e})"
                 return jsonify({"error": msg}), 500
-
 
 
 # ==== Live-WhatIf: minimal POST endpoint (append-only) ====
