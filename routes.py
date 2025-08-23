@@ -567,9 +567,6 @@ def compare_retirement():
     - Use the UNION of age spans (e.g., 45–90) for the x-axis.
     - Pad each scenario's series with None outside its own span so Plotly
       shows gaps (B only draws over 52–84, A over 45–90, etc.).
-    - If a scenario is missing return_std / inflation_std, fall back to the
-      current form's values so Compare uses the same volatility settings
-      as the rest of the page.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -605,19 +602,6 @@ def compare_retirement():
                 return jerr("You can only compare your own scenarios.", 403)
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
-
-        # Pull current form's vol choices (percent → decimal). If missing, use None.
-        def _to_dec(x):
-            try:
-                s = str(x).replace("%", "").strip()
-                if s == "":
-                    return None
-                return float(s) / 100.0
-            except Exception:
-                return None
-
-        ui_sigma = _to_dec(request.form.get("return_std"))
-        ui_infl_sigma = _to_dec(request.form.get("inflation_std"))
 
         # ---------- normalization helpers (GENERIC) ----------
         rate_like = re.compile(r"(rate|mean|std)", re.I)
@@ -668,14 +652,7 @@ def compare_retirement():
 
         def _run_mc_for(scn):
             params = to_canonical_inputs(scn.inputs_json or {})
-            mc_args = _normalize_args(_mc_args_from_params(params))  # uses your original pass-through mapping
-
-            # If scenario didn't persist std-devs, fall back to UI selection so Compare aligns with the page.
-            if ("return_std" not in params or params.get("return_std") in (None, "")) and ui_sigma is not None:
-                mc_args["return_std"] = float(ui_sigma)
-            if ("inflation_std" not in params or params.get("inflation_std") in (None, "")) and ui_infl_sigma is not None:
-                mc_args["inflation_std"] = float(ui_infl_sigma)
-
+            mc_args = _normalize_args(_mc_args_from_params(params))
             if current_app.debug:
                 current_app.logger.info("COMPARE mc_args for %s: %s", scn.scenario_name, mc_args)
 
@@ -842,7 +819,6 @@ def compare_retirement():
 
 
 
-
 # ==== Live-WhatIf: minimal POST endpoint (append-only) ====
 from flask import request, session, jsonify
 import secrets
@@ -894,7 +870,7 @@ def _defaults():
         return_mean_after=0.045,
         return_std=0.10,
         inflation_mean=0.025,
-        inflation_std=0.005,
+        inflation_std=0.01,
         num_simulations=300,   # ← unified to 300
     )
 
