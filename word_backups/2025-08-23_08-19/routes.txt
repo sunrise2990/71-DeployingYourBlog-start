@@ -675,27 +675,24 @@ def compare_retirement():
             infl_sigma = float(ui_infl_sigma)
 
             mc_args = {
-                "current_age": int(p["current_age"]),
-                "retirement_age": int(p["retirement_age"]),
-                "annual_saving": float(p["annual_saving"]),
+                "current_age":          int(p["current_age"]),
+                "retirement_age":       int(p["retirement_age"]),
+                "annual_saving":        float(p["annual_saving"]),
                 "saving_increase_rate": float(p["saving_increase_rate"]),
-                "current_assets": float(p["current_assets"]),
-
-                # SAME as deterministic (no bump)
-                "return_mean": float(p["return_rate"]),
-                "return_mean_after": float(p["return_rate_after"]),
-                "return_std": float(ui_sigma),
-
-                "annual_expense": float(p["annual_expense"]),
-                "inflation_mean": float(p["inflation_rate"]),
-                "inflation_std": float(ui_infl_sigma),
-                "cpp_monthly": float(p["cpp_monthly"]),
-                "cpp_start_age": int(p["cpp_start_age"]),
-                "cpp_end_age": int(p["cpp_end_age"]),
-                "asset_liquidations": list(p.get("asset_liquidations") or []),
-                "life_expectancy": int(p["life_expectancy"]),
-                "income_tax_rate": float(p.get("income_tax_rate", 0.0)),
-                "num_simulations": 300,
+                "current_assets":       float(p["current_assets"]),
+                "return_mean":          _arith_from_cagr(float(p["return_rate"]), sigma),
+                "return_mean_after":    _arith_from_cagr(float(p["return_rate_after"]), sigma),
+                "return_std":           sigma,
+                "annual_expense":       float(p["annual_expense"]),
+                "inflation_mean":       float(p["inflation_rate"]),
+                "inflation_std":        infl_sigma,
+                "cpp_monthly":          float(p["cpp_monthly"]),
+                "cpp_start_age":        int(p["cpp_start_age"]),
+                "cpp_end_age":          int(p["cpp_end_age"]),
+                "asset_liquidations":   list(p.get("asset_liquidations") or []),
+                "life_expectancy":      int(p["life_expectancy"]),
+                "income_tax_rate":      float(p.get("income_tax_rate", 0.0)),
+                "num_simulations":      300,
             }
 
             if current_app.debug:
