@@ -23,7 +23,6 @@ _CANON_KEYS = {
     "cpp_monthly", "cpp_start_age", "cpp_end_age",
     "asset_liquidations",
     "inflation_rate", "life_expectancy", "income_tax_rate",
-    "return_std", "inflation_std",
 }
 
 def _to_int(v, d=0):
@@ -77,8 +76,7 @@ def to_canonical_inputs(raw: dict) -> dict:
     floats = {
         "annual_saving", "saving_increase_rate", "current_assets",
         "return_rate", "return_rate_after", "annual_expense",
-        "inflation_rate", "income_tax_rate", "cpp_monthly",
-        "return_std", "inflation_std",
+        "inflation_rate", "income_tax_rate", "cpp_monthly"
     }
     for k in list(p.keys()):
         if k in ints:
@@ -326,23 +324,18 @@ def retirement():
 
                 # ---- Monte Carlo (TOP chart) -----------------------------------
                 # IMPORTANT: stochastic engine expects arithmetic drift.
-                sigma = max(0.0, float(return_std))  # σ (decimal)
-                mean_pre = float(return_rate) + 0.5 * sigma * sigma
+                sigma = max(0.0, float(return_std))            # σ (decimal)
+                mean_pre  = float(return_rate)       + 0.5 * sigma * sigma
                 mean_post = float(return_rate_after) + 0.5 * sigma * sigma
 
-                # use same session seed as Live What-If so medians match
-                seed = _get_or_create_seed()  # this is already defined below in the file
-
-                mc_output = run_mc_with_seed(
-                    seed,
-                    run_monte_carlo_simulation_locked_inputs,
+                mc_output = run_monte_carlo_simulation_locked_inputs(
                     current_age=int(current_age),
                     retirement_age=int(retirement_age),
                     annual_saving=float(monthly_saving_ui) * 12.0,
                     saving_increase_rate=float(saving_increase_rate),
                     current_assets=float(current_assets),
 
-                    # arithmetic means for the simulator
+                    # arithmetic means for the lognormal simulator
                     return_mean=mean_pre,
                     return_mean_after=mean_post,
                     return_std=sigma,
@@ -356,7 +349,7 @@ def retirement():
                     asset_liquidations=asset_liquidation,
                     life_expectancy=life_expectancy,
                     income_tax_rate=float(income_tax_rate),
-                    num_simulations=300,  # keep 300 here
+                    num_simulations=1000,
                 )
 
                 monte_carlo_data = {
@@ -535,8 +528,8 @@ def _mc_args_from_params(p):
         "annual_saving":        p["annual_saving"],
         "saving_increase_rate": p["saving_increase_rate"],
         "current_assets":       p["current_assets"],
-        "return_mean":          p["return_rate"],         # ← REVERT: no +0.5*σ² here
-        "return_mean_after":    p["return_rate_after"],   # ← REVERT: pass through
+        "return_mean":          p["return_rate"],
+        "return_mean_after":    p["return_rate_after"],
         "return_std":           p.get("return_std", 0.08),
         "annual_expense":       p["annual_expense"],
         "inflation_mean":       p["inflation_rate"],
@@ -547,9 +540,13 @@ def _mc_args_from_params(p):
         "asset_liquidations":   p.get("asset_liquidations", []),
         "life_expectancy":      p["life_expectancy"],
         "income_tax_rate":      p.get("income_tax_rate", 0.0),
-        "num_simulations":      300,   # ← REVERT to your prior working count (change to 300 if you want)
+        "num_simulations":      1000,
     }
 
+# routes.py
+from flask import request, jsonify, current_app
+from flask_login import current_user
+import re
 
 # routes.py
 from flask import request, jsonify, current_app
@@ -871,7 +868,7 @@ def _defaults():
         return_std=0.10,
         inflation_mean=0.025,
         inflation_std=0.01,
-        num_simulations=300,   # ← unified to 300
+        num_simulations=2000,
     )
 
 def _merge(d):
@@ -1201,7 +1198,7 @@ def live_update():
     # ---- Monte Carlo ----
     mc_params = _build_mc_args(
         params,
-        n_sims=300  # ← unified to 300 for both lite and full
+        n_sims=(500 if is_lite else params.get("num_simulations", params.get("n_sims", 2000)))
     )
     seed = _get_or_create_seed()
     mc_out = run_mc_with_seed(seed, _MC, **mc_params)
