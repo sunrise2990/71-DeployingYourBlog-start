@@ -325,8 +325,10 @@ def retirement():
                 }
 
                 # ---- Monte Carlo (TOP chart) -----------------------------------
-                # Use SAME drift as deterministic (no +0.5*σ²) and seed to match Live What-If.
+                # IMPORTANT: stochastic engine expects arithmetic drift.
                 sigma = max(0.0, float(return_std))  # σ (decimal)
+                mean_pre = float(return_rate) + 0.5 * sigma * sigma
+                mean_post = float(return_rate_after) + 0.5 * sigma * sigma
 
                 # use same session seed as Live What-If so medians match
                 seed = _get_or_create_seed()  # this is already defined below in the file
@@ -340,9 +342,9 @@ def retirement():
                     saving_increase_rate=float(saving_increase_rate),
                     current_assets=float(current_assets),
 
-                    # SAME drift as deterministic (no +0.5σ² bump)
-                    return_mean=float(return_rate),
-                    return_mean_after=float(return_rate_after),
+                    # arithmetic means for the simulator
+                    return_mean=mean_pre,
+                    return_mean_after=mean_post,
                     return_std=sigma,
 
                     annual_expense=float(monthly_living_expense) * 12.0,
@@ -368,7 +370,7 @@ def retirement():
                     "age_75": float(dp.get(75, 0.0)),
                     "age_85": float(dp.get(85, 0.0)),
                     "age_90": float(dp.get(90, 0.0)),
-                    "ever": float(dp.get("ever", 0.0)),
+                    "ever":   float(dp.get("ever", 0.0)),
                 }
 
             except Exception as e:
