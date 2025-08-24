@@ -571,10 +571,12 @@ def compare_retirement():
         return jsonify({"error": msg, **({"_extra": extra} if (current_app.debug and extra) else {})}), code
 
     try:
+        # ---------------------------------------------------------------------
+        # Parse scenario ids from the submitted form
+        # ---------------------------------------------------------------------
         raw_a = (request.form.get("scenario_a") or "").strip()
         raw_b = (request.form.get("scenario_b") or "").strip()
 
-        # parse ids
         try:
             a_id = int(raw_a)
         except Exception:
@@ -587,7 +589,9 @@ def compare_retirement():
             except Exception:
                 return jerr("Invalid Scenario B id.", 400, {"scenario_b": raw_b})
 
-        # fetch rows
+        # ---------------------------------------------------------------------
+        # Fetch scenarios from DB (ONLY source of truth for parameters)
+        # ---------------------------------------------------------------------
         scen_a = RetirementScenario.query.get(a_id)
         if not scen_a:
             return jerr("Scenario A not found.", 404, {"a_id": a_id})
@@ -599,14 +603,16 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
-        # ----- read optional UI vol (percent text -> decimal); may be None -----
+        # ---------------------------------------------------------------------
+        # Read optional UI volatility overrides (percent text -> decimal)
+        # ---------------------------------------------------------------------
         def _parse_pct(x):
             if x is None:
                 return None
             s = str(x).strip().replace("%", "")
-            # also handle labels like "Aggressive (18%)"
+            # Handle labels like "Aggressive (18%)"
             if "(" in s and ")" in s:
-                s = s[s.find("(")+1:s.find(")")].replace("%", "")
+                s = s[s.find("(") + 1 : s.find(")")].replace("%", "")
             try:
                 return float(s) / 100.0
             except Exception:
@@ -615,7 +621,10 @@ def compare_retirement():
         ui_sigma      = _parse_pct(request.form.get("return_std"))      # can be None
         ui_infl_sigma = _parse_pct(request.form.get("inflation_std"))   # can be None
 
-        # ---------- normalization helpers (GENERIC) ----------
+        # ---------------------------------------------------------------------
+        # Normalization helpers (work for both legacy and canonical rows)
+        # ---------------------------------------------------------------------
+        import re
         rate_like = re.compile(r"(rate|mean|std)", re.I)
         int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection)", re.I)
 
@@ -643,27 +652,32 @@ def compare_retirement():
                     a["end_age"] = sa
             return a
 
-        # --- small helpers ---
+        # Small helpers for axis padding
         def _to_map(ages, values):
             return {int(a): (float(v) if v is not None else None) for a, v in zip(ages, values)}
 
         def _pad_series(series_map, axis_ages):
             return [series_map.get(age, None) for age in axis_ages]
 
+        # Present but intentionally unused; we do NOT bump drift for MC
         def _arith_from_cagr(g, sigma):
             return float(g) + 0.5 * float(sigma) * float(sigma)
 
-        # use the same seed as elsewhere so curves are consistent
+        # Use the same seed as elsewhere so curves are consistent
         seed = _get_or_create_seed()
 
+        # ---------------------------------------------------------------------
+        # Core runner: builds MC args strictly from SAVED scenario (plus optional
+        # UI vol overrides if provided), runs seeded MC, returns trimmed series.
+        # ---------------------------------------------------------------------
         def _run_mc_for(scn):
-            # canonicalize saved inputs
+            # Canonicalize saved inputs (handles legacy names/units)
             p = to_canonical_inputs(scn.inputs_json or {})
             p = _normalize_args(p)
 
             # σ to use: UI if provided; else scenario; else safe defaults
-            sigma = float(ui_sigma) if ui_sigma is not None else float(p.get("return_std", 0.08))
-            infl_sigma = float(ui_infl_sigma) if ui_infl_sigma is not None else float(p.get("inflation_std", 0.005))
+            sigma       = float(ui_sigma)      if ui_sigma      is not None else float(p.get("return_std", 0.08))
+            infl_sigma  = float(ui_infl_sigma) if ui_infl_sigma is not None else float(p.get("inflation_std", 0.005))
 
             mc_args = {
                 "current_age": int(p["current_age"]),
@@ -672,7 +686,7 @@ def compare_retirement():
                 "saving_increase_rate": float(p["saving_increase_rate"]),
                 "current_assets": float(p["current_assets"]),
 
-                # SAME as deterministic (no +0.5σ² bump)
+                # SAME as deterministic (no +0.5σ² drift bump)
                 "return_mean": float(p["return_rate"]),
                 "return_mean_after": float(p["return_rate_after"]),
                 "return_std": sigma,
@@ -690,7 +704,10 @@ def compare_retirement():
             }
 
             if current_app.debug:
-                current_app.logger.info("COMPARE mc_args (seeded) for %s: %s", scn.scenario_name, mc_args)
+                current_app.logger.info(
+                    "COMPARE mc_args (seeded) for '%s' [id=%s]: %s",
+                    scn.scenario_name, scn.id, mc_args
+                )
 
             mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
@@ -702,8 +719,10 @@ def compare_retirement():
 
             start_age = mc_args.get("current_age") or (ages[0] if ages else None)
             end_age   = mc_args.get("life_expectancy") or (ages[-1] if ages else None)
-            if start_age is not None: start_age = int(start_age)
-            if end_age   is not None: end_age   = int(end_age)
+            if start_age is not None:
+                start_age = int(start_age)
+            if end_age is not None:
+                end_age = int(end_age)
 
             return {
                 "label": scn.scenario_name,
@@ -714,16 +733,18 @@ def compare_retirement():
                 "_args": mc_args,
                 "start_age": start_age,
                 "end_age": end_age,
+                "_scenario_id": scn.id,
             }
 
-        # ---------- A (required) ----------
+        # ---------------------------------------------------------------------
+        # Run A (required) and B (optional)
+        # ---------------------------------------------------------------------
         try:
             A = _run_mc_for(scen_a)
         except Exception as e:
             current_app.logger.exception("compare_retirement A failed")
             return jerr(f"MC failed for scenario '{scen_a.scenario_name}': {e}", 400)
 
-        # ---------- B (optional) ----------
         B = None
         if scen_b:
             try:
@@ -732,7 +753,9 @@ def compare_retirement():
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- Build UNION axis & pad series ----------
+        # ---------------------------------------------------------------------
+        # Build UNION x-axis and pad both series with explicit nulls
+        # ---------------------------------------------------------------------
         axis_start = A["start_age"]
         axis_end   = A["end_age"]
         if B:
@@ -740,7 +763,6 @@ def compare_retirement():
             axis_end   = max(axis_end,   B["end_age"])
         axis_ages = list(range(int(axis_start), int(axis_end) + 1))
 
-        # A padded
         A_p10 = _pad_series(_to_map(A["ages"], A["p10"]), axis_ages)
         A_p50 = _pad_series(_to_map(A["ages"], A["p50"]), axis_ages)
         A_p90 = _pad_series(_to_map(A["ages"], A["p90"]), axis_ages)
@@ -753,7 +775,6 @@ def compare_retirement():
                 "p50": {"A": A_p50},
                 "p90": {"A": A_p90},
             },
-            # Optional meta for UI header (age spans)
             "meta": {
                 "A": {"label": A["label"], "start_age": A["start_age"], "end_age": A["end_age"]}
             }
@@ -771,6 +792,7 @@ def compare_retirement():
             payload["labels"]["B"] = B["label"]
             payload["meta"]["B"] = {"label": B["label"], "start_age": B["start_age"], "end_age": B["end_age"]}
 
+            # Soft sanity warning for obviously mismatched units
             def _max_or_zero(arr):
                 vals = [x for x in arr if x is not None]
                 return max(vals) if vals else 0
@@ -783,7 +805,9 @@ def compare_retirement():
                     maxA, maxB, A.get("_args"), B.get("_args")
                 )
 
-        # ---------- Sensitivity Compare ----------
+        # ---------------------------------------------------------------------
+        # Sensitivity compare (deterministic projection)
+        # ---------------------------------------------------------------------
         SENS_VARS = [
             "current_assets", "return_rate", "return_rate_after",
             "annual_saving", "annual_expense", "saving_increase_rate",
@@ -828,10 +852,16 @@ def compare_retirement():
         if warning:
             payload["warning"] = warning
 
+        # Optional debug block
         if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
-            dbg = {"A_args": A["_args"]}
-            if scen_b:
+            dbg = {
+                "A_args": A["_args"],
+                "A_id": A.get("_scenario_id"),
+                "seed": seed,
+            }
+            if B:
                 dbg["B_args"] = B.get("_args")
+                dbg["B_id"] = B.get("_scenario_id")
             payload["_debug"] = dbg
 
         return jsonify(payload), 200
@@ -842,6 +872,7 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
