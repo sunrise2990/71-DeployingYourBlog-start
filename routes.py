@@ -559,11 +559,12 @@ def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
 
-    Key behavior:
-    - If return_std / inflation_std are posted from the page, use those for BOTH scenarios.
-    - Otherwise, use each scenario's own saved return_std / inflation_std (with safe defaults).
-    - Do NOT bump drift (+0.5*sigma^2). Pass through the saved/posted CAGRs.
-    - Use a single seeded MC so curves are consistent. Build a union x-axis. Include sensitivity.
+    STRICT behavior:
+    - Pull parameters ONLY from the saved scenarios (A and optional B).
+    - Ignore all page/hidden inputs.
+    - If a scenario lacks return_std / inflation_std, use safe defaults (0.08, 0.005).
+    - Pass through saved CAGRs (no +0.5*sigma^2 bump).
+    - Seed MC, build union x-axis, and include sensitivity results.
     """
     def jerr(msg, code=400, extra=None):
         if extra:
@@ -599,23 +600,8 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
-        # ----- read optional UI vol (percent text -> decimal); may be None -----
-        def _parse_pct(x):
-            if x is None:
-                return None
-            s = str(x).strip().replace("%", "")
-            # also handle labels like "Aggressive (18%)"
-            if "(" in s and ")" in s:
-                s = s[s.find("(")+1:s.find(")")].replace("%", "")
-            try:
-                return float(s) / 100.0
-            except Exception:
-                return None
-
-        ui_sigma      = _parse_pct(request.form.get("return_std"))      # can be None
-        ui_infl_sigma = _parse_pct(request.form.get("inflation_std"))   # can be None
-
         # ---------- normalization helpers (GENERIC) ----------
+        import re
         rate_like = re.compile(r"(rate|mean|std)", re.I)
         int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection)", re.I)
 
@@ -650,20 +636,17 @@ def compare_retirement():
         def _pad_series(series_map, axis_ages):
             return [series_map.get(age, None) for age in axis_ages]
 
-        def _arith_from_cagr(g, sigma):
-            return float(g) + 0.5 * float(sigma) * float(sigma)
-
         # use the same seed as elsewhere so curves are consistent
         seed = _get_or_create_seed()
 
         def _run_mc_for(scn):
-            # canonicalize saved inputs
+            # canonicalize saved inputs (ONLY from DB)
             p = to_canonical_inputs(scn.inputs_json or {})
             p = _normalize_args(p)
 
-            # σ to use: UI if provided; else scenario; else safe defaults
-            sigma = float(ui_sigma) if ui_sigma is not None else float(p.get("return_std", 0.08))
-            infl_sigma = float(ui_infl_sigma) if ui_infl_sigma is not None else float(p.get("inflation_std", 0.005))
+            # σ from scenario (or safe defaults)
+            sigma = float(p.get("return_std", 0.08))
+            infl_sigma = float(p.get("inflation_std", 0.005))
 
             mc_args = {
                 "current_age": int(p["current_age"]),
@@ -753,7 +736,6 @@ def compare_retirement():
                 "p50": {"A": A_p50},
                 "p90": {"A": A_p90},
             },
-            # Optional meta for UI header (age spans)
             "meta": {
                 "A": {"label": A["label"], "start_age": A["start_age"], "end_age": A["end_age"]}
             }
@@ -842,6 +824,7 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
