@@ -559,15 +559,12 @@ def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
 
-    Changes:
-    - Use current page vol settings (return_std, inflation_std) when available;
-      otherwise fall back to UI-like defaults (0.18, 0.005) so Compare aligns with
-      Top/What-If instead of scenario-stored vol.
-    - Convert CAGR -> arithmetic mean (g + 0.5*sigma^2), same as other sections.
-    - Seed MC so curves are reproducible across sections.
-    - Keep union x-axis and sensitivity compare.
+    Key behavior:
+    - If return_std / inflation_std are posted from the page, use those for BOTH scenarios.
+    - Otherwise, use each scenario's own saved return_std / inflation_std (with safe defaults).
+    - Do NOT bump drift (+0.5*sigma^2). Pass through the saved/posted CAGRs.
+    - Use a single seeded MC so curves are consistent. Build a union x-axis. Include sensitivity.
     """
-
     def jerr(msg, code=400, extra=None):
         if extra:
             current_app.logger.warning("compare_retirement: %s | extra=%s", msg, extra)
@@ -602,28 +599,21 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
-        # ----- UI vol (percent text -> decimal). If missing, use UI-style defaults -----
+        # ----- read optional UI vol (percent text -> decimal); may be None -----
         def _parse_pct(x):
             if x is None:
                 return None
             s = str(x).strip().replace("%", "")
             # also handle labels like "Aggressive (18%)"
             if "(" in s and ")" in s:
-                s = s[s.find("(")+1:s.find(")")]
-                s = s.replace("%", "")
+                s = s[s.find("(")+1:s.find(")")].replace("%", "")
             try:
                 return float(s) / 100.0
             except Exception:
                 return None
 
-        ui_sigma      = _parse_pct(request.form.get("return_std"))
-        ui_infl_sigma = _parse_pct(request.form.get("inflation_std"))
-
-        # If UI didn't post them, assume the page's current controls (Aggressive 18%, 0.5%) so Compare matches page.
-        if ui_sigma is None:
-            ui_sigma = 0.18
-        if ui_infl_sigma is None:
-            ui_infl_sigma = 0.005
+        ui_sigma      = _parse_pct(request.form.get("return_std"))      # can be None
+        ui_infl_sigma = _parse_pct(request.form.get("inflation_std"))   # can be None
 
         # ---------- normalization helpers (GENERIC) ----------
         rate_like = re.compile(r"(rate|mean|std)", re.I)
@@ -642,6 +632,7 @@ def compare_retirement():
                 return {}
             a = {k: _to_num(v) for k, v in (args or {}).items()}
             for k, v in list(a.items()):
+                # convert 8 -> 0.08, leave 0.08 alone
                 if rate_like.search(k) and isinstance(v, (int, float)) and 2 <= v <= 1000:
                     a[k] = v / 100.0
                 if int_like.search(k) and isinstance(a[k], (int, float)):
@@ -652,7 +643,7 @@ def compare_retirement():
                     a["end_age"] = sa
             return a
 
-        # --- shared helpers ---
+        # --- small helpers ---
         def _to_map(ages, values):
             return {int(a): (float(v) if v is not None else None) for a, v in zip(ages, values)}
 
@@ -670,9 +661,9 @@ def compare_retirement():
             p = to_canonical_inputs(scn.inputs_json or {})
             p = _normalize_args(p)
 
-            # ALWAYS use page vol (ui_sigma/ui_infl_sigma) so Compare aligns with Top/What-If
-            sigma = float(ui_sigma)
-            infl_sigma = float(ui_infl_sigma)
+            # σ to use: UI if provided; else scenario; else safe defaults
+            sigma = float(ui_sigma) if ui_sigma is not None else float(p.get("return_std", 0.08))
+            infl_sigma = float(ui_infl_sigma) if ui_infl_sigma is not None else float(p.get("inflation_std", 0.005))
 
             mc_args = {
                 "current_age": int(p["current_age"]),
@@ -681,14 +672,14 @@ def compare_retirement():
                 "saving_increase_rate": float(p["saving_increase_rate"]),
                 "current_assets": float(p["current_assets"]),
 
-                # SAME as deterministic (no bump)
+                # SAME as deterministic (no +0.5σ² bump)
                 "return_mean": float(p["return_rate"]),
                 "return_mean_after": float(p["return_rate_after"]),
-                "return_std": float(ui_sigma),
+                "return_std": sigma,
 
                 "annual_expense": float(p["annual_expense"]),
                 "inflation_mean": float(p["inflation_rate"]),
-                "inflation_std": float(ui_infl_sigma),
+                "inflation_std": infl_sigma,
                 "cpp_monthly": float(p["cpp_monthly"]),
                 "cpp_start_age": int(p["cpp_start_age"]),
                 "cpp_end_age": int(p["cpp_end_age"]),
@@ -761,6 +752,10 @@ def compare_retirement():
                 "p10": {"A": A_p10},
                 "p50": {"A": A_p50},
                 "p90": {"A": A_p90},
+            },
+            # Optional meta for UI header (age spans)
+            "meta": {
+                "A": {"label": A["label"], "start_age": A["start_age"], "end_age": A["end_age"]}
             }
         }
         warning = None
@@ -774,6 +769,7 @@ def compare_retirement():
             payload["mc"]["p50"]["B"] = B_p50
             payload["mc"]["p90"]["B"] = B_p90
             payload["labels"]["B"] = B["label"]
+            payload["meta"]["B"] = {"label": B["label"], "start_age": B["start_age"], "end_age": B["end_age"]}
 
             def _max_or_zero(arr):
                 vals = [x for x in arr if x is not None]
@@ -846,6 +842,7 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
