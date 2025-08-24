@@ -1657,17 +1657,7 @@ ping(); // initial draw
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    // Always call backend, even if Scenario B is empty
     const fd = new FormData(form);
-
-    // If you want Compare to use the current UI vol settings,
-    // include these two hidden fields from the page (if present)
-    const retStd = document.querySelector('[name="return_std"]')?.value
-                || document.getElementById('returnStdSelect')?.value; // if your UI uses a select like "Aggressive (18%)"
-    const infStd = document.querySelector('[name="inflation_std"]')?.value;
-    if (retStd != null) fd.set('return_std', retStd);
-    if (infStd != null) fd.set('inflation_std', infStd);
-
     const res = await fetch('{{ url_for("projects.compare_retirement") }}', {
       method: 'POST',
       body: fd,
@@ -1684,10 +1674,13 @@ ping(); // initial draw
     const cd = await res.json();
     if (!res.ok) { alert(cd.error || 'Compare failed.'); return; }
 
+    // Show “A: start–end | B: start–end” if backend provides it
     updateAgeSpans(cd.meta || null);
+
     renderOverlay(cd);
     renderSensitivitySplit(cd);
   });
+
 
   // ---------- MC overlay (Plotly) ----------
   function renderOverlay(cd){
