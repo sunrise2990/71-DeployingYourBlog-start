@@ -1654,40 +1654,20 @@ ping(); // initial draw
   let sensChartCore = null;
   let sensChartRA   = null;
 
-  // best-effort readers for the page's current vol controls (IDs may vary)
-  function readVolOrFallback(selectors, fallback) {
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (!el) continue;
-      // Prefer option label text like "Aggressive (18%)" if it's a <select>
-      if (el.tagName === 'SELECT') {
-        const opt = el.options[el.selectedIndex];
-        if (opt) return (opt.dataset.pct || opt.textContent || opt.value || '').trim();
-      }
-      // Otherwise use value/text
-      return (el.dataset.pct || el.value || el.textContent || '').trim();
-    }
-    return fallback; // e.g., "8" or "0.5" rendered from the server
-  }
-
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    // keep hidden vol mirrors in sync with the current UI before posting
-    document.getElementById('cmp_return_std').value =
-      readVolOrFallback(
-        ['#return_std', '#return_std_select', '#returnStdMirror', '[data-role="return-std"]'],
-        document.getElementById('cmp_return_std').value
-      );
-
-    document.getElementById('cmp_inflation_std').value =
-      readVolOrFallback(
-        ['#inflation_std', '#inflation_std_select', '#inflationStdMirror', '[data-role="inflation-std"]'],
-        document.getElementById('cmp_inflation_std').value
-      );
-
-    // ALWAYS call backend (A-only or A+B)
+    // Always call backend, even if Scenario B is empty
     const fd = new FormData(form);
+
+    // If you want Compare to use the current UI vol settings,
+    // include these two hidden fields from the page (if present)
+    const retStd = document.querySelector('[name="return_std"]')?.value
+                || document.getElementById('returnStdSelect')?.value; // if your UI uses a select like "Aggressive (18%)"
+    const infStd = document.querySelector('[name="inflation_std"]')?.value;
+    if (retStd != null) fd.set('return_std', retStd);
+    if (infStd != null) fd.set('inflation_std', infStd);
+
     const res = await fetch('{{ url_for("projects.compare_retirement") }}', {
       method: 'POST',
       body: fd,
@@ -1720,7 +1700,8 @@ ping(); // initial draw
       p50: (cd.mc.p50.A || []).map(v => v === null ? null : Number(v)),
       p90: (cd.mc.p90.A || []).map(v => v === null ? null : Number(v))
     };
-    const B = (cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B) ? {
+    const hasB = cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B;
+    const B = hasB ? {
       p10: (cd.mc.p10.B || []).map(v => v === null ? null : Number(v)),
       p50: (cd.mc.p50.B || []).map(v => v === null ? null : Number(v)),
       p90: (cd.mc.p90.B || []).map(v => v === null ? null : Number(v))
@@ -1752,6 +1733,7 @@ ping(); // initial draw
     showTitle(B ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`);
     Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
   }
+
 
   // ---------- Sensitivity (SPLIT) ----------
   function renderSensitivitySplit(cd){
