@@ -1575,6 +1575,10 @@ ping(); // initial draw
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% endif %}
 
+  <!-- mirror the page's current vol settings; JS will update these before submit -->
+  <input type="hidden" name="return_std"     id="cmp_return_std"     value="{{ return_std }}">
+  <input type="hidden" name="inflation_std"  id="cmp_inflation_std"  value="{{ inflation_std }}">
+
   <div class="col-md-6">
     <label for="scenario_a" class="form-label">Scenario A</label>
     <select id="scenario_a" name="scenario_a" class="form-select" required>
@@ -1615,7 +1619,6 @@ ping(); // initial draw
   <div class="card mb-4">
     <div class="card-header">Monte Carlo Simulation</div>
     <div class="card-body">
-      <!-- Optional: shows “Initial Budget: 45–90 | baseline2: 52–84” if backend sends meta -->
       <p id="compare-age-spans" class="text-muted small mb-2 d-none"></p>
       <div id="mc-compare-plot" style="height:400px;"></div>
     </div>
@@ -1651,27 +1654,39 @@ ping(); // initial draw
   let sensChartCore = null;
   let sensChartRA   = null;
 
+  // best-effort readers for the page's current vol controls (IDs may vary)
+  function readVolOrFallback(selectors, fallback) {
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      // Prefer option label text like "Aggressive (18%)" if it's a <select>
+      if (el.tagName === 'SELECT') {
+        const opt = el.options[el.selectedIndex];
+        if (opt) return (opt.dataset.pct || opt.textContent || opt.value || '').trim();
+      }
+      // Otherwise use value/text
+      return (el.dataset.pct || el.value || el.textContent || '').trim();
+    }
+    return fallback; // e.g., "8" or "0.5" rendered from the server
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const bId = document.getElementById('scenario_b').value || '';
+    // keep hidden vol mirrors in sync with the current UI before posting
+    document.getElementById('cmp_return_std').value =
+      readVolOrFallback(
+        ['#return_std', '#return_std_select', '#returnStdMirror', '[data-role="return-std"]'],
+        document.getElementById('cmp_return_std').value
+      );
 
-    // A-only: clone MC; hide sensitivity blocks and spans
-    if (!bId) {
-      const src = document.getElementById('monte-carlo-chart');
-      if (!src || !src.data) { alert('Main MC chart not found on page.'); return; }
-      const traces = JSON.parse(JSON.stringify(src.data));
-      const layout = JSON.parse(JSON.stringify(src.layout || {}));
-      ensureLayout(layout);
-      showCompareBlock();
-      showTitle(`🔄 Compare: ${document.querySelector('#scenario_a option:checked').textContent}`);
-      updateAgeSpans(null); // hide
-      Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
-      hideSensitivity();
-      return;
-    }
+    document.getElementById('cmp_inflation_std').value =
+      readVolOrFallback(
+        ['#inflation_std', '#inflation_std_select', '#inflationStdMirror', '[data-role="inflation-std"]'],
+        document.getElementById('cmp_inflation_std').value
+      );
 
-    // A+B: call backend
+    // ALWAYS call backend (A-only or A+B)
     const fd = new FormData(form);
     const res = await fetch('{{ url_for("projects.compare_retirement") }}', {
       method: 'POST',
@@ -1689,9 +1704,7 @@ ping(); // initial draw
     const cd = await res.json();
     if (!res.ok) { alert(cd.error || 'Compare failed.'); return; }
 
-    // If backend includes meta with A/B spans, show them; otherwise hide.
     updateAgeSpans(cd.meta || null);
-
     renderOverlay(cd);
     renderSensitivitySplit(cd);
   });
@@ -1713,7 +1726,6 @@ ping(); // initial draw
       p90: (cd.mc.p90.B || []).map(v => v === null ? null : Number(v))
     } : null;
 
-    // IMPORTANT: connectgaps=false so padding with nulls creates visible gaps
     const traces = [
       { x: ages, y: A.p10, connectgaps: false, fill: 'none',
         line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
@@ -1912,7 +1924,6 @@ ping(); // initial draw
     if (sensChartRA)   { sensChartRA.destroy();   sensChartRA   = null; }
   }
 
-  // Optional: show/hide spans when backend sends meta
   function updateAgeSpans(meta){
     const el = document.getElementById('compare-age-spans');
     if (!el) return;
@@ -1928,6 +1939,7 @@ ping(); // initial draw
   }
 })();
 </script>
+
 
 
 
