@@ -879,6 +879,7 @@ def compare_retirement():
 
 
 
+
 # ==== Live-WhatIf: minimal POST endpoint (append-only) ====
 from flask import request, session, jsonify
 import secrets
