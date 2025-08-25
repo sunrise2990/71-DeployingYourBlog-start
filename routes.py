@@ -419,7 +419,7 @@ from flask import Blueprint, request, jsonify, current_app, session
 from flask_login import login_required, current_user
 from sqlalchemy import func
 
-# --- your project imports (adjust paths if different) ---
+# ---- project imports (adjust if paths differ) ----
 from models import db
 from models.retirement.retirement_scenario import RetirementScenario
 from models.retirement.canonical import to_canonical_inputs, canonical_to_form_inputs
@@ -427,12 +427,17 @@ from models.retirement.canonical import to_canonical_inputs, canonical_to_form_i
 scenarios_bp = Blueprint("scenarios", __name__, url_prefix="/scenarios")
 logger = logging.getLogger(__name__)
 
+# If this module doesn't have projects_bp wired in, reuse scenarios_bp to avoid NameError/502.
+try:  # pragma: no cover
+    projects_bp
+except Exception:  # pragma: no cover
+    projects_bp = scenarios_bp
+
 
 def _get_or_create_seed() -> int:
     """
     Stable seed per browser session (and user) for reproducible MC overlays.
-    Provides a local fallback so this module never 502s if a global helper
-    isn't available.
+    Local fallback so route never 502s if a global helper isn't present.
     """
     key = "ret_mc_seed"
     try:
@@ -595,18 +600,15 @@ def _mc_args_from_params(p):
         "asset_liquidations":   p.get("asset_liquidations", []),
         "life_expectancy":      p["life_expectancy"],
         "income_tax_rate":      p.get("income_tax_rate", 0.0),
-        "num_simulations":      300,   # ← REVERT to your prior working count (change to 300 if you want)
+        "num_simulations":      300,
     }
 
 
 # routes.py
-from flask import request, jsonify, current_app  # keep for parity with your original file
+from flask import request, jsonify, current_app  # keep for parity
 from flask_login import current_user            # keep for parity
-import re                                       # keep for parity
 
-# NOTE: Your original decorator used projects_bp. Keep it as-is if that's how the app wires routes.
-# If this module doesn't actually import/define projects_bp, switch this decorator to scenarios_bp.
-@scenarios_bp.route("/retirement/compare", methods=["POST"])
+@projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
@@ -638,14 +640,14 @@ def compare_retirement():
         "inflation_rate":   0.025,
     }
 
-    # Resolve scenario by numeric ID **or** by name (case-insensitive).
+    # Resolve a scenario by numeric ID OR by name (case-insensitive).
     def _resolve_scenario(ref):
         if ref is None:
             return None
         ref_s = str(ref).strip()
         if not ref_s:
             return None
-        # Try numeric id first
+        # numeric id first
         try:
             sid = int(ref_s)
             s = RetirementScenario.query.get(sid)
@@ -655,7 +657,7 @@ def compare_retirement():
                 return s
         except Exception:
             pass
-        # Fallback to name lookup (latest updated)
+        # fallback to name
         q = RetirementScenario.query
         if current_user.is_authenticated:
             q = q.filter(RetirementScenario.user_id == current_user.id)
@@ -666,7 +668,7 @@ def compare_retirement():
 
     try:
         # -----------------------------------------------------------------
-        # Read inputs from form OR JSON
+        # Read inputs from FORM or JSON
         # -----------------------------------------------------------------
         data_json = request.get_json(silent=True) or {}
         raw_a = (request.form.get("scenario_a") or data_json.get("scenario_a") or "").strip()
@@ -679,7 +681,6 @@ def compare_retirement():
         if raw_b and not scen_b:
             return jerr("Scenario B not found (by id or name).", 404, {"scenario_b": raw_b})
 
-        # Ownership guard (defense-in-depth)
         if current_user.is_authenticated:
             if scen_a.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
@@ -706,25 +707,22 @@ def compare_retirement():
                 return {}
             a = {k: _to_num(v) for k, v in (args or {}).items()}
 
-            # ints for age/year-like; floats elsewhere
             for k, v in list(a.items()):
                 if int_like.search(k) and isinstance(v, (int, float)):
                     a[k] = int(round(v))
                 elif isinstance(v, (int, float)):
                     a[k] = float(v)
 
-            # convert whole-percent rates to decimals: 6 -> 0.06
+            # convert whole-percent entries to decimals: 6 -> 0.06
             for k, v in list(a.items()):
                 if rate_like.search(k) and isinstance(v, (int, float)) and 2 <= v <= 1000:
                     a[k] = v / 100.0
 
-            # horizons
             if "retirement_age" in a and "life_expectancy" in a:
                 ra, le = int(a["retirement_age"]), int(a["life_expectancy"])
                 if le < ra:
                     a["life_expectancy"] = ra
 
-            # CPP window
             if "cpp_start_age" in a and "cpp_end_age" in a:
                 sa, ea = int(a["cpp_start_age"]), int(a["cpp_end_age"])
                 if ea < sa:
@@ -800,14 +798,11 @@ def compare_retirement():
                 "num_simulations": 300,
             }
 
-            try:
-                if current_app and current_app.debug:
-                    current_app.logger.info(
-                        "COMPARE mc_args (seeded) for '%s' [id=%s]: %s",
-                        scn.scenario_name, scn.id, mc_args
-                    )
-            except Exception:
-                pass
+            if current_app and current_app.debug:
+                current_app.logger.info(
+                    "COMPARE mc_args (seeded) for '%s' [id=%s]: %s",
+                    scn.scenario_name, scn.id, mc_args
+                )
 
             mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
@@ -925,7 +920,6 @@ def compare_retirement():
         def _proj_args_for(scn):
             params = to_canonical_inputs(scn.inputs_json or {})
             cleaned = _normalize_args(params)
-            # apply same defaults for deterministics
             if "income_tax_rate" not in cleaned or cleaned["income_tax_rate"] is None:
                 cleaned["income_tax_rate"] = DEFAULTS["income_tax_rate"]
             if "inflation_rate" not in cleaned or cleaned["inflation_rate"] is None:
