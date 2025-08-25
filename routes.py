@@ -586,7 +586,7 @@ def compare_retirement():
 
     # Only keep volatility defaults; do NOT force tax/inflation here
     DEFAULTS = {
-        "return_std":    0.10,   # only if scenario didn't save MC sigma
+        "return_std": 0.10,  # only if scenario didn't save MC sigma
         "inflation_std": 0.005,  # only if scenario didn't save MC sigma
     }
 
@@ -595,9 +595,14 @@ def compare_retirement():
             return default
         try:
             v = float(str(val).replace("%", "").strip())
-            return v/100.0 if v > 1.5 else v
+            # accept "8" => 0.08 or "0.08" as-is
+            return v / 100.0 if v > 1.5 else v
         except Exception:
             return default
+
+    # Read hidden page-level volatility overrides ONCE (so _run_mc_for can use them)
+    vol_override_return_std = _pct_from_form(request.form.get("return_std"))
+    vol_override_inflation_std = _pct_from_form(request.form.get("inflation_std"))
 
     try:
         # Parse scenario ids
@@ -616,10 +621,6 @@ def compare_retirement():
             except Exception:
                 return jerr("Invalid Scenario B id.", 400, {"scenario_b": raw_b})
 
-        # Read hidden page-level volatility overrides (from retirement.html)
-        vol_override_return_std    = _pct_from_form(request.form.get("return_std"))
-        vol_override_inflation_std = _pct_from_form(request.form.get("inflation_std"))
-
         # Fetch from DB
         scen_a = RetirementScenario.query.get(a_id)
         if not scen_a:
@@ -634,7 +635,7 @@ def compare_retirement():
 
         # Normalizers (legacy & mixed inputs)
         rate_like = re.compile(r"(rate|mean|std)", re.I)
-        int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection|expectancy)", re.I)
+        int_like = re.compile(r"(age|year|iter|seed|step|horizon|projection|expectancy)", re.I)
 
         def _to_num(v):
             if isinstance(v, (int, float)):
@@ -698,6 +699,27 @@ def compare_retirement():
             raw = scn.inputs_json or {}
             p = to_canonical_inputs(raw)
             p = _normalize_args(p)
+
+            # ---- unit repair for legacy rows ------------------------------------
+            units_tag = (raw.get("_units") or "").lower()
+
+            # If the row was explicitly saved in form units, convert now.
+            if units_tag == "form":
+                p["annual_saving"] = float(p.get("annual_saving", 0.0)) * 12.0
+                p["annual_expense"] = float(p.get("annual_expense", 0.0)) * 12.0
+            else:
+                # Heuristic safety net for legacy rows missing the tag:
+                # treat clearly-monthly values as monthly and convert.
+                if 0 < float(p.get("annual_expense", 0.0)) < 20000:
+                    p["annual_expense"] *= 12.0
+                if 0 < float(p.get("annual_saving", 0.0)) < 15000:
+                    p["annual_saving"] *= 12.0
+            # ---------------------------------------------------------------------
+
+            current_app.logger.info(
+                "COMPARE using annual_saving=%s, annual_expense=%s, units_tag=%s",
+                p.get("annual_saving"), p.get("annual_expense"), units_tag
+            )
 
             # Volatility: fill if missing, then apply page overrides
             if "return_std" not in p or p["return_std"] in (None, ""):
