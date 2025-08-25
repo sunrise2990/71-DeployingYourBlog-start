@@ -412,9 +412,47 @@ def retirement():
 
 import logging
 import traceback
+import re
+from secrets import randbits
+
+from flask import Blueprint, request, jsonify, current_app, session
+from flask_login import login_required, current_user
+from sqlalchemy import func
+
+# --- your project imports (assumed present) ---
+from models import db
+from models.retirement.retirement_scenario import RetirementScenario
+from models.retirement.canonical import to_canonical_inputs, canonical_to_form_inputs
 
 scenarios_bp = Blueprint("scenarios", __name__, url_prefix="/scenarios")
 logger = logging.getLogger(__name__)
+
+
+def _get_or_create_seed() -> int:
+    """
+    Stable-ish seed per session (and user) for reproducible overlays.
+    Prevents crashes if helper isn't available elsewhere.
+    """
+    key = "ret_mc_seed"
+    try:
+        seed = session.get(key)
+        if seed is None:
+            if getattr(current_user, "is_authenticated", False):
+                # user-scoped stable seed
+                seed = abs(hash(f"mcseed::{current_user.get_id()}")) % (2**31 - 1)
+            else:
+                seed = randbits(31)
+            session[key] = int(seed)
+        return int(seed)
+    except Exception:
+        # absolute fallback
+        s = randbits(31)
+        try:
+            session[key] = int(s)
+        except Exception:
+            pass
+        return int(s)
+
 
 @scenarios_bp.route("/save", methods=["POST"])
 @login_required
@@ -563,11 +601,10 @@ def _mc_args_from_params(p):
 
 
 # routes.py
-from flask import request, jsonify, current_app
-from flask_login import current_user
-import re
+# (keeping your section label)
+# Accepts scenario by ID OR NAME; supports form AND JSON payloads.
 
-@projects_bp.route("/retirement/compare", methods=["POST"])
+@scenarios_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
@@ -582,8 +619,11 @@ def compare_retirement():
     """
     def jerr(msg, code=400, extra=None):
         if extra:
-            current_app.logger.warning("compare_retirement: %s | extra=%s", msg, extra)
-        return jsonify({"error": msg, **({"_extra": extra} if (current_app.debug and extra) else {})}), code
+            try:
+                current_app.logger.warning("compare_retirement: %s | extra=%s", msg, extra)
+            except Exception:
+                pass
+        return jsonify({"error": msg, **({"_extra": extra} if (current_app and current_app.debug and extra) else {})}), code
 
     # -------- canonical defaults to mirror your main calculator ----------
     DEFAULTS = {
@@ -593,33 +633,53 @@ def compare_retirement():
         "inflation_rate":   0.025,
     }
 
+    # --- helper: resolve by ID or name (case-insensitive), scoped to user if logged-in
+    def _resolve_scenario(ref):
+        if ref is None:
+            return None
+        ref_s = str(ref).strip()
+        if not ref_s:
+            return None
+        # try numeric id first
+        try:
+            sid = int(ref_s)
+            s = RetirementScenario.query.get(sid)
+            # enforce ownership if logged in
+            if s and current_user.is_authenticated and s.user_id != current_user.id:
+                return None
+            if s:
+                return s
+        except Exception:
+            pass
+        # fall back to name lookup
+        q = RetirementScenario.query
+        if current_user.is_authenticated:
+            q = q.filter(RetirementScenario.user_id == current_user.id)
+        s = q.filter(func.lower(RetirementScenario.scenario_name) == ref_s.lower()) \
+             .order_by(RetirementScenario.updated_at.desc()) \
+             .first()
+        return s
+
     try:
         # -----------------------------------------------------------------
-        # Parse scenario ids
+        # Parse scenario refs from form or JSON
         # -----------------------------------------------------------------
-        raw_a = (request.form.get("scenario_a") or "").strip()
-        raw_b = (request.form.get("scenario_b") or "").strip()
+        raw_a = (request.form.get("scenario_a") if request.form else None)
+        raw_b = (request.form.get("scenario_b") if request.form else None)
+        if raw_a is None or raw_a == "":
+            raw_a = (request.get_json(silent=True) or {}).get("scenario_a")
+        if raw_b is None or raw_b == "":
+            raw_b = (request.get_json(silent=True) or {}).get("scenario_b")
 
-        try:
-            a_id = int(raw_a)
-        except Exception:
-            return jerr("Invalid Scenario A id.", 400, {"scenario_a": raw_a})
-
-        b_id = None
-        if raw_b:
-            try:
-                b_id = int(raw_b)
-            except Exception:
-                return jerr("Invalid Scenario B id.", 400, {"scenario_b": raw_b})
-
-        # -----------------------------------------------------------------
-        # Fetch from DB (only)
-        # -----------------------------------------------------------------
-        scen_a = RetirementScenario.query.get(a_id)
+        scen_a = _resolve_scenario(raw_a)
         if not scen_a:
-            return jerr("Scenario A not found.", 404, {"a_id": a_id})
-        scen_b = RetirementScenario.query.get(b_id) if b_id else None
+            return jerr("Scenario A not found (by id or name).", 404, {"scenario_a": raw_a})
 
+        scen_b = _resolve_scenario(raw_b) if raw_b else None
+        if raw_b and not scen_b:
+            return jerr("Scenario B not found (by id or name).", 404, {"scenario_b": raw_b})
+
+        # Ownership guard (id path handled above; keep for safety)
         if current_user.is_authenticated:
             if scen_a.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
@@ -629,7 +689,6 @@ def compare_retirement():
         # -----------------------------------------------------------------
         # Normalizers (legacy & mixed inputs)
         # -----------------------------------------------------------------
-        import re
         rate_like = re.compile(r"(rate|mean|std)", re.I)
         int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection|expectancy)", re.I)
 
@@ -741,11 +800,14 @@ def compare_retirement():
                 "num_simulations": 300,
             }
 
-            if current_app.debug:
-                current_app.logger.info(
-                    "COMPARE mc_args (seeded) for '%s' [id=%s]: %s",
-                    scn.scenario_name, scn.id, mc_args
-                )
+            if current_app and current_app.debug:
+                try:
+                    current_app.logger.info(
+                        "COMPARE mc_args (seeded) for '%s' [id=%s]: %s",
+                        scn.scenario_name, scn.id, mc_args
+                    )
+                except Exception:
+                    pass
 
             mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
@@ -779,7 +841,10 @@ def compare_retirement():
         try:
             A = _run_mc_for(scen_a)
         except Exception as e:
-            current_app.logger.exception("compare_retirement A failed")
+            try:
+                current_app.logger.exception("compare_retirement A failed")
+            except Exception:
+                logger.exception("compare_retirement A failed")
             return jerr(f"MC failed for scenario '{scen_a.scenario_name}': {e}", 400)
 
         B = None
@@ -787,7 +852,10 @@ def compare_retirement():
             try:
                 B = _run_mc_for(scen_b)
             except Exception as e:
-                current_app.logger.exception("compare_retirement B failed")
+                try:
+                    current_app.logger.exception("compare_retirement B failed")
+                except Exception:
+                    logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
         # -----------------------------------------------------------------
@@ -837,10 +905,13 @@ def compare_retirement():
             maxB = _max_or_zero(B_p50)
             if maxB > 1e9 or (maxA > 0 and maxB > 20 * maxA):
                 warning = "Scenario B may be using different units (rates/years). Overlay shown; please review inputs."
-                current_app.logger.warning(
-                    "Compare soft warning: maxA=%s maxB=%s | A_args=%s | B_args=%s",
-                    maxA, maxB, A.get("_args"), B.get("_args")
-                )
+                try:
+                    current_app.logger.warning(
+                        "Compare soft warning: maxA=%s maxB=%s | A_args=%s | B_args=%s",
+                        maxA, maxB, A.get("_args"), B.get("_args")
+                    )
+                except Exception:
+                    pass
 
         # -----------------------------------------------------------------
         # Sensitivity compare (deterministic projection) — with defaults
@@ -872,7 +943,10 @@ def compare_retirement():
             proj_a = _proj_args_for(scen_a)
             sensA_dollar, sensA_pct = _run_sensitivity_for(proj_a)
         except Exception as e:
-            current_app.logger.exception("Sensitivity A failed: %s", e)
+            try:
+                current_app.logger.exception("Sensitivity A failed: %s", e)
+            except Exception:
+                logger.exception("Sensitivity A failed: %s", e)
 
         sensB_dollar, sensB_pct = None, None
         if scen_b:
@@ -880,7 +954,10 @@ def compare_retirement():
                 proj_b = _proj_args_for(scen_b)
                 sensB_dollar, sensB_pct = _run_sensitivity_for(proj_b)
             except Exception as e:
-                current_app.logger.exception("Sensitivity B failed: %s", e)
+                try:
+                    current_app.logger.exception("Sensitivity B failed: %s", e)
+                except Exception:
+                    logger.exception("Sensitivity B failed: %s", e)
 
         payload["sens"] = {
             "vars": SENS_VARS,
@@ -895,7 +972,7 @@ def compare_retirement():
             payload["warning"] = warning
 
         # rich debug so you can *see* what got used
-        if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
+        if (current_app and current_app.debug) or (current_app and current_app.config.get("COMPARE_DEBUG")):
             payload["_debug"] = {
                 "seed": seed,
                 "A_id": A.get("_scenario_id"),
@@ -915,11 +992,15 @@ def compare_retirement():
         return jsonify(payload), 200
 
     except Exception as e:
-        current_app.logger.exception("compare_retirement unexpected failure: %s", e)
+        try:
+            current_app.logger.exception("compare_retirement unexpected failure: %s", e)
+        except Exception:
+            logger.exception("compare_retirement unexpected failure: %s", e)
         msg = "Server error during compare."
-        if current_app.debug:
+        if current_app and current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
