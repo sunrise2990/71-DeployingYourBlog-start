@@ -412,6 +412,15 @@ def retirement():
 
 import logging
 import traceback
+import re
+
+from flask import Blueprint, request, jsonify, current_app
+from flask_login import login_required, current_user
+
+from models import db
+from models.retirement.retirement_scenario import RetirementScenario
+# adjust import paths to wherever these live in your project
+from models.retirement.canonical import to_canonical_inputs, canonical_to_form_inputs
 
 scenarios_bp = Blueprint("scenarios", __name__, url_prefix="/scenarios")
 logger = logging.getLogger(__name__)
@@ -546,8 +555,8 @@ def _mc_args_from_params(p):
         "annual_saving":        p["annual_saving"],
         "saving_increase_rate": p["saving_increase_rate"],
         "current_assets":       p["current_assets"],
-        "return_mean":          p["return_rate"],         # ← REVERT: no +0.5*σ² here
-        "return_mean_after":    p["return_rate_after"],   # ← REVERT: pass through
+        "return_mean":          p["return_rate"],         # ← pass CAGRs through (no +0.5*σ²)
+        "return_mean_after":    p["return_rate_after"],
         "return_std":           p.get("return_std", 0.08),
         "annual_expense":       p["annual_expense"],
         "inflation_mean":       p["inflation_rate"],
@@ -558,14 +567,16 @@ def _mc_args_from_params(p):
         "asset_liquidations":   p.get("asset_liquidations", []),
         "life_expectancy":      p["life_expectancy"],
         "income_tax_rate":      p.get("income_tax_rate", 0.0),
-        "num_simulations":      300,   # ← REVERT to your prior working count (change to 300 if you want)
+        "num_simulations":      300,
     }
 
 
-# routes.py
+# routes.py (in the same file or your projects blueprint module)
 from flask import request, jsonify, current_app
 from flask_login import current_user
-import re
+
+# Force debug payloads even in prod so you can see the exact inputs used
+ALWAYS_DEBUG = True
 
 @projects_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
@@ -589,7 +600,7 @@ def compare_retirement():
     DEFAULTS = {
         "return_std":       0.10,   # if scenario didn't save MC sigma
         "inflation_std":    0.005,
-        "income_tax_rate":  0.15,   # <<< critical fix vs current 0.0 fallback
+        "income_tax_rate":  0.15,   # critical vs 0.0 fallback
         "inflation_rate":   0.025,
     }
 
@@ -629,7 +640,6 @@ def compare_retirement():
         # -----------------------------------------------------------------
         # Normalizers (legacy & mixed inputs)
         # -----------------------------------------------------------------
-        import re
         rate_like = re.compile(r"(rate|mean|std)", re.I)
         int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection|expectancy)", re.I)
 
@@ -680,7 +690,7 @@ def compare_retirement():
         def _pad_series(series_map, axis_ages):
             return [series_map.get(age, None) for age in axis_ages]
 
-        # use the same seed as elsewhere so curves are consistent
+        # seeded MC for reproducibility
         seed = _get_or_create_seed()
 
         # lazy imports to avoid circulars
@@ -714,45 +724,22 @@ def compare_retirement():
             if "cpp_end_age" not in p or p["cpp_end_age"] is None:
                 p["cpp_end_age"] = int(p["life_expectancy"])
 
-            # ---- Compare-only guard for legacy "monthly saved as annual" rows ----
-            ann_sav = float(p.get("annual_saving", 0.0))
-            if ann_sav >= 300_000 and (ann_sav / 12.0) <= 200_000:
-                try:
-                    current_app.logger.warning(
-                        "compare: annual_saving looks 12x for id=%s: %.2f -> %.2f",
-                        scn.id, ann_sav, ann_sav / 12.0
-                    )
-                except Exception:
-                    pass
-                ann_sav = ann_sav / 12.0
-
-            ann_exp = float(p.get("annual_expense", 0.0))
-            if ann_exp >= 300_000 and (ann_exp / 12.0) <= 200_000:
-                try:
-                    current_app.logger.warning(
-                        "compare: annual_expense looks 12x for id=%s: %.2f -> %.2f",
-                        scn.id, ann_exp, ann_exp / 12.0
-                    )
-                except Exception:
-                    pass
-                ann_exp = ann_exp / 12.0
-
             sigma      = float(p["return_std"])
             infl_sigma = float(p["inflation_std"])
 
             mc_args = {
                 "current_age": int(p["current_age"]),
                 "retirement_age": int(p["retirement_age"]),
-                "annual_saving": ann_sav,
+                "annual_saving": float(p["annual_saving"]),
                 "saving_increase_rate": float(p.get("saving_increase_rate", 0.0)),
                 "current_assets": float(p["current_assets"]),
 
-                # SAME as deterministic (no +0.5σ² bump)
+                # pass CAGRs straight through — no +0.5σ² drift bump
                 "return_mean": float(p["return_rate"]),
                 "return_mean_after": float(p["return_rate_after"]),
                 "return_std": sigma,
 
-                "annual_expense": ann_exp,
+                "annual_expense": float(p["annual_expense"]),
                 "inflation_mean": float(p["inflation_rate"]),
                 "inflation_std": infl_sigma,
                 "cpp_monthly": float(p.get("cpp_monthly", 0.0)),
@@ -764,8 +751,14 @@ def compare_retirement():
                 "num_simulations": 300,
             }
 
-            if current_app.debug:
-                current_app.logger.info("COMPARE mc_args (seeded) for %s: %s", scn.scenario_name, mc_args)
+            # Always log the exact inputs used (args, canon, raw)
+            try:
+                logger.info(
+                    "COMPARE id=%s name=%s args=%s canon=%s raw=%s",
+                    scn.id, scn.scenario_name, mc_args, p, raw
+                )
+            except Exception:
+                pass
 
             mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
@@ -914,8 +907,8 @@ def compare_retirement():
         if warning:
             payload["warning"] = warning
 
-        # rich debug so you can *see* what got used
-        if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
+        # rich debug so you can *see* what got used — ALWAYS on while diagnosing
+        if ALWAYS_DEBUG or current_app.debug or current_app.config.get("COMPARE_DEBUG"):
             payload["_debug"] = {
                 "seed": seed,
                 "A_id": A.get("_scenario_id"),
@@ -940,6 +933,7 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
