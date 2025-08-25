@@ -419,7 +419,7 @@ from flask import Blueprint, request, jsonify, current_app, session
 from flask_login import login_required, current_user
 from sqlalchemy import func
 
-# --- your project imports (assumed present) ---
+# --- your project imports (adjust paths if different) ---
 from models import db
 from models.retirement.retirement_scenario import RetirementScenario
 from models.retirement.canonical import to_canonical_inputs, canonical_to_form_inputs
@@ -430,22 +430,21 @@ logger = logging.getLogger(__name__)
 
 def _get_or_create_seed() -> int:
     """
-    Stable-ish seed per session (and user) for reproducible overlays.
-    Prevents crashes if helper isn't available elsewhere.
+    Stable seed per browser session (and user) for reproducible MC overlays.
+    Provides a local fallback so this module never 502s if a global helper
+    isn't available.
     """
     key = "ret_mc_seed"
     try:
         seed = session.get(key)
         if seed is None:
             if getattr(current_user, "is_authenticated", False):
-                # user-scoped stable seed
                 seed = abs(hash(f"mcseed::{current_user.get_id()}")) % (2**31 - 1)
             else:
                 seed = randbits(31)
             session[key] = int(seed)
         return int(seed)
     except Exception:
-        # absolute fallback
         s = randbits(31)
         try:
             session[key] = int(s)
@@ -601,9 +600,12 @@ def _mc_args_from_params(p):
 
 
 # routes.py
-# (keeping your section label)
-# Accepts scenario by ID OR NAME; supports form AND JSON payloads.
+from flask import request, jsonify, current_app  # keep for parity with your original file
+from flask_login import current_user            # keep for parity
+import re                                       # keep for parity
 
+# NOTE: Your original decorator used projects_bp. Keep it as-is if that's how the app wires routes.
+# If this module doesn't actually import/define projects_bp, switch this decorator to scenarios_bp.
 @scenarios_bp.route("/retirement/compare", methods=["POST"])
 def compare_retirement():
     """
@@ -618,12 +620,15 @@ def compare_retirement():
       especially income_tax_rate (0.15) to avoid the 0% tax inflation bug.
     """
     def jerr(msg, code=400, extra=None):
-        if extra:
-            try:
+        try:
+            if extra:
                 current_app.logger.warning("compare_retirement: %s | extra=%s", msg, extra)
-            except Exception:
-                pass
-        return jsonify({"error": msg, **({"_extra": extra} if (current_app and current_app.debug and extra) else {})}), code
+        except Exception:
+            pass
+        payload = {"error": msg}
+        if current_app and current_app.debug and extra:
+            payload["_extra"] = extra
+        return jsonify(payload), code
 
     # -------- canonical defaults to mirror your main calculator ----------
     DEFAULTS = {
@@ -633,25 +638,24 @@ def compare_retirement():
         "inflation_rate":   0.025,
     }
 
-    # --- helper: resolve by ID or name (case-insensitive), scoped to user if logged-in
+    # Resolve scenario by numeric ID **or** by name (case-insensitive).
     def _resolve_scenario(ref):
         if ref is None:
             return None
         ref_s = str(ref).strip()
         if not ref_s:
             return None
-        # try numeric id first
+        # Try numeric id first
         try:
             sid = int(ref_s)
             s = RetirementScenario.query.get(sid)
-            # enforce ownership if logged in
             if s and current_user.is_authenticated and s.user_id != current_user.id:
                 return None
             if s:
                 return s
         except Exception:
             pass
-        # fall back to name lookup
+        # Fallback to name lookup (latest updated)
         q = RetirementScenario.query
         if current_user.is_authenticated:
             q = q.filter(RetirementScenario.user_id == current_user.id)
@@ -662,24 +666,20 @@ def compare_retirement():
 
     try:
         # -----------------------------------------------------------------
-        # Parse scenario refs from form or JSON
+        # Read inputs from form OR JSON
         # -----------------------------------------------------------------
-        raw_a = (request.form.get("scenario_a") if request.form else None)
-        raw_b = (request.form.get("scenario_b") if request.form else None)
-        if raw_a is None or raw_a == "":
-            raw_a = (request.get_json(silent=True) or {}).get("scenario_a")
-        if raw_b is None or raw_b == "":
-            raw_b = (request.get_json(silent=True) or {}).get("scenario_b")
+        data_json = request.get_json(silent=True) or {}
+        raw_a = (request.form.get("scenario_a") or data_json.get("scenario_a") or "").strip()
+        raw_b = (request.form.get("scenario_b") or data_json.get("scenario_b") or "").strip()
 
         scen_a = _resolve_scenario(raw_a)
         if not scen_a:
             return jerr("Scenario A not found (by id or name).", 404, {"scenario_a": raw_a})
-
         scen_b = _resolve_scenario(raw_b) if raw_b else None
         if raw_b and not scen_b:
             return jerr("Scenario B not found (by id or name).", 404, {"scenario_b": raw_b})
 
-        # Ownership guard (id path handled above; keep for safety)
+        # Ownership guard (defense-in-depth)
         if current_user.is_authenticated:
             if scen_a.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
@@ -800,14 +800,14 @@ def compare_retirement():
                 "num_simulations": 300,
             }
 
-            if current_app and current_app.debug:
-                try:
+            try:
+                if current_app and current_app.debug:
                     current_app.logger.info(
                         "COMPARE mc_args (seeded) for '%s' [id=%s]: %s",
                         scn.scenario_name, scn.id, mc_args
                     )
-                except Exception:
-                    pass
+            except Exception:
+                pass
 
             mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
