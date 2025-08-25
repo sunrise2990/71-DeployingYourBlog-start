@@ -421,22 +421,35 @@ logger = logging.getLogger(__name__)
 def save_scenario():
     data = request.get_json(silent=True) or {}
     scenario_name = data.get("scenario_name")
-    inputs_json   = data.get("inputs_json")  # may be legacy or canonical
+    inputs_json   = (data.get("inputs_json") or {}).copy()
 
     if not scenario_name or inputs_json is None:
         return jsonify({"error": "Missing scenario_name or inputs_json"}), 400
 
-    # >>> ADD THIS: treat form's "Monthly Savings" as monthly, convert to annual for storage
-    try:
-        if isinstance(inputs_json, dict) and "annual_saving" in inputs_json:
-            # Heuristic: presence of monthly_living_expense indicates a raw form payload
-            if "monthly_living_expense" in inputs_json:
-                inputs_json["annual_saving"] = float(inputs_json["annual_saving"] or 0) * 12.0
-    except Exception:
-        pass
-    # <<< END ADD
+    # --- Only convert if we KNOW it's the form payload (monthly UI) ---
+    # 1) explicit hint if you ever send it: {"units": "form"}
+    # 2) or presence of the form-only field monthly_living_expense
+    units_hint    = (data.get("units") or inputs_json.get("_units") or "").lower()
+    is_form_units = (
+        units_hint == "form"
+        or ("monthly_living_expense" in inputs_json and "annual_expense" not in inputs_json)
+    )
 
-    # ✅ Normalize BEFORE persisting so rows are always canonical
+    if is_form_units:
+        # monthly -> annual
+        try:
+            inputs_json["annual_saving"] = float(inputs_json.get("annual_saving", 0) or 0) * 12.0
+        except Exception:
+            inputs_json["annual_saving"] = 0.0
+        try:
+            ml = float(inputs_json.pop("monthly_living_expense", 0) or 0)
+            inputs_json["annual_expense"] = ml * 12.0
+        except Exception:
+            inputs_json.pop("monthly_living_expense", None)
+            inputs_json["annual_expense"] = float(inputs_json.get("annual_expense") or 0.0)
+        inputs_json["_units"] = "canonical"  # optional tag for future rows
+
+    # ✅ Normalize names/types once before persisting
     canon = to_canonical_inputs(inputs_json)
 
     existing = RetirementScenario.query.filter_by(
