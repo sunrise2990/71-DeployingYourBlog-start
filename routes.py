@@ -1305,75 +1305,52 @@ def live_update():
 
 
 
-# --- Volatility preview for Compare (reads from saved scenarios only) ---
-from flask import jsonify
-
-def _pctish_to_decimal(v):
-    """Accept 0.12, 12, '12%', or 'Balanced (12%)' -> 0.12 ."""
-    if v is None or v == "":
-        return None
-    try:
-        s = str(v).strip()
-        if "(" in s and ")" in s:  # e.g., "Balanced (12%)"
-            s = s[s.find("(")+1:s.find(")")]
-        s = s.replace("%", "")
-        x = float(s)
-        return x/100.0 if x > 1.5 else x
-    except Exception:
-        return None
-
-def _fmt_pct(x):
-    return None if x is None else f"{x*100:.1f}%"
-
-def _extract_vol_row(scn):
-    p = to_canonical_inputs((scn.inputs_json or {}))
-    r_std = _pctish_to_decimal(p.get("return_std"))
-    i_std = _pctish_to_decimal(p.get("inflation_std"))
-    return {
-        "scenario_id": scn.id,
-        "scenario_name": scn.scenario_name,
-        "return_std_decimal": r_std,
-        "inflation_std_decimal": i_std,
-        "return_std_display": _fmt_pct(r_std) or "—",
-        "inflation_std_display": _fmt_pct(i_std) or "—",
-        "raw": {
-            "return_std": p.get("return_std"),
-            "inflation_std": p.get("inflation_std"),
-        },
-        "present": (r_std is not None or i_std is not None),
-    }
-
-@projects_bp.route("/retirement/compare/vol-preview", methods=["POST"])
+# --- Compare volatility preview (GET; no page overrides) ---
+@projects_bp.route("/retirement/compare/vol-preview.json", methods=["GET"])
 @login_required
-def compare_vol_preview():
-    """
-    Returns the saved return_std / inflation_std for Scenario A/B directly from the DB.
-    Does NOT apply page overrides or defaults. Purely for debugging what’s stored.
-    """
-    def parse_int(x):
+def compare_vol_preview_json():
+    def parse_id(q):
         try:
-            return int((x or "").strip())
+            return int((q or "").strip())
         except Exception:
             return None
 
-    a_id = parse_int(request.form.get("scenario_a"))
-    b_id = parse_int(request.form.get("scenario_b"))
+    a_id = parse_id(request.args.get("a"))
+    b_id = parse_id(request.args.get("b"))
 
-    out = {"A": None, "B": None}
+    def pctish_to_decimal(v):
+        if v is None or v == "":
+            return None
+        try:
+            s = str(v).strip()
+            if "(" in s and ")" in s:  # e.g., "Balanced (12%)"
+                s = s[s.find("(")+1:s.find(")")]
+            s = s.replace("%", "")
+            x = float(s)
+            return x/100.0 if x > 1.5 else x
+        except Exception:
+            return None
 
-    def load_one(sid, key):
+    def load_one(sid):
         if not sid:
-            return
+            return None
         scn = RetirementScenario.query.get(sid)
         if not scn or scn.user_id != current_user.id:
-            out[key] = {"error": "not found or unauthorized", "scenario_id": sid}
-        else:
-            out[key] = _extract_vol_row(scn)
+            return {"error": "not found or unauthorized", "scenario_id": sid}
+        p = to_canonical_inputs(scn.inputs_json or {})
+        r = pctish_to_decimal(p.get("return_std"))
+        i = pctish_to_decimal(p.get("inflation_std"))
+        return {
+            "scenario_id": scn.id,
+            "scenario_name": scn.scenario_name,
+            "return_std": r,
+            "inflation_std": i,
+            "return_std_display": (f"{r*100:.1f}%" if r is not None else None),
+            "inflation_std_display": (f"{i*100:.1f}%" if i is not None else None),
+            "raw": {"return_std": p.get("return_std"), "inflation_std": p.get("inflation_std")},
+        }
 
-    load_one(a_id, "A")
-    load_one(b_id, "B")
-
-    return jsonify(out), 200
+    return jsonify({"A": load_one(a_id), "B": load_one(b_id)}), 200
 
 
 

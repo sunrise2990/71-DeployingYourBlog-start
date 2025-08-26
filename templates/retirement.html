@@ -1346,11 +1346,11 @@ ping(); // initial draw
 
 
 
-<!-- ===== Compare Volatility Check (from DB) ===== -->
-<div id="compare-vol-check" class="card" style="margin: 18px 0;">
-  <div class="card-body" id="compare-vol-check-body">
+<!-- ===== Compare Volatility Check (saved in DB) ===== -->
+<div id="compare-vol-check" class="card" style="margin:18px 0;">
+  <div class="card-body">
     <div style="font-weight:600;margin-bottom:8px;">Volatility saved on scenarios (DB)</div>
-    <div class="text-muted">Select Scenario A / B above; this shows <em>what’s stored</em> on each scenario.</div>
+    <div class="text-muted">Select Scenario A / B above; this shows exactly what is stored on each scenario.</div>
     <table class="table table-sm" style="margin-top:10px;">
       <thead>
         <tr>
@@ -1368,31 +1368,49 @@ ping(); // initial draw
 </div>
 
 <script>
-(function () {
-  const url = "{{ url_for('projects.compare_vol_preview') }}";
+(function(){
+  const url = "{{ url_for('projects.compare_vol_preview_json') }}";
   const rowsEl = document.getElementById("compare-vol-check-rows");
   const rawEl  = document.getElementById("compare-vol-check-raw");
 
-  function $sel(name) { return document.querySelector(`select[name="${name}"]`); }
+  // Be tolerant of different naming
+  function pickSelect(names) {
+    for (const n of names) {
+      const byName = document.querySelector(`select[name="${n}"]`);
+      if (byName) return byName;
+      const byId = document.getElementById(n);
+      if (byId && byId.tagName === "SELECT") return byId;
+    }
+    return null;
+  }
 
-  async function refreshVolPreview() {
-    const sa = $sel("scenario_a") ? $sel("scenario_a").value : "";
-    const sb = $sel("scenario_b") ? $sel("scenario_b").value : "";
+  const selA = pickSelect(["scenario_a","scenarioA","compare_a"]);
+  const selB = pickSelect(["scenario_b","scenarioB","compare_b"]);
+  function currentIds() {
+    return {
+      a: selA ? (selA.value || "") : "",
+      b: selB ? (selB.value || "") : ""
+    };
+  }
 
-    const fd = new FormData();
-    fd.append("scenario_a", sa || "");
-    fd.append("scenario_b", sb || "");
-
+  async function refresh() {
+    if (!selA && !selB) {
+      rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">Compare selectors not found on this page.</td></tr>`;
+      rawEl.textContent = "";
+      return;
+    }
+    const ids = currentIds();
+    const qp = new URLSearchParams({ a: ids.a, b: ids.b }).toString();
     try {
-      const resp = await fetch(url, { method: "POST", body: fd });
-      const data = await resp.json();
+      const r = await fetch(`${url}?${qp}`, { method: "GET", credentials: "same-origin" });
+      const data = await r.json();
 
       function row(label, obj) {
         if (!obj) return `<tr><td>${label}</td><td>—</td><td>—</td></tr>`;
         if (obj.error) return `<tr><td>${label}</td><td colspan="2" class="text-danger">${obj.error}</td></tr>`;
         const name = (obj.scenario_name || "").replace(/</g,"&lt;");
-        const rs   = obj.return_std_display || "—";
-        const is   = obj.inflation_std_display || "—";
+        const rs = obj.return_std_display || "—";
+        const is = obj.inflation_std_display || "—";
         return `<tr>
                   <td>${label}: <strong>${name}</strong></td>
                   <td>${rs}</td>
@@ -1401,27 +1419,26 @@ ping(); // initial draw
       }
 
       rowsEl.innerHTML = row("A", data.A) + row("B", data.B);
-
-      // Optional: show raw saved values for forensic debugging
       const rawA = data.A && data.A.raw ? JSON.stringify(data.A.raw) : "{}";
       const rawB = data.B && data.B.raw ? JSON.stringify(data.B.raw) : "{}";
       rawEl.textContent = `raw A: ${rawA}   |   raw B: ${rawB}`;
-    } catch (e) {
-      rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">Failed to load: ${e}</td></tr>`;
+    } catch (err) {
+      rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">Failed to load preview: ${err}</td></tr>`;
       rawEl.textContent = "";
     }
   }
 
-  // Update when the user changes the Compare selectors
-  document.addEventListener("change", (ev) => {
-    if (ev.target && (ev.target.name === "scenario_a" || ev.target.name === "scenario_b")) {
-      refreshVolPreview();
-    }
-  });
+  // React to selector changes (if they exist)
+  if (selA) selA.addEventListener("change", refresh);
+  if (selB) selB.addEventListener("change", refresh);
 
   // Initial paint
-  document.addEventListener("DOMContentLoaded", refreshVolPreview);
+  document.addEventListener("DOMContentLoaded", refresh);
+  // And a safety refresh once the page fully loads in case the selects are hydrated late
+  window.addEventListener("load", refresh);
 })();
+
+
 
 </script>
 
