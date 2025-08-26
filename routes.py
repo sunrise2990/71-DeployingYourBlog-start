@@ -559,11 +559,11 @@ def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
 
-    FIX: Per-scenario volatility
-    - For each scenario, use its saved return_std / inflation_std from DB.
-    - If a scenario lacks those, fall back to current page values, then to hard defaults.
-    - No drift bump (+0.5*sigma^2); pass deterministic CAGRs straight through.
-    - Keep union x-axis and sensitivity compare exactly as before.
+    FIX:
+      - Use each scenario's saved volatility (return_std, inflation_std).
+      - Only fall back to page values (then hard defaults) if missing.
+      - Keep deterministic CAGRs as-is (no +0.5*sigma^2 bump).
+      - Same seed, union axis, and sensitivity as before.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -621,6 +621,7 @@ def compare_retirement():
                     a[k] = v / 100.0
                 if int_like.search(k) and isinstance(a[k], (int, float)):
                     a[k] = int(round(a[k]))
+            # basic guards
             if "retirement_age" in a and "life_expectancy" in a:
                 ra, le = int(a["retirement_age"]), int(a["life_expectancy"])
                 if le < ra:
@@ -631,13 +632,13 @@ def compare_retirement():
                     a["cpp_end_age"] = sa
             return a
 
-        # Convert things like "Balanced (12%)", "12", "12%", "0.12" -> decimal
+        # Parse things like "Balanced (12%)", "12%", "12", "0.12" -> decimal
         def pctish_to_decimal(v):
             if v is None or v == "":
                 return None
             try:
                 s = str(v).strip()
-                if "(" in s and ")" in s:  # e.g., "Aggressive (18%)"
+                if "(" in s and ")" in s:            # "Aggressive (18%)"
                     s = s[s.find("(")+1:s.find(")")]
                 s = s.replace("%", "")
                 x = float(s)
@@ -645,17 +646,11 @@ def compare_retirement():
             except Exception:
                 return None
 
-        # Page vol (used only as a fallback for a scenario that didn't save vol)
-        def _parse_pct(x):
-            if x is None or x == "":
-                return None
-            return pctish_to_decimal(x)
+        # Page vol (used only as a fallback per-scenario)
+        ui_sigma      = pctish_to_decimal(request.form.get("return_std"))
+        ui_infl_sigma = pctish_to_decimal(request.form.get("inflation_std"))
 
-        ui_sigma      = _parse_pct(request.form.get("return_std"))
-        ui_infl_sigma = _parse_pct(request.form.get("inflation_std"))
-
-        # Per-scenario volatility:
-        # saved -> page override -> hard defaults (0.10, 0.005)
+        # Per-scenario volatility: saved -> page -> defaults
         def _vol_for(scn):
             p = to_canonical_inputs(scn.inputs_json or {})
             r_saved = pctish_to_decimal(p.get("return_std"))
@@ -676,7 +671,7 @@ def compare_retirement():
             p = to_canonical_inputs(scn.inputs_json or {})
             p = _normalize_args(p)
 
-            sigma, infl_sigma = _vol_for(scn)  # <-- per-scenario σ values
+            sigma, infl_sigma = _vol_for(scn)   # <-- per-scenario σ
 
             mc_args = {
                 "current_age": int(p["current_age"]),
@@ -685,14 +680,14 @@ def compare_retirement():
                 "saving_increase_rate": float(p.get("saving_increase_rate", 0.0)),
                 "current_assets": float(p["current_assets"]),
 
-                # Use deterministic CAGRs directly (NO +0.5σ² bump)
+                # pass deterministic CAGRs directly
                 "return_mean": float(p["return_rate"]),
                 "return_mean_after": float(p["return_rate_after"]),
-                "return_std": sigma,
+                "return_std": sigma,                    # <-- use scenario σ
 
                 "annual_expense": float(p["annual_expense"]),
                 "inflation_mean": float(p.get("inflation_rate", 0.0)),
-                "inflation_std": infl_sigma,
+                "inflation_std": infl_sigma,            # <-- use scenario σ
                 "cpp_monthly": float(p.get("cpp_monthly", 0.0)),
                 "cpp_start_age": int(p.get("cpp_start_age", p["retirement_age"])),
                 "cpp_end_age": int(p.get("cpp_end_age", p["life_expectancy"])),
@@ -733,7 +728,7 @@ def compare_retirement():
                 "end_age": end_age,
             }
 
-        # ---------- A (required) ----------
+        # ---------- A ----------
         try:
             A = _run_mc_for(scen_a)
         except Exception as e:
@@ -749,7 +744,7 @@ def compare_retirement():
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- Build UNION axis & pad series ----------
+        # ---------- union axis ----------
         axis_start = A["start_age"]
         axis_end   = A["end_age"]
         if B:
@@ -795,7 +790,7 @@ def compare_retirement():
                     maxA, maxB, A.get("_args"), B.get("_args")
                 )
 
-        # ---------- Sensitivity Compare (unchanged) ----------
+        # ---------- sensitivity (unchanged) ----------
         SENS_VARS = [
             "current_assets", "return_rate", "return_rate_after",
             "annual_saving", "annual_expense", "saving_increase_rate",
@@ -851,9 +846,10 @@ def compare_retirement():
             payload["warning"] = warning
 
         if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
-            dbg = {"A_args": A["_args"]}
-            if scen_b:
-                dbg["B_args"] = B.get("_args")
+            dbg = {
+                "A_args": A["_args"],
+                **({"B_args": B.get("_args")} if B else {})
+            }
             payload["_debug"] = dbg
 
         return jsonify(payload), 200
