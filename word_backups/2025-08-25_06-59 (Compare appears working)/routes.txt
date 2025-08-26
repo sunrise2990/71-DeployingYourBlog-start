@@ -666,20 +666,13 @@ def compare_retirement():
         seed = _get_or_create_seed()
 
         def _run_mc_for(scn):
+            # canonicalize saved inputs
             p = to_canonical_inputs(scn.inputs_json or {})
             p = _normalize_args(p)
 
-            # Prefer scenario’s saved vol; fallback to page; final fallback to safe defaults
-            sigma = (
-                float(p["return_std"])
-                if p.get("return_std") not in (None, "")
-                else (float(ui_sigma) if ui_sigma is not None else 0.10)
-            )
-            infl_sigma = (
-                float(p["inflation_std"])
-                if p.get("inflation_std") not in (None, "")
-                else (float(ui_infl_sigma) if ui_infl_sigma is not None else 0.005)
-            )
+            # ALWAYS use page vol (ui_sigma/ui_infl_sigma) so Compare aligns with Top/What-If
+            sigma = float(ui_sigma)
+            infl_sigma = float(ui_infl_sigma)
 
             mc_args = {
                 "current_age": int(p["current_age"]),
@@ -687,12 +680,15 @@ def compare_retirement():
                 "annual_saving": float(p["annual_saving"]),
                 "saving_increase_rate": float(p["saving_increase_rate"]),
                 "current_assets": float(p["current_assets"]),
+
+                # SAME as deterministic (no bump)
                 "return_mean": float(p["return_rate"]),
                 "return_mean_after": float(p["return_rate_after"]),
-                "return_std": sigma,
+                "return_std": float(ui_sigma),
+
                 "annual_expense": float(p["annual_expense"]),
                 "inflation_mean": float(p["inflation_rate"]),
-                "inflation_std": infl_sigma,
+                "inflation_std": float(ui_infl_sigma),
                 "cpp_monthly": float(p["cpp_monthly"]),
                 "cpp_start_age": int(p["cpp_start_age"]),
                 "cpp_end_age": int(p["cpp_end_age"]),
@@ -701,7 +697,6 @@ def compare_retirement():
                 "income_tax_rate": float(p.get("income_tax_rate", 0.0)),
                 "num_simulations": 300,
             }
-
 
             if current_app.debug:
                 current_app.logger.info("COMPARE mc_args (seeded) for %s: %s", scn.scenario_name, mc_args)
