@@ -1342,7 +1342,7 @@ ping(); // initial draw
     window.addEventListener('load', initTooltips);
   }
 })();
-
+</script>
 
 
 
@@ -1351,6 +1351,11 @@ ping(); // initial draw
   <div class="card-body">
     <div style="font-weight:600;margin-bottom:8px;">Volatility saved on scenarios (DB)</div>
     <div class="text-muted">Select Scenario A / B above; this shows exactly what is stored on each scenario.</div>
+
+    <div class="small" style="margin-top:8px;">
+      JSON endpoint: <a id="compare-vol-json-link" target="_blank" rel="noopener">—</a>
+    </div>
+
     <table class="table table-sm" style="margin-top:10px;">
       <thead>
         <tr>
@@ -1372,8 +1377,8 @@ ping(); // initial draw
   const url = "{{ url_for('projects.compare_vol_preview_json') }}";
   const rowsEl = document.getElementById("compare-vol-check-rows");
   const rawEl  = document.getElementById("compare-vol-check-raw");
+  const linkEl = document.getElementById("compare-vol-json-link");
 
-  // Be tolerant of different naming
   function pickSelect(names) {
     for (const n of names) {
       const byName = document.querySelector(`select[name="${n}"]`);
@@ -1386,7 +1391,8 @@ ping(); // initial draw
 
   const selA = pickSelect(["scenario_a","scenarioA","compare_a"]);
   const selB = pickSelect(["scenario_b","scenarioB","compare_b"]);
-  function currentIds() {
+
+  function getIds() {
     return {
       a: selA ? (selA.value || "") : "",
       b: selB ? (selB.value || "") : ""
@@ -1394,16 +1400,28 @@ ping(); // initial draw
   }
 
   async function refresh() {
-    if (!selA && !selB) {
-      rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">Compare selectors not found on this page.</td></tr>`;
-      rawEl.textContent = "";
-      return;
-    }
-    const ids = currentIds();
-    const qp = new URLSearchParams({ a: ids.a, b: ids.b }).toString();
     try {
-      const r = await fetch(`${url}?${qp}`, { method: "GET", credentials: "same-origin" });
-      const data = await r.json();
+      if (!selA && !selB) {
+        rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">Compare selectors not found on this page.</td></tr>`;
+        rawEl.textContent = "";
+        return;
+      }
+      const ids = getIds();
+      const href = `${url}?a=${encodeURIComponent(ids.a)}&b=${encodeURIComponent(ids.b)}`;
+      if (linkEl) { linkEl.href = href; linkEl.textContent = href; }
+
+      const r = await fetch(href, { method: "GET", credentials: "same-origin" });
+      const text = await r.text();
+
+      let data;
+      try { data = JSON.parse(text); }
+      catch (e) {
+        rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">
+          Non-JSON response (HTTP ${r.status}). First 120 chars:<br><code>${text.substring(0,120)
+            .replace(/</g,"&lt;")}</code></td></tr>`;
+        rawEl.textContent = "";
+        return;
+      }
 
       function row(label, obj) {
         if (!obj) return `<tr><td>${label}</td><td>—</td><td>—</td></tr>`;
@@ -1423,23 +1441,20 @@ ping(); // initial draw
       const rawB = data.B && data.B.raw ? JSON.stringify(data.B.raw) : "{}";
       rawEl.textContent = `raw A: ${rawA}   |   raw B: ${rawB}`;
     } catch (err) {
-      rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">Failed to load preview: ${err}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">JS error: ${String(err)}</td></tr>`;
       rawEl.textContent = "";
     }
   }
 
-  // React to selector changes (if they exist)
   if (selA) selA.addEventListener("change", refresh);
   if (selB) selB.addEventListener("change", refresh);
 
-  // Initial paint
-  document.addEventListener("DOMContentLoaded", refresh);
-  // And a safety refresh once the page fully loads in case the selects are hydrated late
+  document.addEventListener("DOMContentLoaded", () => { refresh(); setTimeout(refresh, 400); });
   window.addEventListener("load", refresh);
+
+  // manual trigger if you want to call it from console
+  window.__volPreviewRefresh = refresh;
 })();
-</script>
-
-
 </script>
 
 
