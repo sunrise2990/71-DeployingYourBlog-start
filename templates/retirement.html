@@ -1346,123 +1346,6 @@ ping(); // initial draw
 
 
 
-<!-- ===== Compare Volatility Check (saved in DB) ===== -->
-<div id="compare-vol-check" class="card" style="margin:18px 0;">
-  <div class="card-body">
-    <div style="font-weight:600;margin-bottom:8px;">Volatility saved on scenarios (DB)</div>
-    <div class="text-muted">Select Scenario A / B above; this shows exactly what is stored on each scenario.</div>
-
-    <div class="small" style="margin-top:8px;">
-      JSON endpoint: <a id="compare-vol-json-link" target="_blank" rel="noopener">—</a>
-    </div>
-
-    <table class="table table-sm" style="margin-top:10px;">
-      <thead>
-        <tr>
-          <th style="width:40%">Scenario</th>
-          <th style="width:30%">Return σ (saved)</th>
-          <th style="width:30%">Inflation σ (saved)</th>
-        </tr>
-      </thead>
-      <tbody id="compare-vol-check-rows">
-        <tr><td colspan="3" class="text-muted">Waiting for selection…</td></tr>
-      </tbody>
-    </table>
-    <div id="compare-vol-check-raw" class="small text-muted"></div>
-  </div>
-</div>
-
-<script>
-(function(){
-  const url = "{{ url_for('projects.compare_vol_preview_json') }}";
-  const rowsEl = document.getElementById("compare-vol-check-rows");
-  const rawEl  = document.getElementById("compare-vol-check-raw");
-  const linkEl = document.getElementById("compare-vol-json-link");
-
-  function pickSelect(names) {
-    for (const n of names) {
-      const byName = document.querySelector(`select[name="${n}"]`);
-      if (byName) return byName;
-      const byId = document.getElementById(n);
-      if (byId && byId.tagName === "SELECT") return byId;
-    }
-    return null;
-  }
-
-  const selA = pickSelect(["scenario_a","scenarioA","compare_a"]);
-  const selB = pickSelect(["scenario_b","scenarioB","compare_b"]);
-
-  function getIds() {
-    return {
-      a: selA ? (selA.value || "") : "",
-      b: selB ? (selB.value || "") : ""
-    };
-  }
-
-  async function refresh() {
-    try {
-      if (!selA && !selB) {
-        rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">Compare selectors not found on this page.</td></tr>`;
-        rawEl.textContent = "";
-        return;
-      }
-      const ids = getIds();
-      const href = `${url}?a=${encodeURIComponent(ids.a)}&b=${encodeURIComponent(ids.b)}`;
-      if (linkEl) { linkEl.href = href; linkEl.textContent = href; }
-
-      const r = await fetch(href, { method: "GET", credentials: "same-origin" });
-      const text = await r.text();
-
-      let data;
-      try { data = JSON.parse(text); }
-      catch (e) {
-        rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">
-          Non-JSON response (HTTP ${r.status}). First 120 chars:<br><code>${text.substring(0,120)
-            .replace(/</g,"&lt;")}</code></td></tr>`;
-        rawEl.textContent = "";
-        return;
-      }
-
-      function row(label, obj) {
-        if (!obj) return `<tr><td>${label}</td><td>—</td><td>—</td></tr>`;
-        if (obj.error) return `<tr><td>${label}</td><td colspan="2" class="text-danger">${obj.error}</td></tr>`;
-        const name = (obj.scenario_name || "").replace(/</g,"&lt;");
-        const rs = obj.return_std_display || "—";
-        const is = obj.inflation_std_display || "—";
-        return `<tr>
-                  <td>${label}: <strong>${name}</strong></td>
-                  <td>${rs}</td>
-                  <td>${is}</td>
-                </tr>`;
-      }
-
-      rowsEl.innerHTML = row("A", data.A) + row("B", data.B);
-      const rawA = data.A && data.A.raw ? JSON.stringify(data.A.raw) : "{}";
-      const rawB = data.B && data.B.raw ? JSON.stringify(data.B.raw) : "{}";
-      rawEl.textContent = `raw A: ${rawA}   |   raw B: ${rawB}`;
-    } catch (err) {
-      rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">JS error: ${String(err)}</td></tr>`;
-      rawEl.textContent = "";
-    }
-  }
-
-  if (selA) selA.addEventListener("change", refresh);
-  if (selB) selB.addEventListener("change", refresh);
-
-  document.addEventListener("DOMContentLoaded", () => { refresh(); setTimeout(refresh, 400); });
-  window.addEventListener("load", refresh);
-
-  // manual trigger if you want to call it from console
-  window.__volPreviewRefresh = refresh;
-})();
-</script>
-
-
-
-
-
-
-
 
 
 
@@ -1716,6 +1599,126 @@ ping(); // initial draw
     <button type="submit" class="btn btn-warning px-4">Compare</button>
   </div>
 </form>
+
+
+
+
+
+
+
+<!-- ===== Compare Volatility Check (saved in DB) ===== -->
+<div id="compare-vol-check" class="card" style="margin:18px 0;">
+  <div class="card-body">
+    <div style="font-weight:600;margin-bottom:8px;">Volatility saved on scenarios (DB)</div>
+    <div class="text-muted">Select Scenario A / B above; this shows exactly what is stored on each scenario.</div>
+
+    <div class="small" style="margin-top:8px;">
+      JSON endpoint: <a id="compare-vol-json-link" target="_blank" rel="noopener">—</a>
+    </div>
+
+    <table class="table table-sm" style="margin-top:10px;">
+      <thead>
+        <tr>
+          <th style="width:40%">Scenario</th>
+          <th style="width:30%">Return σ (saved)</th>
+          <th style="width:30%">Inflation σ (saved)</th>
+        </tr>
+      </thead>
+      <tbody id="compare-vol-check-rows">
+        <tr><td colspan="3" class="text-muted">Waiting for selection…</td></tr>
+      </tbody>
+    </table>
+    <div id="compare-vol-check-raw" class="small text-muted"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const url = "{{ url_for('projects.compare_vol_preview_json') }}";
+  const rowsEl = document.getElementById("compare-vol-check-rows");
+  const rawEl  = document.getElementById("compare-vol-check-raw");
+  const linkEl = document.getElementById("compare-vol-json-link");
+
+  function pickSelect(names) {
+    for (const n of names) {
+      const byName = document.querySelector(`select[name="${n}"]`);
+      if (byName) return byName;
+      const byId = document.getElementById(n);
+      if (byId && byId.tagName === "SELECT") return byId;
+    }
+    return null;
+  }
+
+  const selA = pickSelect(["scenario_a","scenarioA","compare_a"]);
+  const selB = pickSelect(["scenario_b","scenarioB","compare_b"]);
+
+  function getIds() {
+    return {
+      a: selA ? (selA.value || "") : "",
+      b: selB ? (selB.value || "") : ""
+    };
+  }
+
+  async function refresh() {
+    try {
+      if (!selA && !selB) {
+        rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">Compare selectors not found on this page.</td></tr>`;
+        rawEl.textContent = "";
+        return;
+      }
+      const ids = getIds();
+      const href = `${url}?a=${encodeURIComponent(ids.a)}&b=${encodeURIComponent(ids.b)}`;
+      if (linkEl) { linkEl.href = href; linkEl.textContent = href; }
+
+      const r = await fetch(href, { method: "GET", credentials: "same-origin" });
+      const text = await r.text();
+
+      let data;
+      try { data = JSON.parse(text); }
+      catch (e) {
+        rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">
+          Non-JSON response (HTTP ${r.status}). First 120 chars:<br><code>${text.substring(0,120)
+            .replace(/</g,"&lt;")}</code></td></tr>`;
+        rawEl.textContent = "";
+        return;
+      }
+
+      function row(label, obj) {
+        if (!obj) return `<tr><td>${label}</td><td>—</td><td>—</td></tr>`;
+        if (obj.error) return `<tr><td>${label}</td><td colspan="2" class="text-danger">${obj.error}</td></tr>`;
+        const name = (obj.scenario_name || "").replace(/</g,"&lt;");
+        const rs = obj.return_std_display || "—";
+        const is = obj.inflation_std_display || "—";
+        return `<tr>
+                  <td>${label}: <strong>${name}</strong></td>
+                  <td>${rs}</td>
+                  <td>${is}</td>
+                </tr>`;
+      }
+
+      rowsEl.innerHTML = row("A", data.A) + row("B", data.B);
+      const rawA = data.A && data.A.raw ? JSON.stringify(data.A.raw) : "{}";
+      const rawB = data.B && data.B.raw ? JSON.stringify(data.B.raw) : "{}";
+      rawEl.textContent = `raw A: ${rawA}   |   raw B: ${rawB}`;
+    } catch (err) {
+      rowsEl.innerHTML = `<tr><td colspan="3" class="text-danger">JS error: ${String(err)}</td></tr>`;
+      rawEl.textContent = "";
+    }
+  }
+
+  if (selA) selA.addEventListener("change", refresh);
+  if (selB) selB.addEventListener("change", refresh);
+
+  document.addEventListener("DOMContentLoaded", () => { refresh(); setTimeout(refresh, 400); });
+  window.addEventListener("load", refresh);
+
+  // manual trigger if you want to call it from console
+  window.__volPreviewRefresh = refresh;
+})();
+</script>
+
+
+
 
 <!-- Compare block -->
 <style>
