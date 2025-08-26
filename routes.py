@@ -559,13 +559,8 @@ def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
 
-    Changes:
-    - Use current page vol settings (return_std, inflation_std) when available;
-      otherwise fall back to UI-like defaults (0.18, 0.005) so Compare aligns with
-      Top/What-If instead of scenario-stored vol.
-    - Convert CAGR -> arithmetic mean (g + 0.5*sigma^2), same as other sections.
-    - Seed MC so curves are reproducible across sections.
-    - Keep union x-axis and sensitivity compare.
+    Fix: prefer the scenario's own volatility (return_std, inflation_std),
+    and only fall back to the page's hidden fields if the scenario has none.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -574,10 +569,10 @@ def compare_retirement():
         return jsonify({"error": msg, **({"_extra": extra} if (current_app.debug and extra) else {})}), code
 
     try:
+        # -------- Parse scenario ids --------
         raw_a = (request.form.get("scenario_a") or "").strip()
         raw_b = (request.form.get("scenario_b") or "").strip()
 
-        # parse ids
         try:
             a_id = int(raw_a)
         except Exception:
@@ -590,7 +585,7 @@ def compare_retirement():
             except Exception:
                 return jerr("Invalid Scenario B id.", 400, {"scenario_b": raw_b})
 
-        # fetch rows
+        # -------- Fetch scenarios --------
         scen_a = RetirementScenario.query.get(a_id)
         if not scen_a:
             return jerr("Scenario A not found.", 404, {"a_id": a_id})
@@ -602,32 +597,25 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
-        # ----- UI vol (percent text -> decimal). If missing, use UI-style defaults -----
+        # -------- Read page hidden vol fields (optional fallback) --------
+        # Accept "Balanced (12%)", "12", or "0.12"
         def _parse_pct(x):
             if x is None:
                 return None
-            s = str(x).strip().replace("%", "")
-            # also handle labels like "Aggressive (18%)"
-            if "(" in s and ")" in s:
-                s = s[s.find("(")+1:s.find(")")]
-                s = s.replace("%", "")
-            try:
-                return float(s) / 100.0
-            except Exception:
+            s = str(x).strip()
+            # try to pull a number, optionally in parentheses with a %
+            m = re.search(r'(\d+(\.\d+)?)', s)
+            if not m:
                 return None
+            val = float(m.group(1))
+            return val / 100.0 if val > 1.5 else val
 
-        ui_sigma      = _parse_pct(request.form.get("return_std"))
-        ui_infl_sigma = _parse_pct(request.form.get("inflation_std"))
+        page_sigma      = _parse_pct(request.form.get("return_std"))
+        page_infl_sigma = _parse_pct(request.form.get("inflation_std"))
 
-        # If UI didn't post them, assume the page's current controls (Aggressive 18%, 0.5%) so Compare matches page.
-        if ui_sigma is None:
-            ui_sigma = 0.18
-        if ui_infl_sigma is None:
-            ui_infl_sigma = 0.005
-
-        # ---------- normalization helpers (GENERIC) ----------
+        # -------- Normalizers (unchanged from your code) --------
         rate_like = re.compile(r"(rate|mean|std)", re.I)
-        int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection)", re.I)
+        int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection|expectancy)", re.I)
 
         def _to_num(v):
             if isinstance(v, (int, float)):
@@ -641,61 +629,81 @@ def compare_retirement():
             if not args:
                 return {}
             a = {k: _to_num(v) for k, v in (args or {}).items()}
+
+            # ints for age/year-like; floats elsewhere
+            for k, v in list(a.items()):
+                if int_like.search(k) and isinstance(v, (int, float)):
+                    a[k] = int(round(v))
+                elif isinstance(v, (int, float)):
+                    a[k] = float(v)
+
+            # convert whole-percent rates to decimals: 6 -> 0.06
             for k, v in list(a.items()):
                 if rate_like.search(k) and isinstance(v, (int, float)) and 2 <= v <= 1000:
                     a[k] = v / 100.0
-                if int_like.search(k) and isinstance(a[k], (int, float)):
-                    a[k] = int(round(a[k]))
-            if "start_age" in a and "end_age" in a:
-                sa, ea = a["start_age"], a["end_age"]
-                if isinstance(sa, int) and isinstance(ea, int) and ea < sa:
-                    a["end_age"] = sa
+
+            # horizons
+            if "retirement_age" in a and "life_expectancy" in a:
+                ra, le = int(a["retirement_age"]), int(a["life_expectancy"])
+                if le < ra:
+                    a["life_expectancy"] = ra
+
+            # CPP window
+            if "cpp_start_age" in a and "cpp_end_age" in a:
+                sa, ea = int(a["cpp_start_age"]), int(a["cpp_end_age"])
+                if ea < sa:
+                    a["cpp_end_age"] = sa
+
             return a
 
-        # --- shared helpers ---
+        # -------- Helpers for overlay padding --------
         def _to_map(ages, values):
             return {int(a): (float(v) if v is not None else None) for a, v in zip(ages, values)}
 
         def _pad_series(series_map, axis_ages):
             return [series_map.get(age, None) for age in axis_ages]
 
-        def _arith_from_cagr(g, sigma):
-            return float(g) + 0.5 * float(sigma) * float(sigma)
-
-        # use the same seed as elsewhere so curves are consistent
         seed = _get_or_create_seed()
 
+        # Choose scenario sigma first, else page, else hard default
+        def _pick_sigma(scn_val, page_val, fallback):
+            if scn_val is not None and scn_val != "":
+                try:
+                    return float(scn_val)
+                except Exception:
+                    pass
+            return float(page_val) if page_val is not None else float(fallback)
+
+        # -------- Core runner: now prefers SCENARIO volatility --------
         def _run_mc_for(scn):
-            # canonicalize saved inputs
             p = to_canonical_inputs(scn.inputs_json or {})
             p = _normalize_args(p)
 
-            # ALWAYS use page vol (ui_sigma/ui_infl_sigma) so Compare aligns with Top/What-If
-            sigma = float(ui_sigma)
-            infl_sigma = float(ui_infl_sigma)
+            sigma      = _pick_sigma(p.get("return_std"),    page_sigma,      0.10)
+            infl_sigma = _pick_sigma(p.get("inflation_std"), page_infl_sigma, 0.005)
 
             mc_args = {
-                "current_age": int(p["current_age"]),
-                "retirement_age": int(p["retirement_age"]),
-                "annual_saving": float(p["annual_saving"]),
+                "current_age":          int(p["current_age"]),
+                "retirement_age":       int(p["retirement_age"]),
+                "annual_saving":        float(p["annual_saving"]),
                 "saving_increase_rate": float(p["saving_increase_rate"]),
-                "current_assets": float(p["current_assets"]),
+                "current_assets":       float(p["current_assets"]),
 
-                # SAME as deterministic (no bump)
-                "return_mean": float(p["return_rate"]),
-                "return_mean_after": float(p["return_rate_after"]),
-                "return_std": float(ui_sigma),
+                # pass CAGRs through (no +0.5*sigma^2 bump)
+                "return_mean":          float(p["return_rate"]),
+                "return_mean_after":    float(p["return_rate_after"]),
+                "return_std":           sigma,
 
-                "annual_expense": float(p["annual_expense"]),
-                "inflation_mean": float(p["inflation_rate"]),
-                "inflation_std": float(ui_infl_sigma),
-                "cpp_monthly": float(p["cpp_monthly"]),
-                "cpp_start_age": int(p["cpp_start_age"]),
-                "cpp_end_age": int(p["cpp_end_age"]),
-                "asset_liquidations": list(p.get("asset_liquidations") or []),
-                "life_expectancy": int(p["life_expectancy"]),
-                "income_tax_rate": float(p.get("income_tax_rate", 0.0)),
-                "num_simulations": 300,
+                "annual_expense":       float(p["annual_expense"]),
+                "inflation_mean":       float(p["inflation_rate"]),
+                "inflation_std":        infl_sigma,
+                "cpp_monthly":          float(p.get("cpp_monthly", 0.0)),
+                "cpp_start_age":        int(p["cpp_start_age"]),
+                "cpp_end_age":          int(p["cpp_end_age"]),
+                "asset_liquidations":   list(p.get("asset_liquidations") or []),
+                "life_expectancy":      int(p["life_expectancy"]),
+                "income_tax_rate":      float(p.get("income_tax_rate", 0.0)),
+                "num_simulations":      300,
             }
 
             if current_app.debug:
@@ -703,10 +711,11 @@ def compare_retirement():
 
             mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
-            ages = [int(x) for x in mc["ages"]]
-            p10  = [float(x) for x in mc["percentiles"]["p10"]]
-            p50  = [float(x) for x in mc["percentiles"]["p50"]]
-            p90  = [float(x) for x in mc["percentiles"]["p90"]]
+            ages = [int(x) for x in mc.get("ages", [])]
+            pcts = mc.get("percentiles", {}) or {}
+            p10  = [float(x) for x in pcts.get("p10", [])]
+            p50  = [float(x) for x in pcts.get("p50", [])]
+            p90  = [float(x) for x in pcts.get("p90", [])]
             n = min(len(ages), len(p10), len(p50), len(p90))
 
             start_age = mc_args.get("current_age") or (ages[0] if ages else None)
@@ -725,14 +734,14 @@ def compare_retirement():
                 "end_age": end_age,
             }
 
-        # ---------- A (required) ----------
+        # ---------- Run A (required) ----------
         try:
             A = _run_mc_for(scen_a)
         except Exception as e:
             current_app.logger.exception("compare_retirement A failed")
             return jerr(f"MC failed for scenario '{scen_a.scenario_name}': {e}", 400)
 
-        # ---------- B (optional) ----------
+        # ---------- Run B (optional) ----------
         B = None
         if scen_b:
             try:
@@ -741,7 +750,7 @@ def compare_retirement():
                 current_app.logger.exception("compare_retirement B failed")
                 return jerr(f"MC failed for scenario '{scen_b.scenario_name}': {e}", 400)
 
-        # ---------- Build UNION axis & pad series ----------
+        # ---------- Build union axis & pad ----------
         axis_start = A["start_age"]
         axis_end   = A["end_age"]
         if B:
@@ -749,7 +758,6 @@ def compare_retirement():
             axis_end   = max(axis_end,   B["end_age"])
         axis_ages = list(range(int(axis_start), int(axis_end) + 1))
 
-        # A padded
         A_p10 = _pad_series(_to_map(A["ages"], A["p10"]), axis_ages)
         A_p50 = _pad_series(_to_map(A["ages"], A["p50"]), axis_ages)
         A_p90 = _pad_series(_to_map(A["ages"], A["p90"]), axis_ages)
@@ -761,6 +769,9 @@ def compare_retirement():
                 "p10": {"A": A_p10},
                 "p50": {"A": A_p50},
                 "p90": {"A": A_p90},
+            },
+            "meta": {
+                "A": {"label": A["label"], "start_age": A["start_age"], "end_age": A["end_age"]}
             }
         }
         warning = None
@@ -774,6 +785,7 @@ def compare_retirement():
             payload["mc"]["p50"]["B"] = B_p50
             payload["mc"]["p90"]["B"] = B_p90
             payload["labels"]["B"] = B["label"]
+            payload["meta"]["B"] = {"label": B["label"], "start_age": B["start_age"], "end_age": B["end_age"]}
 
             def _max_or_zero(arr):
                 vals = [x for x in arr if x is not None]
@@ -787,7 +799,7 @@ def compare_retirement():
                     maxA, maxB, A.get("_args"), B.get("_args")
                 )
 
-        # ---------- Sensitivity Compare ----------
+        # ---------- Sensitivity (unchanged) ----------
         SENS_VARS = [
             "current_assets", "return_rate", "return_rate_after",
             "annual_saving", "annual_expense", "saving_increase_rate",
@@ -833,10 +845,7 @@ def compare_retirement():
             payload["warning"] = warning
 
         if current_app.debug or current_app.config.get("COMPARE_DEBUG"):
-            dbg = {"A_args": A["_args"]}
-            if scen_b:
-                dbg["B_args"] = B.get("_args")
-            payload["_debug"] = dbg
+            payload["_debug"] = {"A_args": A.get("_args"), **({"B_args": B.get("_args")} if B else {})}
 
         return jsonify(payload), 200
 
@@ -846,6 +855,7 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
