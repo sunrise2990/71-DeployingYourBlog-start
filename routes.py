@@ -559,12 +559,10 @@ def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
 
-    Updates in this version:
-    - Use each scenario's *saved* volatility (return_std, inflation_std) exactly as
-      shown in Part A (vol-preview) for the MC run.
-    - Fall back to UI values only if a scenario has nothing saved.
-    - Convert CAGR -> arithmetic mean via g + 0.5*sigma^2 with the scenario's sigma.
-    - Keep seeded MC and the union x-axis behavior.
+    This version:
+    - Uses each scenario's saved volatility (return_std, inflation_std) for MC.
+    - NO mean bump here; pass rates through as-is to avoid double-bumping.
+    - UI vol only as a fallback if a scenario saved nothing.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -601,7 +599,7 @@ def compare_retirement():
             if scen_b and scen_b.user_id != current_user.id:
                 return jerr("You can only compare your own scenarios.", 403)
 
-        # ---------- helpers shared with Part A (vol-preview) ----------
+        # ---------- helpers (same pct-ish parser as Part A) ----------
         def pctish_to_decimal(v):
             """Accept 0.18, '0.18', 18, '18', 'Balanced (12%)', '12%', '' -> 0.18/0.12/None."""
             if v is None or v == "":
@@ -612,11 +610,11 @@ def compare_retirement():
                     s = s[s.find("(")+1:s.find(")")]
                 s = s.replace("%", "")
                 x = float(s)
-                return x/100.0 if x > 1.5 else x  # treat 8/12/18 as percents; decimals pass through
+                return x/100.0 if x > 1.5 else x   # 18 -> .18; 0.18 stays .18
             except Exception:
                 return None
 
-        # UI fallbacks (only if a scenario saved nothing)
+        # UI fallbacks (only if a scenario has nothing saved)
         def _parse_pct(x):
             if x is None:
                 return None
@@ -636,7 +634,7 @@ def compare_retirement():
         if ui_infl_sigma is None:
             ui_infl_sigma = 0.005
 
-        # ---------- normalization helpers (GENERIC) ----------
+        # ---------- normalization helpers ----------
         rate_like = re.compile(r"(rate|mean|std)", re.I)
         int_like  = re.compile(r"(age|year|iter|seed|step|horizon|projection)", re.I)
 
@@ -670,13 +668,10 @@ def compare_retirement():
         def _pad_series(series_map, axis_ages):
             return [series_map.get(age, None) for age in axis_ages]
 
-        def _arith_from_cagr(g, sigma):
-            return float(g) + 0.5 * float(sigma) * float(sigma)
-
         # use the same seed as elsewhere so curves are consistent
         seed = _get_or_create_seed()
 
-        # ---- per-scenario volatility loader (mirrors Part A exactly) ----
+        # ---- per-scenario volatility loader (mirrors Part A) ----
         def _saved_sigmas_for(scn):
             p_raw = to_canonical_inputs(scn.inputs_json or {})
             r = pctish_to_decimal(p_raw.get("return_std"))
@@ -691,14 +686,12 @@ def compare_retirement():
             # read saved sigmas (Part A logic)
             saved_r_sigma, saved_i_sigma, raw_inputs = _saved_sigmas_for(scn)
 
-            # choose sigma for this scenario: prefer saved; fall back to UI; final default
+            # choose sigma: prefer saved; else UI fallback
             sigma      = float(saved_r_sigma if saved_r_sigma is not None else ui_sigma)
             infl_sigma = float(saved_i_sigma if saved_i_sigma is not None else ui_infl_sigma)
 
-            # Convert CAGRs -> arithmetic means using this scenario's sigma
-            r_mean       = _arith_from_cagr(float(p["return_rate"]),        sigma)
-            r_mean_after = _arith_from_cagr(float(p["return_rate_after"]),  sigma)
-
+            # *** IMPORTANT: NO BUMP HERE ***
+            # Pass return_rate/return_rate_after straight through (already decimals).
             mc_args = {
                 "current_age": int(p["current_age"]),
                 "retirement_age": int(p["retirement_age"]),
@@ -706,9 +699,8 @@ def compare_retirement():
                 "saving_increase_rate": float(p["saving_increase_rate"]),
                 "current_assets": float(p["current_assets"]),
 
-                # arithmetic (CAGR -> mean using the per-scenario sigma)
-                "return_mean": r_mean,
-                "return_mean_after": r_mean_after,
+                "return_mean": float(p["return_rate"]),
+                "return_mean_after": float(p["return_rate_after"]),
                 "return_std": sigma,
 
                 "annual_expense": float(p["annual_expense"]),
@@ -728,8 +720,9 @@ def compare_retirement():
             if current_app.debug:
                 current_app.logger.info(
                     "COMPARE mc_args (seeded) for %s: sigma=%.4f infl_sigma=%.4f saved_raw=%s args=%s",
-                    scn.scenario_name, sigma, infl_sigma, {"return_std": raw_inputs.get("return_std"),
-                                                           "inflation_std": raw_inputs.get("inflation_std")}, mc_args
+                    scn.scenario_name, sigma, infl_sigma,
+                    {"return_std": raw_inputs.get("return_std"), "inflation_std": raw_inputs.get("inflation_std")},
+                    mc_args
                 )
 
             mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
@@ -877,6 +870,7 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
