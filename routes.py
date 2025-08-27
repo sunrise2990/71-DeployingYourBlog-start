@@ -1336,18 +1336,43 @@ def compare_vol_preview_json():
     a_id = parse_id(request.args.get("a"))
     b_id = parse_id(request.args.get("b"))
 
-    def pctish_to_decimal(v):
+    # Helpers ------------------------------------------------------------
+    def _extract_number_and_pct_flag(v):
+        """
+        Returns (number, had_percent_flag). Accepts plain numbers, '12%', or
+        label forms like 'Balanced (12%)' or '(0.5%)'.
+        """
         if v is None or v == "":
-            return None
+            return None, False
+        s = str(v).strip()
+        had_pct = "%" in s
+        if "(" in s and ")" in s:
+            inner = s[s.find("(") + 1 : s.find(")")]
+            had_pct = had_pct or ("%" in inner)
+            s = inner
+        s = s.replace("%", "")
         try:
-            s = str(v).strip()
-            if "(" in s and ")" in s:  # e.g., "Balanced (12%)"
-                s = s[s.find("(")+1:s.find(")")]
-            s = s.replace("%", "")
-            x = float(s)
-            return x/100.0 if x > 1.5 else x
+            return float(s), had_pct
         except Exception:
+            return None, False
+
+    # Return σ rule: treat big numbers as percents (e.g., 12 -> 0.12; 0.18 stays 0.18)
+    def parse_return_std(v):
+        x, had_pct = _extract_number_and_pct_flag(v)
+        if x is None:
             return None
+        return (x / 100.0) if (had_pct or x > 1.5) else x
+
+    # Inflation σ rule: UI stores "0.5" to mean 0.5% (0.005). Keep tiny decimals as-is.
+    # - If a '%' was present, always divide by 100.
+    # - If no '%', divide by 100 unless the number is already a tiny decimal (< 0.1).
+    def parse_inflation_std(v):
+        x, had_pct = _extract_number_and_pct_flag(v)
+        if x is None:
+            return None
+        if had_pct:
+            return x / 100.0
+        return x if x < 0.1 else (x / 100.0)
 
     def load_one(sid):
         if not sid:
@@ -1356,8 +1381,8 @@ def compare_vol_preview_json():
         if not scn or scn.user_id != current_user.id:
             return {"error": "not found or unauthorized", "scenario_id": sid}
         p = to_canonical_inputs(scn.inputs_json or {})
-        r = pctish_to_decimal(p.get("return_std"))
-        i = pctish_to_decimal(p.get("inflation_std"))
+        r = parse_return_std(p.get("return_std"))
+        i = parse_inflation_std(p.get("inflation_std"))
         return {
             "scenario_id": scn.id,
             "scenario_name": scn.scenario_name,
@@ -1369,6 +1394,7 @@ def compare_vol_preview_json():
         }
 
     return jsonify({"A": load_one(a_id), "B": load_one(b_id)}), 200
+
 
 
 
