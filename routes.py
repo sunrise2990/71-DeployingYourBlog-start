@@ -559,13 +559,9 @@ def compare_retirement():
     """
     Compare Monte Carlo between two saved scenarios.
 
-    Changes:
-    - Use current page vol settings (return_std, inflation_std) when available;
-      otherwise fall back to UI-like defaults (0.18, 0.005) so Compare aligns with
-      Top/What-If instead of scenario-stored vol.
-    - Convert CAGR -> arithmetic mean (g + 0.5*sigma^2), same as other sections.
-    - Seed MC so curves are reproducible across sections.
-    - Keep union x-axis and sensitivity compare.
+    Change: use each scenario's saved return_std/inflation_std (as shown in the
+    Volatility (DB) preview). If a scenario lacks one, fall back to the page
+    value (ui_sigma/ui_infl_sigma). No mean bumping; seeded MC; union axis.
     """
 
     def jerr(msg, code=400, extra=None):
@@ -659,20 +655,33 @@ def compare_retirement():
         def _pad_series(series_map, axis_ages):
             return [series_map.get(age, None) for age in axis_ages]
 
-        def _arith_from_cagr(g, sigma):
-            return float(g) + 0.5 * float(sigma) * float(sigma)
-
         # use the same seed as elsewhere so curves are consistent
         seed = _get_or_create_seed()
+
+        # Parse percent-ish strings like "18", "18%", "Balanced (18%)" -> 0.18
+        def _pctish_to_decimal(v):
+            if v is None or v == "":
+                return None
+            try:
+                s = str(v).strip()
+                if "(" in s and ")" in s:
+                    s = s[s.find("(")+1:s.find(")")]
+                s = s.replace("%", "")
+                x = float(s)
+                return x/100.0 if x > 1.5 else x
+            except Exception:
+                return None
 
         def _run_mc_for(scn):
             # canonicalize saved inputs
             p = to_canonical_inputs(scn.inputs_json or {})
             p = _normalize_args(p)
 
-            # ALWAYS use page vol (ui_sigma/ui_infl_sigma) so Compare aligns with Top/What-If
-            sigma = float(ui_sigma)
-            infl_sigma = float(ui_infl_sigma)
+            # 🔴 KEY FIX: prefer volatility saved on the scenario; fallback to page value
+            scn_sigma      = _pctish_to_decimal(p.get("return_std"))
+            scn_infl_sigma = _pctish_to_decimal(p.get("inflation_std"))
+            sigma      = float(scn_sigma      if scn_sigma      is not None else ui_sigma)
+            infl_sigma = float(scn_infl_sigma if scn_infl_sigma is not None else ui_infl_sigma)
 
             mc_args = {
                 "current_age": int(p["current_age"]),
@@ -684,11 +693,11 @@ def compare_retirement():
                 # SAME as deterministic (no bump)
                 "return_mean": float(p["return_rate"]),
                 "return_mean_after": float(p["return_rate_after"]),
-                "return_std": float(ui_sigma),
+                "return_std": sigma,
 
                 "annual_expense": float(p["annual_expense"]),
                 "inflation_mean": float(p["inflation_rate"]),
-                "inflation_std": float(ui_infl_sigma),
+                "inflation_std": infl_sigma,
                 "cpp_monthly": float(p["cpp_monthly"]),
                 "cpp_start_age": int(p["cpp_start_age"]),
                 "cpp_end_age": int(p["cpp_end_age"]),
@@ -699,7 +708,10 @@ def compare_retirement():
             }
 
             if current_app.debug:
-                current_app.logger.info("COMPARE mc_args (seeded) for %s: %s", scn.scenario_name, mc_args)
+                current_app.logger.info(
+                    "COMPARE mc_args (seeded) for %s: sigma=%.4f infl_sigma=%.4f | args=%s",
+                    scn.scenario_name, sigma, infl_sigma, mc_args
+                )
 
             mc = run_mc_with_seed(seed, run_monte_carlo_simulation_locked_inputs, **mc_args)
 
@@ -846,6 +858,7 @@ def compare_retirement():
         if current_app.debug:
             msg += f" ({e})"
         return jsonify({"error": msg}), 500
+
 
 
 
