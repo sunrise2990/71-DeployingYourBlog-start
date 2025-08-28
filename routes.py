@@ -960,16 +960,29 @@ def _merge(d):
     return base
 
 def _harmonize(params: dict) -> dict:
-    """
-    If the UI doesn't provide an explicit CPP window, infer a window that
-    matches the main calculator: start at retirement, end at life expectancy.
-    """
     ra = int(params.get("retirement_age", 65))
     le = int(params.get("life_expectancy", ra + 30))
-    if "cpp_start_age" not in params or params.get("cpp_start_age") is None:
+
+    # Start defaults to retirement age
+    if params.get("cpp_start_age") in (None, "", 0, "0"):
         params["cpp_start_age"] = ra
-    if "cpp_end_age" not in params or params.get("cpp_end_age") is None:
+    else:
+        params["cpp_start_age"] = int(params["cpp_start_age"])
+
+    # End defaults to life expectancy (inclusive)
+    if params.get("cpp_end_age") in (None, "", 0, "0"):
         params["cpp_end_age"] = le
+    else:
+        params["cpp_end_age"] = int(params["cpp_end_age"])
+
+    # Clamp and normalize: ra ≤ cpp_start_age ≤ cpp_end_age ≤ le
+    if params["cpp_start_age"] < ra:
+        params["cpp_start_age"] = ra
+    if params["cpp_end_age"] < params["cpp_start_age"]:
+        params["cpp_end_age"] = params["cpp_start_age"]
+    if params["cpp_end_age"] > le:
+        params["cpp_end_age"] = le
+
     return params
 
 
