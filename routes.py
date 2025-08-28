@@ -963,26 +963,29 @@ def _harmonize(params: dict) -> dict:
     ra = int(params.get("retirement_age", 65))
     le = int(params.get("life_expectancy", ra + 30))
 
-    # Start defaults to retirement age
-    if params.get("cpp_start_age") in (None, "", 0, "0"):
-        params["cpp_start_age"] = ra
-    else:
-        params["cpp_start_age"] = int(params["cpp_start_age"])
+    # start: default to retirement age
+    start = params.get("cpp_start_age")
+    start = ra if start in (None, "", 0, "0") else int(start)
 
-    # End defaults to life expectancy (inclusive)
-    if params.get("cpp_end_age") in (None, "", 0, "0"):
-        params["cpp_end_age"] = le
-    else:
-        params["cpp_end_age"] = int(params["cpp_end_age"])
+    # end: default to life expectancy
+    end = params.get("cpp_end_age")
+    end = le if end in (None, "", 0, "0") else int(end)
 
-    # Clamp and normalize: ra ≤ cpp_start_age ≤ cpp_end_age ≤ le
-    if params["cpp_start_age"] < ra:
-        params["cpp_start_age"] = ra
-    if params["cpp_end_age"] < params["cpp_start_age"]:
-        params["cpp_end_age"] = params["cpp_start_age"]
-    if params["cpp_end_age"] > le:
-        params["cpp_end_age"] = le
+    # 🔧 Convert possible exclusive end (from Live UI) → inclusive, then clamp.
+    # Safe if it was already inclusive: we clamp to life expectancy below.
+    if float(params.get("cpp_monthly", 0) or 0) > 0:
+        end += 1
 
+    # clamp and normalize
+    if start < ra:
+        start = ra
+    if end < start:
+        end = start
+    if end > le:
+        end = le
+
+    params["cpp_start_age"] = start
+    params["cpp_end_age"]   = end
     return params
 
 
