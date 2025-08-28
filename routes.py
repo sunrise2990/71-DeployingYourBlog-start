@@ -100,22 +100,21 @@ def canonical_to_form_inputs(canon: dict) -> dict:
     if "life_expectancy" in d:
         out["lifespan"] = _to_int(d["life_expectancy"])
 
-    # --- Living expense display: show MONTHLY in the form ---
+    # Living expense: show MONTHLY in the form
     if "annual_expense" in d:
         out["monthly_living_expense"] = _to_float(d["annual_expense"]) / 12.0
     elif "monthly_living_expense" in d:  # legacy rows
         out["monthly_living_expense"] = _to_float(d["monthly_living_expense"])
 
-    # --- Savings display: show MONTHLY in the form ---
+    # Savings: show MONTHLY in the form
     if "annual_saving" in d:
-        # If we have canonical fields (annual_expense present), treat as canonical annual and divide by 12.
+        # Heuristic: canonical rows have annual_expense; legacy rows may not.
         if "annual_expense" in d:
             out["annual_saving"] = _to_float(d["annual_saving"]) / 12.0
         else:
-            # Legacy rows likely stored monthly; pass through.
             out["annual_saving"] = _to_float(d["annual_saving"])
 
-    # CPP (legacy names in the form)
+    # CPP (legacy field names in the form)
     if "cpp_monthly" in d:
         out["cpp_support"] = _to_float(d["cpp_monthly"])
     if "cpp_start_age" in d:
@@ -139,13 +138,24 @@ def canonical_to_form_inputs(canon: dict) -> dict:
         out[f"asset_liquidation_{i+1}"] = amt
         out[f"asset_liquidation_age_{i+1}"] = age
 
-    # Optional MC fields
-    if "return_std" in d:
-        out["return_std"] = d["return_std"]
-    if "inflation_std" in d:
-        out["inflation_std"] = d["inflation_std"]
+    # ===== UI-compat for σ selects =====
+    # return_std: UI options are "8","12","18" (percent as whole numbers)
+    if "return_std" in d and d["return_std"] is not None:
+        rs = _to_float(d["return_std"], None)
+        if rs is not None:
+            # If stored as decimal (<1), convert to whole percent string; else keep whole number.
+            out["return_std"] = f"{rs*100:.0f}" if rs < 1 else f"{rs:.0f}"
+
+    # inflation_std: UI options are "0.5","1.0","2.0" (percent with one decimal)
+    if "inflation_std" in d and d["inflation_std"] is not None:
+        ins = _to_float(d["inflation_std"], None)
+        if ins is not None:
+            # If stored as decimal (<1), convert to percent string with one decimal; else format as x.y
+            val = ins*100 if ins < 1 else ins
+            out["inflation_std"] = f"{val:.1f}"
 
     return out
+
 
 # Define main projects blueprint (existing)
 projects_bp = Blueprint('projects', __name__, template_folder='templates')
