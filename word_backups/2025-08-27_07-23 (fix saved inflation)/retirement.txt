@@ -1837,9 +1837,7 @@ ping(); // initial draw
     }
 
     const layout = {};
-    const axisSeries = [A.p10, A.p50, A.p90].concat(B ? [B.p10, B.p50, B.p90] : []);
-    ensureLayout(layout, axisSeries);
-
+    ensureLayout(layout);
     showCompareBlock();
     showTitle(B ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`);
     Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
@@ -1989,42 +1987,16 @@ ping(); // initial draw
   }
 
   // ---------- helpers ----------
-function ensureLayout(layout, seriesForAxis){
-  layout.margin = { t: 30 };
-  layout.xaxis = { title: 'Age' };
-
-  // Build right-side Y axis with labels in $K (thousands of dollars)
-  // seriesForAxis: array of numeric arrays (e.g. [A.p10, A.p50, A.p90, B.p10, ...])
-  const vals = [];
-  (seriesForAxis || []).forEach(arr => {
-    (arr || []).forEach(v => { if (v != null && isFinite(v)) vals.push(+v); });
-  });
-  const maxY = Math.max(1, ...(vals.length ? vals : [1]));       // avoid empty
-  const nTicks = 6;                                              // ~5–7 ticks
-  const rawStep = maxY / nTicks;
-
-  function niceStep(x){
-    const pow = Math.pow(10, Math.floor(Math.log10(x)));
-    const n = x / pow;
-    const mult = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10);
-    return mult * pow;
+  function ensureLayout(layout){
+    layout.margin = { t: 30 };
+    layout.xaxis = { title: 'Age' };
+    layout.yaxis = layout.yaxis || {};
+    layout.yaxis.title = 'Projected Assets ($)';
+    layout.yaxis.tickprefix = '$';
+    layout.yaxis.separatethousands = true;
+    layout.yaxis.exponentformat = 'none';
+    layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
   }
-  const step = niceStep(rawStep);
-
-  const tickvals = [];
-  for (let t = 0; t <= maxY + 1e-9; t += step) tickvals.push(t);
-
-  const ticktext = tickvals.map(v => `${Math.round(v/1000).toLocaleString()}K`);
-
-  layout.yaxis = {
-    side: 'right',
-    title: 'Projected Assets ($K)',
-    tickvals,
-    ticktext
-  };
-
-  layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
-}
 
   function showCompareBlock(){
     document.getElementById('compare-block').classList.remove('d-none');
