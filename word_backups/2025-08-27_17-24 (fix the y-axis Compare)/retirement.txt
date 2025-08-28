@@ -2198,27 +2198,16 @@ function ensureLayout(layout, seriesForAxis){
         const inputs = data.inputs_json;
 
         // Iterate all keys in inputs JSON and set form values
-    Object.entries(inputs).forEach(([key, value]) => {
-      const el = document.querySelector(`[name="${key}"]`);
-      if (!el) return;
-
-      if (el.tagName.toLowerCase() === 'select') {
-        const vStr = String(value);
-        el.value = vStr;
-
-        // If no option matched (e.g., "2" vs "2.0"), match by numeric value
-        if (el.value !== vStr) {
-          const target = Number(vStr);
-          if (!Number.isNaN(target)) {
-            for (const opt of Array.from(el.options)) {
-              if (Number(opt.value) === target) { el.value = opt.value; break; }
+        Object.entries(inputs).forEach(([key, value]) => {
+          const el = document.querySelector(`[name="${key}"]`);
+          if (el) {
+            if (el.tagName.toLowerCase() === 'select') {
+              el.value = value.toString();
+            } else {
+              el.value = value;
             }
           }
-        }
-      } else {
-        el.value = value;
-      }
-    });
+        });
 
         // Set the dropdown selection explicitly to the loaded scenario
         select.value = data.id || data.scenario_id || scenarioId;
