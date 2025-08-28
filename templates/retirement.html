@@ -1010,14 +1010,8 @@ const debouncedPing = (() => { let t; return () => { clearTimeout(t); t = setTim
 function applyPatch(patch){
   if (!patch) return;
   if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
-
-  // ⬇️ keep exact values (no /50 or /100 rounding)
-  if (patch.annual_expense != null)
-    elExpMo.value = Math.max(0, Math.round((+patch.annual_expense) / 12));
-
-  if (patch.annual_saving != null)
-    elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving) / 12));
-
+  if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
+  if (patch.annual_saving != null) elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
   if (patch.return_rate_after != null) {
     elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
     postVal.textContent = (+elPost.value).toFixed(1);
@@ -1028,7 +1022,6 @@ function applyPatch(patch){
   updateLabelsFromSliders();
   debouncedPing();
 }
-
 function renderCoach(list){
   const area = document.getElementById('coach_area');
   if (!area) return;
@@ -1096,14 +1089,12 @@ async function evalWithOverrides(overrides){
   const data = await res.json();
   return { data, startAge: payload.current_age };
 }
-
 function curveByMetric(data, metric){
   if (metric === 'det') return data.deterministic || [];
   if (metric === 'p10') return data.p10 || [];
   if (metric === 'p90') return data.p90 || [];
   return data.p50 || [];
 }
-
 function valueAtAge(curve, startAge, age){
   const idx = Math.max(0, Math.min(curve.length - 1, Math.round(age - startAge)));
   return Number(curve[idx] ?? 0);
@@ -1139,14 +1130,8 @@ async function commitFull(overrides, patch){
     // reflect patch without firing extra pings
     if (patch) {
       if (patch.retirement_age != null) elAge.value = +patch.retirement_age;
-
-      // ⬇️ keep exact values (no /50 or /100 rounding)
-      if (patch.annual_expense != null)
-        elExpMo.value = Math.max(0, Math.round((+patch.annual_expense) / 12));
-
-      if (patch.annual_saving != null)
-        elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving) / 12));
-
+      if (patch.annual_expense != null) elExpMo.value = Math.max(0, Math.round((+patch.annual_expense)/12/50)*50);
+      if (patch.annual_saving != null)  elSaveMo.value = Math.max(0, Math.round((+patch.annual_saving)/12/100)*100);
       if (patch.return_rate_after != null) {
         elPost.value = Math.round((+patch.return_rate_after * 100) * 10) / 10;
         postVal.textContent = (+elPost.value).toFixed(1);
