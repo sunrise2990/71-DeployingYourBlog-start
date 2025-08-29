@@ -160,145 +160,168 @@
 
 
 
-        {% if chart_data %}
-        <div class="mt-5">
-            <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
-            <div id="retirement-chart" style="height: 400px;"></div>
-            <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-            <script>
-                const age = {{ chart_data["Age"] | tojson }};
-                const assetRetirement = {{ chart_data["Asset_Retirement"] | tojson }};
-                const expense = {{ chart_data["Living_Exp_Retirement"] | tojson }};
-                const withdrawalRate = {{ chart_data["Withdrawal_Rate"] | tojson }};
-
-                const chart1 = [
-                    {
-                        x: age,
-                        y: assetRetirement,
-                        type: 'scatter',
-                        mode: 'lines+markers',
-                        name: 'Asset – Retirement',
-                        line: { color: 'green' },
-                        yaxis: 'y1'
-                    },
-                    {
-                        x: age,
-                        y: expense,
-                        type: 'scatter',
-                        mode: 'lines+markers',
-                        name: 'Living Exp. – Retirement',
-                        line: { color: 'red' },
-                        yaxis: 'y1'
-                    },
-                    {
-                        x: age,
-                        y: withdrawalRate,
-                        type: 'scatter',
-                        mode: 'lines+markers',
-                        name: 'Withdrawal Rate',
-                        line: { color: 'gray', dash: 'dot' },
-                        yaxis: 'y2'
-                    }
-                ];
-
-                const layout1 = {
-                    margin: { t: 30 },
-                    xaxis: { title: "Age" },
-                    yaxis: {
-                        title: "Amount ($)",
-                        tickprefix: "$",
-                        separatethousands: true,
-                        side: 'left',
-                        showgrid: true
-                    },
-                    yaxis2: {
-                        title: "Withdrawal Rate (%)",
-                        overlaying: 'y',
-                        side: 'right',
-                        tickformat: '.1%',
-                        showgrid: false
-                    },
-                    legend: { orientation: "h", x: 0.1, y: -0.2 }
-                };
-
-                Plotly.newPlot("retirement-chart", chart1, layout1, { responsive: true });
-            </script>
-        </div>
-        {% endif %}
-
-{% if monte_carlo_data %}
+{% if chart_data %}
 <div class="mt-5">
-  <h5 class="text-center mb-3">🎲 Monte Carlo Simulation: Retirement Asset Range</h5>
-  <div id="monte-carlo-chart" style="height: 400px;"></div>
+  <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
+  <div id="retirement-chart" style="height: 400px;"></div>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script>
+    (function () {
+      const age              = {{ chart_data["Age"] | tojson }};
+      const assetRetirement  = {{ chart_data["Asset_Retirement"] | tojson }};
+      const expense          = {{ chart_data["Living_Exp_Retirement"] | tojson }};
+      const withdrawalRate   = {{ chart_data["Withdrawal_Rate"] | tojson }};
+
+      // Build $K ticks for the right-side Amount axis (same approach as MC)
+      const vals = []
+        .concat(assetRetirement || [])
+        .concat(expense || [])
+        .filter(v => v != null && isFinite(v))
+        .map(Number);
+
+      const maxY    = Math.max(1, ...(vals.length ? vals : [1]));
+      const nTicks  = 6;
+      const rawStep = maxY / nTicks;
+      function niceStep(x){
+        const pow  = Math.pow(10, Math.floor(Math.log10(x)));
+        const n    = x / pow;
+        const mult = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10);
+        return mult * pow;
+      }
+      const step = niceStep(rawStep);
+      const tickvals = [];
+      for (let t = 0; t <= maxY + 1e-9; t += step) tickvals.push(t);
+      const ticktext = tickvals.map(v => `${Math.round(v/1000).toLocaleString()}K`);
+
+      const traces = [
+        {
+          x: age, y: assetRetirement,
+          type: 'scatter', mode: 'lines+markers',
+          name: 'Asset – Retirement', line: { color: 'green' },
+          yaxis: 'y2',
+          hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>'
+        },
+        {
+          x: age, y: expense,
+          type: 'scatter', mode: 'lines+markers',
+          name: 'Living Exp. – Retirement', line: { color: 'red' },
+          yaxis: 'y2',
+          hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>'
+        },
+        {
+          x: age, y: withdrawalRate,
+          type: 'scatter', mode: 'lines+markers',
+          name: 'Withdrawal Rate', line: { color: 'gray', dash: 'dot' },
+          yaxis: 'y',
+          hovertemplate: 'Age %{x}<br>%{y:.1%}<extra></extra>'
+        }
+      ];
+
+      const layout = {
+        margin: { t: 30 },
+        xaxis: { title: 'Age' },
+
+        // LEFT axis: percentage
+        yaxis: {
+          title: 'Withdrawal Rate (%)',
+          tickformat: '.1%',
+          side: 'left',
+          showgrid: false
+        },
+
+        // RIGHT axis: Amount ($K)
+        yaxis2: {
+          title: 'Amount ($K)',
+          overlaying: 'y',
+          side: 'right',
+          tickvals,
+          ticktext,
+          gridcolor: 'rgba(0,0,0,0.05)'
+        },
+
+        legend: { orientation: 'h', x: 0.1, y: -0.2 }
+      };
+
+      Plotly.newPlot('retirement-chart', traces, layout, { responsive: true });
+    })();
+  </script>
 </div>
-
-<script>
-(function () {
-  const ages = {{ monte_carlo_data["Age"] | tojson }};
-  const p10  = {{ monte_carlo_data["Percentile_10"] | tojson }};
-  const p50  = {{ monte_carlo_data["Percentile_50"] | tojson }};
-  const p90  = {{ monte_carlo_data["Percentile_90"] | tojson }};
-
-  const traces = [
-    // band: 10th → 90th
-    { x: ages, y: p10, connectgaps: false, fill: 'none',
-      line: { color: 'rgba(0,100,200,0.2)', width: 0 },
-      hoverinfo: 'skip', showlegend: false },
-
-    { x: ages, y: p90, connectgaps: false, fill: 'tonexty',
-      fillcolor: 'rgba(0,100,200,0.2)',
-      line: { color: 'rgba(0,100,200,0.2)', width: 0 },
-      hoverinfo: 'skip', showlegend: false },
-
-    // median line
-    { x: ages, y: p50, connectgaps: false, mode: 'lines+markers',
-      name: 'Median', line: { color: 'blue' },
-      hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>' }
-  ];
-
-  const layout = {};
-  ensureLayout(layout, [p10, p50, p90]);
-  Plotly.react('monte-carlo-chart', traces, layout, { responsive: true });
-
-  // ---- same axis builder you used in Compare ----
-  function ensureLayout(layout, seriesForAxis){
-    layout.margin = { t: 30 };
-    layout.xaxis  = { title: 'Age' };
-
-    // Compute nice $K ticks for the right-side axis
-    const vals = [];
-    (seriesForAxis || []).forEach(arr => (arr || []).forEach(v => {
-      if (v != null && isFinite(v)) vals.push(+v);
-    }));
-    const maxY    = Math.max(1, ...(vals.length ? vals : [1]));
-    const nTicks  = 6;
-    const rawStep = maxY / nTicks;
-
-    function niceStep(x){
-      const pow  = Math.pow(10, Math.floor(Math.log10(x)));
-      const n    = x / pow;
-      const mult = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10);
-      return mult * pow;
-    }
-    const step = niceStep(rawStep);
-
-    const tickvals = [];
-    for (let t = 0; t <= maxY + 1e-9; t += step) tickvals.push(t);
-    const ticktext = tickvals.map(v => `${Math.round(v/1000).toLocaleString()}K`);
-
-    layout.yaxis = {
-      side: 'right',
-      title: 'Projected Assets ($K)',
-      tickvals,
-      ticktext,
-      gridcolor: 'rgba(0,0,0,0.05)'
-    };
-
-    layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
-  }
-})();
-</script>
 {% endif %}
+
+
+        {% if monte_carlo_data %}
+        <div class="mt-5">
+          <h5 class="text-center mb-3">🎲 Monte Carlo Simulation: Retirement Asset Range</h5>
+          <div id="monte-carlo-chart" style="height: 400px;"></div>
+        </div>
+
+        <script>
+        (function () {
+          const ages = {{ monte_carlo_data["Age"] | tojson }};
+          const p10  = {{ monte_carlo_data["Percentile_10"] | tojson }};
+          const p50  = {{ monte_carlo_data["Percentile_50"] | tojson }};
+          const p90  = {{ monte_carlo_data["Percentile_90"] | tojson }};
+
+          const traces = [
+            // band: 10th → 90th
+            { x: ages, y: p10, connectgaps: false, fill: 'none',
+              line: { color: 'rgba(0,100,200,0.2)', width: 0 },
+              hoverinfo: 'skip', showlegend: false },
+
+            { x: ages, y: p90, connectgaps: false, fill: 'tonexty',
+              fillcolor: 'rgba(0,100,200,0.2)',
+              line: { color: 'rgba(0,100,200,0.2)', width: 0 },
+              hoverinfo: 'skip', showlegend: false },
+
+            // median line
+            { x: ages, y: p50, connectgaps: false, mode: 'lines+markers',
+              name: 'Median', line: { color: 'blue' },
+              hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>' }
+          ];
+
+          const layout = {};
+          ensureLayout(layout, [p10, p50, p90]);
+          Plotly.react('monte-carlo-chart', traces, layout, { responsive: true });
+
+          // ---- same axis builder you used in Compare ----
+          function ensureLayout(layout, seriesForAxis){
+            layout.margin = { t: 30 };
+            layout.xaxis  = { title: 'Age' };
+
+            // Compute nice $K ticks for the right-side axis
+            const vals = [];
+            (seriesForAxis || []).forEach(arr => (arr || []).forEach(v => {
+              if (v != null && isFinite(v)) vals.push(+v);
+            }));
+            const maxY    = Math.max(1, ...(vals.length ? vals : [1]));
+            const nTicks  = 6;
+            const rawStep = maxY / nTicks;
+
+            function niceStep(x){
+              const pow  = Math.pow(10, Math.floor(Math.log10(x)));
+              const n    = x / pow;
+              const mult = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10);
+              return mult * pow;
+            }
+            const step = niceStep(rawStep);
+
+            const tickvals = [];
+            for (let t = 0; t <= maxY + 1e-9; t += step) tickvals.push(t);
+            const ticktext = tickvals.map(v => `${Math.round(v/1000).toLocaleString()}K`);
+
+            layout.yaxis = {
+              side: 'right',
+              title: 'Projected Assets ($K)',
+              tickvals,
+              ticktext,
+              gridcolor: 'rgba(0,0,0,0.05)'
+            };
+
+            layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
+          }
+        })();
+        </script>
+        {% endif %}
 
 
 
