@@ -1445,13 +1445,10 @@ def compare_vol_preview_json():
 
 
 
-# === LITE V1 TAX-LITE ROUTE (attach to projects_bp) ==========================
+# === LITE V1 TAX-LITE ROUTES (fix) ===========================================
 from flask import jsonify, request
 
-# Uses the existing projects_bp declared earlier:
-#   projects_bp = Blueprint('projects', __name__, template_folder='templates')
-
-# Safe no-op CSRF-exempt (already defined above? reuse, else define)
+# Reuse no-op CSRF decorator if we already defined one; otherwise define it.
 try:
     _csrf_exempt  # type: ignore
 except NameError:  # pragma: no cover
@@ -1465,31 +1462,36 @@ except NameError:  # pragma: no cover
 
 from models.retirement.retirement_calc import LiteV1TaxParams, run_lite_tax_det_v1
 
+@projects_bp.route("/lite_v1/tax_ping", methods=["GET"])
+def lite_v1_tax_ping():
+    return jsonify({"ok": True})
+
 @projects_bp.route("/lite_v1/tax_det", methods=["POST"])
 @_csrf_exempt
 def lite_v1_tax_det():
     data = request.get_json(silent=True) or {}
 
-    def _coerce(x, default):
+    def _num(val, default):
         try:
-            return type(default)(x)
+            return type(default)(val)
         except Exception:
             return default
 
     p = LiteV1TaxParams(
-        start_age=_coerce(data.get("start_age"), 53),
-        end_age=_coerce(data.get("end_age"), 95),
-        taxable=_coerce(data.get("taxable"), 0.0),
-        rrsp=_coerce(data.get("rrsp"), 0.0),
-        tfsa=_coerce(data.get("tfsa"), 0.0),
-        monthly_spend=_coerce(data.get("monthly_spend"), 6000.0),
-        return_rate=_coerce(data.get("return_rate"), 0.05),
-        flat_tax_rate=_coerce(data.get("flat_tax_rate"), 0.25),
+        start_age=_num(data.get("start_age"), 53),
+        end_age=_num(data.get("end_age"), 95),
+        taxable=_num(data.get("taxable"), 0.0),
+        rrsp=_num(data.get("rrsp"), 0.0),
+        tfsa=_num(data.get("tfsa"), 0.0),
+        monthly_spend=_num(data.get("monthly_spend"), 6000.0),
+        return_rate=_num(data.get("return_rate"), 0.05),
+        flat_tax_rate=_num(data.get("flat_tax_rate"), 0.25),
     )
 
     out = run_lite_tax_det_v1(p)
-    return jsonify({"ok": True, "tax_det": out})
-# === END LITE V1 TAX-LITE ROUTE =============================================
+    return jsonify({"ok": True, "tax_det": out}), 200
+# === END LITE V1 TAX-LITE ROUTES =============================================
+
 
 
 

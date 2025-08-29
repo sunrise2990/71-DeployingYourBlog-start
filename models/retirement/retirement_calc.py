@@ -282,51 +282,101 @@ def run_mc_with_seed(seed: int, runner, *args, **kwargs):
 
 
 
-# === LITE V1 TAX-LITE ROUTES (fix) ===========================================
-from flask import jsonify, request
+# === LITE V1 (stand-alone skeleton) ==========================================
+# Append this block to the END of retirement_calc.py. Do not edit existing code.
 
-# Reuse no-op CSRF decorator if we already defined one; otherwise define it.
-try:
-    _csrf_exempt  # type: ignore
-except NameError:  # pragma: no cover
-    def _csrf_exempt(fn):
-        for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt"):
-            try:
-                setattr(fn, attr, True)
-            except Exception:
-                pass
-        return fn
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional
+import numpy as np
 
-from models.retirement.retirement_calc import LiteV1TaxParams, run_lite_tax_det_v1
+@dataclass
+class LiteV1Params:
+    # Minimal inputs to validate end-to-end flow
+    start_age: int = 53
+    end_age: int = 95
+    taxable: float = 0.0
+    rrsp: float = 0.0
+    tfsa: float = 0.0
+    monthly_spend: float = 6000.0
+    policy: str = "fixed_real"      # placeholder; not used yet
+    return_rate: float = 0.05       # annual deterministic return (toy)
+    inflation: float = 0.02         # unused in skeleton, reserved
 
-@projects_bp.route("/lite_v1/tax_ping", methods=["GET"])
-def lite_v1_tax_ping():
-    return jsonify({"ok": True})
+def run_lite_det_v1(params: LiteV1Params) -> Dict[str, Any]:
+    """
+    Toy deterministic pass:
+    - Single bucket of assets (taxes/flows ignored on purpose).
+    - Grow at return_rate, subtract annual spend.
+    - Returns per-year assets and earliest depletion age (if any).
+    """
+    years = list(range(params.start_age, params.end_age + 1))
+    horizon = len(years)
+    total_assets0 = params.taxable + params.rrsp + params.tfsa
+    annual_spend = params.monthly_spend * 12.0
 
-@projects_bp.route("/lite_v1/tax_det", methods=["POST"])
-@_csrf_exempt
-def lite_v1_tax_det():
-    data = request.get_json(silent=True) or {}
+    assets_path: List[float] = []
+    a = float(total_assets0)
+    earliest_depletion_age: Optional[int] = None
 
-    def _num(val, default):
-        try:
-            return type(default)(val)
-        except Exception:
-            return default
+    for i in range(horizon):
+        a = a * (1.0 + params.return_rate) - annual_spend
+        assets_path.append(a)
+        if earliest_depletion_age is None and a <= 0.0:
+            earliest_depletion_age = params.start_age + i
 
-    p = LiteV1TaxParams(
-        start_age=_num(data.get("start_age"), 53),
-        end_age=_num(data.get("end_age"), 95),
-        taxable=_num(data.get("taxable"), 0.0),
-        rrsp=_num(data.get("rrsp"), 0.0),
-        tfsa=_num(data.get("tfsa"), 0.0),
-        monthly_spend=_num(data.get("monthly_spend"), 6000.0),
-        return_rate=_num(data.get("return_rate"), 0.05),
-        flat_tax_rate=_num(data.get("flat_tax_rate"), 0.25),
-    )
+    return {
+        "years": years,
+        "annual_spend": annual_spend,
+        "assets": assets_path,
+        "earliest_depletion_age": earliest_depletion_age,
+    }
 
-    out = run_lite_tax_det_v1(p)
-    return jsonify({"ok": True, "tax_det": out}), 200
-# === END LITE V1 TAX-LITE ROUTES =============================================
+def run_lite_mc_success_v1(
+    params: LiteV1Params,
+    n_sims: int = 300,
+    seed: int = 123,
+    vol: float = 0.10,  # placeholder volatility to prove MC plumbing
+) -> Dict[str, Any]:
+    """
+    Toy Monte Carlo pass:
+    - Normal draws around params.return_rate with stdev 'vol'.
+    - No taxes or account rules; just proves MC & JSON wiring.
+    - Returns success %, and P(ruin by age) curve for UI checks.
+    """
+    rng = np.random.default_rng(seed)
+    start_age, end_age = params.start_age, params.end_age
+    years = list(range(start_age, end_age + 1))
+    horizon = len(years)
+    annual_spend = params.monthly_spend * 12.0
 
+    ruin_ages: List[Optional[int]] = []
+    success = 0
+
+    for _ in range(n_sims):
+        a = params.taxable + params.rrsp + params.tfsa
+        ruined_at: Optional[int] = None
+        for i in range(horizon):
+            r = rng.normal(loc=params.return_rate, scale=vol)
+            a = a * (1.0 + r) - annual_spend
+            if ruined_at is None and a <= 0.0:
+                ruined_at = start_age + i
+        ruin_ages.append(ruined_at)
+        if ruined_at is None:
+            success += 1
+
+    success_pct = 100.0 * success / float(n_sims)
+
+    # Build cumulative P(ruin by age)
+    ruin_by_age_pct: List[float] = []
+    for age in years:
+        c = sum(1 for ra in ruin_ages if (ra is not None and ra <= age))
+        ruin_by_age_pct.append(100.0 * c / float(n_sims))
+
+    return {
+        "n_sims": n_sims,
+        "seed": seed,
+        "success_pct": success_pct,
+        "ruin_by_age": {"ages": years, "pct": ruin_by_age_pct},
+    }
+# === END LITE V1 =============================================================
 
