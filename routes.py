@@ -1446,68 +1446,71 @@ def compare_vol_preview_json():
 
 
 # === LITE V1 DIAG ROUTES (append-only, safe) =================================
-# Small helpers to isolate CSRF/login/proxy issues without altering existing routes.
+# Paste at the END of routes.py. No imports from `app`, no unresolved names.
 
-from flask import jsonify, request
+from flask import Blueprint, jsonify, request
 
-# Ensure we have the same blueprint object
-try:
-    projects  # defined earlier in routes.py
-except NameError:
-    from flask import Blueprint
-    projects = Blueprint("projects", __name__)
+# Use existing 'projects' blueprint if present; otherwise create a local one.
+_bp = globals().get("projects")
+if _bp is None:
+    _bp = Blueprint("projects", __name__)  # harmless if not registered
 
-# Import the Lite v1 calc pieces (added earlier to retirement_calc.py)
+# Import the Lite v1 calc pieces
 from models.retirement.retirement_calc import (
     LiteV1Params,
     run_lite_det_v1,
     run_lite_mc_success_v1,
 )
 
-# Make a safe csrf_exempt decorator whether or not CSRF is configured
-try:
-    from app import csrf as _csrf  # your app typically exposes CSRFProtect() instance as "csrf"
-    csrf_exempt = getattr(_csrf, "exempt", lambda f: f)
-except Exception:
-    csrf_exempt = lambda f: f  # no-op if CSRF not available
+# Local no-op CSRF exemption that also sets common flags many CSRF middlewares honor.
+def csrf_exempt(func):
+    for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt", "csrf_exempted"):
+        try:
+            setattr(func, attr, True)
+        except Exception:
+            pass
+    return func
 
-@projects.route("/lite_v1/ping", methods=["GET"])
+@_bp.route("/lite_v1/ping", methods=["GET"])
 def lite_v1_ping():
-    """Confirm blueprint is registered and reachable."""
-    return jsonify({"ok": True, "msg": "pong", "bp": "projects"})
+    return jsonify({"ok": True, "msg": "pong"})
 
-@projects.route("/lite_v1/run_open", methods=["POST"])
-@csrf_exempt  # Exempt JSON for diagnostics only; secured route remains unchanged.
+@_bp.route("/lite_v1/run_open", methods=["POST", "GET"])
+@csrf_exempt  # diagnostics-only; secured route remains unchanged elsewhere
 def lite_v1_run_open():
-    """Same body as lite_v1_run but open (no login/CSRF) to isolate transport issues."""
+    # Accept JSON (POST) or query args (GET) for easy testing
     data = request.get_json(silent=True) or {}
+    if not data and request.args:
+        data = request.args.to_dict()
 
-    def _f(x, default):
+    def _coerce(x, default):
         try:
             return type(default)(x)
         except Exception:
             return default
 
     p = LiteV1Params(
-        start_age=_f(data.get("start_age"), 53),
-        end_age=_f(data.get("end_age"), 95),
-        taxable=_f(data.get("taxable"), 0.0),
-        rrsp=_f(data.get("rrsp"), 0.0),
-        tfsa=_f(data.get("tfsa"), 0.0),
-        monthly_spend=_f(data.get("monthly_spend"), 6000.0),
+        start_age=_coerce(data.get("start_age"), 53),
+        end_age=_coerce(data.get("end_age"), 95),
+        taxable=_coerce(data.get("taxable"), 0.0),
+        rrsp=_coerce(data.get("rrsp"), 0.0),
+        tfsa=_coerce(data.get("tfsa"), 0.0),
+        monthly_spend=_coerce(data.get("monthly_spend"), 6000.0),
         policy=str(data.get("policy") or "fixed_real"),
-        return_rate=_f(data.get("return_rate"), 0.05),
-        inflation=_f(data.get("inflation"), 0.02),
+        return_rate=_coerce(data.get("return_rate"), 0.05),
+        inflation=_coerce(data.get("inflation"), 0.02),
     )
 
-    n_sims = _f(data.get("n_sims"), 300)
-    seed   = _f(data.get("seed"), 123)
+    n_sims = _coerce(data.get("n_sims"), 300)
+    seed   = _coerce(data.get("seed"), 123)
 
     det = run_lite_det_v1(p)
     mc  = run_lite_mc_success_v1(p, n_sims=n_sims, seed=seed)
 
     return jsonify({"ok": True, "open": True, "params": p.__dict__, "det": det, "mc": mc})
 # === END LITE V1 DIAG ROUTES =================================================
+
+
 
 
 
