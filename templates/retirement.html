@@ -1844,52 +1844,55 @@ ping(); // initial draw
   });
 
 
-  // ---------- MC overlay (Plotly) ----------
-  function renderOverlay(cd){
-    const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
-    const labelB = (cd.labels && cd.labels.B) || 'Scenario B';
-    const ages  = (cd.mc.ages || []).map(Number);
+// ---------- MC overlay (Plotly) ----------
+function renderOverlay(cd){
+  const labelA = (cd.labels && cd.labels.A) || 'Scenario A';
+  const labelB = (cd.labels && cd.labels.B) || 'Scenario B';
+  const ages  = (cd.mc.ages || []).map(Number);
 
-    const A = {
-      p10: (cd.mc.p10.A || []).map(v => v === null ? null : Number(v)),
-      p50: (cd.mc.p50.A || []).map(v => v === null ? null : Number(v)),
-      p90: (cd.mc.p90.A || []).map(v => v === null ? null : Number(v))
-    };
-    const hasB = cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B;
-    const B = hasB ? {
-      p10: (cd.mc.p10.B || []).map(v => v === null ? null : Number(v)),
-      p50: (cd.mc.p50.B || []).map(v => v === null ? null : Number(v)),
-      p90: (cd.mc.p90.B || []).map(v => v === null ? null : Number(v))
-    } : null;
+  const A = {
+    p10: (cd.mc.p10.A || []).map(v => v === null ? null : Number(v)),
+    p50: (cd.mc.p50.A || []).map(v => v === null ? null : Number(v)),
+    p90: (cd.mc.p90.A || []).map(v => v === null ? null : Number(v))
+  };
+  const hasB = cd.mc.p10.B && cd.mc.p50.B && cd.mc.p90.B;
+  const B = hasB ? {
+    p10: (cd.mc.p10.B || []).map(v => v === null ? null : Number(v)),
+    p50: (cd.mc.p50.B || []).map(v => v === null ? null : Number(v)),
+    p90: (cd.mc.p90.B || []).map(v => v === null ? null : Number(v))
+  } : null;
 
-    const traces = [
-      { x: ages, y: A.p10, connectgaps: false, fill: 'none',
-        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: ages, y: A.p90, connectgaps: false, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)',
-        line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-      { x: ages, y: A.p50, connectgaps: false, mode: 'lines+markers',
-        name: `${labelA} – Median`, line: { color: 'blue' } }
-    ];
+  const traces = [
+    { x: ages, y: A.p10, connectgaps: false, fill: 'none',
+      line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+    { x: ages, y: A.p90, connectgaps: false, fill: 'tonexty', fillcolor: 'rgba(0,100,200,0.2)',
+      line: { color: 'rgba(0,100,200,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+    { x: ages, y: A.p50, connectgaps: false, mode: 'lines+markers',
+      name: `${labelA} – Median`, line: { color: 'blue' },
+      hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>' }
+  ];
 
-    if (B) {
-      traces.push(
-        { x: ages, y: B.p10, connectgaps: false, fill: 'none',
-          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-        { x: ages, y: B.p90, connectgaps: false, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)',
-          line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
-        { x: ages, y: B.p50, connectgaps: false, mode: 'lines+markers',
-          name: `${labelB} – Median`, line: { color: 'orange' } }
-      );
-    }
-
-    const layout = {};
-    const axisSeries = [A.p10, A.p50, A.p90].concat(B ? [B.p10, B.p50, B.p90] : []);
-    ensureLayout(layout, axisSeries);
-
-    showCompareBlock();
-    showTitle(B ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`);
-    Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
+  if (B) {
+    traces.push(
+      { x: ages, y: B.p10, connectgaps: false, fill: 'none',
+        line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: B.p90, connectgaps: false, fill: 'tonexty', fillcolor: 'rgba(255,159,64,0.2)',
+        line: { color: 'rgba(255,159,64,0.2)', width: 0 }, hoverinfo:'skip', showlegend:false },
+      { x: ages, y: B.p50, connectgaps: false, mode: 'lines+markers',
+        name: `${labelB} – Median`, line: { color: 'orange' },
+        hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>' }
+    );
   }
+
+  const layout = {};
+  const axisSeries = [A.p10, A.p50, A.p90].concat(B ? [B.p10, B.p50, B.p90] : []);
+  ensureLayout(layout, axisSeries);
+
+  showCompareBlock();
+  showTitle(B ? `🔄 Compare: ${labelA} vs ${labelB}` : `🔄 Compare: ${labelA}`);
+  Plotly.react('mc-compare-plot', traces, layout, { responsive: true });
+}
+
 
 
   // ---------- Sensitivity (SPLIT) ----------
