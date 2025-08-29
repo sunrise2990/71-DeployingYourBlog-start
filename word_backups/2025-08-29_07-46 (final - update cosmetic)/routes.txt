@@ -1445,63 +1445,6 @@ def compare_vol_preview_json():
 
 
 
-# === LITE V1 ROUTE (stand-alone skeleton) ====================================
-# Append this block to the END of routes.py. Do not edit existing code above.
-
-from flask import jsonify, request
-from flask_login import login_required
-
-# Import the new skeleton funcs/types (safe even if already imported elsewhere)
-from models.retirement.retirement_calc import (
-    LiteV1Params,
-    run_lite_det_v1,
-    run_lite_mc_success_v1,
-)
-
-# Use the existing 'projects' blueprint. If not present, fall back harmlessly.
-try:
-    projects  # type: ignore  # noqa
-except NameError:  # pragma: no cover
-    from flask import Blueprint
-    projects = Blueprint("projects", __name__)  # will require registration to take effect
-
-@projects.route("/lite_v1/run", methods=["POST"])
-@login_required
-def lite_v1_run():
-    """
-    Minimal JSON endpoint to validate calc->route->UI plumbing.
-    Accepts a tiny param set; returns deterministic + MC skeleton outputs.
-    """
-    data = request.get_json(silent=True) or {}
-
-    def _f(x, default):
-        try:
-            return type(default)(x)
-        except Exception:
-            return default
-
-    p = LiteV1Params(
-        start_age=_f(data.get("start_age"), 53),
-        end_age=_f(data.get("end_age"), 95),
-        taxable=_f(data.get("taxable"), 0.0),
-        rrsp=_f(data.get("rrsp"), 0.0),
-        tfsa=_f(data.get("tfsa"), 0.0),
-        monthly_spend=_f(data.get("monthly_spend"), 6000.0),
-        policy=str(data.get("policy") or "fixed_real"),
-        return_rate=_f(data.get("return_rate"), 0.05),
-        inflation=_f(data.get("inflation"), 0.02),
-    )
-
-    n_sims = _f(data.get("n_sims"), 300)
-    seed = _f(data.get("seed"), 123)
-
-    det = run_lite_det_v1(p)
-    mc = run_lite_mc_success_v1(p, n_sims=n_sims, seed=seed)
-
-    return jsonify({"ok": True, "params": p.__dict__, "det": det, "mc": mc})
-# === END LITE V1 ROUTE =======================================================
-
-
 
 
 
