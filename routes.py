@@ -1445,40 +1445,36 @@ def compare_vol_preview_json():
 
 
 
-# === LITE V1 DIAG ROUTES (append-only, safe) =================================
-# Paste at the END of routes.py. No imports from `app`, no unresolved names.
+# === LITE V1 DIAG ROUTES (final, attach to existing `projects`) ==============
+from flask import jsonify, request
 
-from flask import Blueprint, jsonify, request
+# MUST use the already-declared `projects` blueprint in this module.
+# Fail fast if it's missing (so we don't accidentally create an unregistered one).
+projects  # noqa: F401  # type: ignore
 
-# Use existing 'projects' blueprint if present; otherwise create a local one.
-_bp = globals().get("projects")
-if _bp is None:
-    _bp = Blueprint("projects", __name__)  # harmless if not registered
-
-# Import the Lite v1 calc pieces
 from models.retirement.retirement_calc import (
     LiteV1Params,
     run_lite_det_v1,
     run_lite_mc_success_v1,
 )
 
-# Local no-op CSRF exemption that also sets common flags many CSRF middlewares honor.
-def csrf_exempt(func):
-    for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt", "csrf_exempted"):
+# Local no-op CSRF exemption (safe even if you use Flask-WTF/CSRFProtect)
+def _csrf_exempt(fn):
+    for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt"):
         try:
-            setattr(func, attr, True)
+            setattr(fn, attr, True)
         except Exception:
             pass
-    return func
+    return fn
 
-@_bp.route("/lite_v1/ping", methods=["GET"])
+@projects_bp.route("/lite_v1/ping", methods=["GET"])
 def lite_v1_ping():
     return jsonify({"ok": True, "msg": "pong"})
 
-@_bp.route("/lite_v1/run_open", methods=["POST", "GET"])
-@csrf_exempt  # diagnostics-only; secured route remains unchanged elsewhere
+@projects_bp.route("/lite_v1/run_open", methods=["POST", "GET"])
+@_csrf_exempt  # diagnostics-only; your secured route stays unchanged
 def lite_v1_run_open():
-    # Accept JSON (POST) or query args (GET) for easy testing
+    # Accept JSON (POST) or query args (GET) for quick tests
     data = request.get_json(silent=True) or {}
     if not data and request.args:
         data = request.args.to_dict()
@@ -1509,6 +1505,7 @@ def lite_v1_run_open():
 
     return jsonify({"ok": True, "open": True, "params": p.__dict__, "det": det, "mc": mc})
 # === END LITE V1 DIAG ROUTES =================================================
+
 
 
 
