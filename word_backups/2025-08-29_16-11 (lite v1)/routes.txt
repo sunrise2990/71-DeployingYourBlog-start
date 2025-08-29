@@ -1445,13 +1445,10 @@ def compare_vol_preview_json():
 
 
 
-# === LITE V1 TAX-LITE ROUTE (attach to projects_bp) ==========================
+# === LITE V1 RUN (missing endpoint fix; attach to projects_bp) ===============
 from flask import jsonify, request
 
-# Uses the existing projects_bp declared earlier:
-#   projects_bp = Blueprint('projects', __name__, template_folder='templates')
-
-# Safe no-op CSRF-exempt (already defined above? reuse, else define)
+# Reuse no-op CSRF-exempt decorator if already defined; otherwise define it.
 try:
     _csrf_exempt  # type: ignore
 except NameError:  # pragma: no cover
@@ -1463,11 +1460,17 @@ except NameError:  # pragma: no cover
                 pass
         return fn
 
-from models.retirement.retirement_calc import LiteV1TaxParams, run_lite_tax_det_v1
+# Import the Lite v1 calc bits (safe to re-import)
+from models.retirement.retirement_calc import (
+    LiteV1Params,
+    run_lite_det_v1,
+    run_lite_mc_success_v1,
+)
 
-@projects_bp.route("/lite_v1/tax_det", methods=["POST"])
-@_csrf_exempt
-def lite_v1_tax_det():
+@projects_bp.route("/lite_v1/run", methods=["POST"])
+@_csrf_exempt  # keep this open for JSON; remove if you later want strict CSRF
+def lite_v1_run():
+    """Primary Lite v1 JSON endpoint used by the 'Run Lite v1' button."""
     data = request.get_json(silent=True) or {}
 
     def _coerce(x, default):
@@ -1476,21 +1479,26 @@ def lite_v1_tax_det():
         except Exception:
             return default
 
-    p = LiteV1TaxParams(
+    p = LiteV1Params(
         start_age=_coerce(data.get("start_age"), 53),
         end_age=_coerce(data.get("end_age"), 95),
         taxable=_coerce(data.get("taxable"), 0.0),
         rrsp=_coerce(data.get("rrsp"), 0.0),
         tfsa=_coerce(data.get("tfsa"), 0.0),
         monthly_spend=_coerce(data.get("monthly_spend"), 6000.0),
+        policy=str(data.get("policy") or "fixed_real"),
         return_rate=_coerce(data.get("return_rate"), 0.05),
-        flat_tax_rate=_coerce(data.get("flat_tax_rate"), 0.25),
+        inflation=_coerce(data.get("inflation"), 0.02),
     )
 
-    out = run_lite_tax_det_v1(p)
-    return jsonify({"ok": True, "tax_det": out})
-# === END LITE V1 TAX-LITE ROUTE =============================================
+    n_sims = _coerce(data.get("n_sims"), 300)
+    seed   = _coerce(data.get("seed"), 123)
 
+    det = run_lite_det_v1(p)
+    mc  = run_lite_mc_success_v1(p, n_sims=n_sims, seed=seed)
+
+    return jsonify({"ok": True, "params": p.__dict__, "det": det, "mc": mc})
+# === END LITE V1 RUN =========================================================
 
 
 

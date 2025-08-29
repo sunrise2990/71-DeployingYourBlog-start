@@ -2359,70 +2359,133 @@ function ensureLayout(layout, seriesForAxis){
 
 
 
-<!-- === LITE V1: Tax-lite demo (append-only) ================================= -->
-<div class="card mt-4" id="litev1_tax_card">
+<!-- === LITE V1 UI (stand-alone skeleton + diagnostics) ====================== -->
+<div class="card mt-5" id="litev1_card">
   <div class="card-body">
-    <h6 class="card-title mb-2">Tax-lite demo (flat tax on RRSP withdrawals)</h6>
+    <h5 class="card-title mb-2">🧪 Lite v1 (skeleton) – end-to-end plumbing check</h5>
+
+    <!-- Debug helpers -->
+    <div class="d-flex gap-2 mb-3">
+      <button id="litev1_ping" class="btn btn-outline-secondary btn-sm">Ping route</button>
+      <button id="litev1_run_open" class="btn btn-outline-secondary btn-sm">Run (open test)</button>
+      <span id="litev1_status" class="ms-2 small text-muted"></span>
+    </div>
+
     <div class="row g-3">
       <div class="col-md-2">
-        <label class="form-label">Flat Tax Rate (%)</label>
-        <input id="litev1_tax_rate" type="number" class="form-control" value="25" step="1" min="0" max="90">
+        <label class="form-label">Start Age</label>
+        <input id="litev1_start_age" type="number" class="form-control" value="53" min="30" max="80">
       </div>
-      <div class="col-md-10 d-flex align-items-end justify-content-end">
-        <button id="litev1_tax_run" class="btn btn-secondary">Run Tax-lite</button>
+      <div class="col-md-2">
+        <label class="form-label">End Age</label>
+        <input id="litev1_end_age" type="number" class="form-control" value="95" min="60" max="110">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Taxable ($)</label>
+        <input id="litev1_taxable" type="number" class="form-control" value="200000" step="1000">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">RRSP ($)</label>
+        <input id="litev1_rrsp" type="number" class="form-control" value="500000" step="1000">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">TFSA ($)</label>
+        <input id="litev1_tfsa" type="number" class="form-control" value="150000" step="1000">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Monthly Spend ($)</label>
+        <input id="litev1_spend" type="number" class="form-control" value="6900" step="100">
       </div>
     </div>
 
-    <div class="table-responsive mt-3">
-      <table class="table table-sm" id="litev1_tax_table">
-        <thead>
-          <tr>
-            <th>Age</th>
-            <th>From Taxable</th>
-            <th>From TFSA</th>
-            <th>From RRSP (Gross)</th>
-            <th>Tax on RRSP</th>
-            <th>Shortfall</th>
-            <th>End Taxable</th>
-            <th>End TFSA</th>
-            <th>End RRSP</th>
-            <th>End Total</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    <div class="row g-3 mt-2">
+      <div class="col-md-2">
+        <label class="form-label">Return Rate (ann.)</label>
+        <input id="litev1_return" type="number" class="form-control" value="0.05" step="0.005">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">MC Sims</label>
+        <input id="litev1_sims" type="number" class="form-control" value="300" step="50" min="50">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Seed</label>
+        <input id="litev1_seed" type="number" class="form-control" value="123" step="1" min="0">
+      </div>
+      <div class="col-md-6 d-flex align-items-end justify-content-end">
+        <button id="litev1_run" class="btn btn-primary">Run Lite v1</button>
+      </div>
     </div>
-    <p class="small text-muted mb-0" id="litev1_tax_meta"></p>
+
+    <hr class="my-3">
+
+    <div class="row">
+      <div class="col-md-6">
+        <h6>Deterministic (toy)</h6>
+        <div class="table-responsive">
+          <table class="table table-sm" id="litev1_det_table">
+            <thead>
+              <tr><th>Age</th><th>Assets (toy)</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="small text-muted mb-0" id="litev1_det_meta"></p>
+      </div>
+      <div class="col-md-6">
+        <h6>Monte Carlo (toy)</h6>
+        <p class="mb-1"><strong id="litev1_success">Success: —</strong></p>
+        <div class="table-responsive" style="max-height: 220px; overflow:auto;">
+          <table class="table table-sm" id="litev1_ruin_table">
+            <thead>
+              <tr><th>Age</th><th>P(Ruin by age) %</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="small text-muted mb-0">Skeleton only—no taxes or account rules yet.</p>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
 (function(){
   const $ = (id) => document.getElementById(id);
-  const urlTax = "/lite_v1/tax_det";
 
-  function collectLitePayload(){
-    // Reuse fields from the Lite v1 card
-    return {
-      start_age: Number(document.getElementById("litev1_start_age").value),
-      end_age: Number(document.getElementById("litev1_end_age").value),
-      taxable: Number(document.getElementById("litev1_taxable").value),
-      rrsp: Number(document.getElementById("litev1_rrsp").value),
-      tfsa: Number(document.getElementById("litev1_tfsa").value),
-      monthly_spend: Number(document.getElementById("litev1_spend").value),
-      return_rate: Number(document.getElementById("litev1_return").value)
-    };
-  }
+  // Use absolute paths to avoid template render errors if endpoints aren't registered yet.
+  const urlSec  = "/lite_v1/run";        // POST (login + CSRF if your app enforces)
+  const urlPing = "/lite_v1/ping";       // GET (open)
+  const urlOpen = "/lite_v1/run_open";   // POST (open, CSRF-exempt diag)
 
-  $("litev1_tax_run").addEventListener("click", async function(){
-    const base = collectLitePayload();
-    const payload = {
-      ...base,
-      flat_tax_rate: Number(document.getElementById("litev1_tax_rate").value) / 100.0
-    };
+  // Try common CSRF token sources; safe if missing.
+  let CSRF = "";
+  try {
+    // If you render a hidden token elsewhere in the page, read it here
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) CSRF = meta.getAttribute("content") || "";
+  } catch {}
 
+  // --- Debug buttons ---
+  $("litev1_ping").addEventListener("click", async function(){
     try {
-      const res = await fetch(urlTax, {
+      const res = await fetch(urlPing, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { "Accept": "application/json" }
+      });
+      const text = await res.text();
+      $("litev1_status").textContent = `PING ${res.status}`;
+      if (!res.ok) console.error("ping fail:", res.status, text);
+    } catch (e) {
+      $("litev1_status").textContent = "PING network error";
+      console.error(e);
+    }
+  });
+
+  $("litev1_run_open").addEventListener("click", async function(){
+    const payload = collectPayload();
+    try {
+      const res = await fetch(urlOpen, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
@@ -2430,54 +2493,96 @@ function ensureLayout(layout, seriesForAxis){
       });
       const text = await res.text();
       if (!res.ok) {
-        console.error("tax_det failed", res.status, text);
-        alert(`tax_det failed: ${res.status}\n` + text.slice(0, 400));
+        $("litev1_status").textContent = `OPEN ${res.status}`;
+        console.error("open fail:", res.status, text);
+        alert(`lite_v1 open failed: ${res.status}\n` + text.slice(0,400));
         return;
       }
       const out = JSON.parse(text);
-      renderTax(out.tax_det);
+      $("litev1_status").textContent = `OPEN OK ${res.status}`;
+      renderDet(out.det);
+      renderMC(out.mc);
     } catch (e) {
+      $("litev1_status").textContent = "OPEN network error";
       console.error(e);
-      alert("Network error running tax-lite");
+      alert("Network error running lite_v1 (open)");
     }
   });
 
-  function _fmt(x){
-    if (x === null || x === undefined) return "";
-    return Number(x).toLocaleString(undefined, {maximumFractionDigits: 0});
+  // --- Main secured run ---
+  $("litev1_run").addEventListener("click", async function(){
+    const payload = collectPayload();
+    const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+    if (CSRF) { headers["X-CSRFToken"] = CSRF; headers["X-CSRF-Token"] = CSRF; }
+
+    try {
+      const res = await fetch(urlSec, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify(payload)
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        $("litev1_status").textContent = `SEC ${res.status}`;
+        console.error("secure fail:", res.status, text);
+        alert(`lite_v1 run failed: ${res.status}\n` + text.slice(0,400));
+        return;
+      }
+      const out = JSON.parse(text);
+      $("litev1_status").textContent = `SEC OK ${res.status}`;
+      renderDet(out.det);
+      renderMC(out.mc);
+    } catch (e) {
+      $("litev1_status").textContent = "SEC network error";
+      console.error(e);
+      alert("Network error running lite_v1");
+    }
+  });
+
+  function collectPayload(){
+    return {
+      start_age: Number($("litev1_start_age").value),
+      end_age: Number($("litev1_end_age").value),
+      taxable: Number($("litev1_taxable").value),
+      rrsp: Number($("litev1_rrsp").value),
+      tfsa: Number($("litev1_tfsa").value),
+      monthly_spend: Number($("litev1_spend").value),
+      return_rate: Number($("litev1_return").value),
+      n_sims: Number($("litev1_sims").value),
+      seed: Number($("litev1_seed").value)
+    };
   }
 
-  function renderTax(taxdet){
-    const tb = document.getElementById("litev1_tax_table").querySelector("tbody");
+  function renderDet(det){
+    const tb = $("litev1_det_table").querySelector("tbody");
     tb.innerHTML = "";
-    const rows = taxdet.rows || [];
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
+    const ages = det.years, assets = det.assets;
+    for (let i=0; i<Math.min(ages.length, 25); i++) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${r.Age}</td>
-        <td>${_fmt(r.From_Taxable)}</td>
-        <td>${_fmt(r.From_TFSA)}</td>
-        <td>${_fmt(r.From_RRSP_Gross)}</td>
-        <td>${_fmt(r.Tax_On_RRSP)}</td>
-        <td>${r.Shortfall ? _fmt(r.Shortfall) : ""}</td>
-        <td>${_fmt(r.End_Taxable)}</td>
-        <td>${_fmt(r.End_TFSA)}</td>
-        <td>${_fmt(r.End_RRSP)}</td>
-        <td>${_fmt(r.End_Total)}</td>
-      `;
+      tr.innerHTML = `<td>${ages[i]}</td><td>${Number(assets[i]).toLocaleString()}</td>`;
       tb.appendChild(tr);
     }
-    const t = taxdet.flat_tax_rate;
-    document.getElementById("litev1_tax_meta").textContent =
-      `Flat tax = ${(t*100).toFixed(1)}% | Annual spend = ${_fmt(taxdet.annual_spend)} | ` +
-      `Total taxes (all years) = ${_fmt(taxdet.total_taxes)} | ` +
-      `Earliest depletion age = ${taxdet.earliest_depletion_age ?? "—"} (showing first 25 rows)`;
+    $("litev1_det_meta").textContent =
+      `Annual spend = ${Number(det.annual_spend).toLocaleString()} | ` +
+      `Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing first 25 rows)`;
+  }
+
+  function renderMC(mc){
+    $("litev1_success").textContent =
+      `Success: ${mc.success_pct.toFixed(1)}% (n=${mc.n_sims}, seed=${mc.seed})`;
+    const tb = $("litev1_ruin_table").querySelector("tbody");
+    tb.innerHTML = "";
+    const ages = mc.ruin_by_age.ages, pct = mc.ruin_by_age.pct;
+    for (let i=0; i<ages.length; i+=2) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${ages[i]}</td><td>${pct[i].toFixed(1)}</td>`;
+      tb.appendChild(tr);
+    }
   }
 })();
 </script>
-<!-- === END LITE V1: Tax-lite demo ========================================== -->
-
+<!-- === END LITE V1 UI ====================================================== -->
 
 
 
