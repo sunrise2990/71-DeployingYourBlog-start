@@ -1445,38 +1445,33 @@ def compare_vol_preview_json():
 
 
 
-# === LITE V1 DIAG ROUTES (final, attach to existing `projects_bp`) ===========
+# === LITE V1 RUN (missing endpoint fix; attach to projects_bp) ===============
 from flask import jsonify, request
 
-# We already defined/registered `projects_bp` earlier in this file:
-#   projects_bp = Blueprint('projects', __name__, template_folder='templates')
+# Reuse no-op CSRF-exempt decorator if already defined; otherwise define it.
+try:
+    _csrf_exempt  # type: ignore
+except NameError:  # pragma: no cover
+    def _csrf_exempt(fn):
+        for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt"):
+            try:
+                setattr(fn, attr, True)
+            except Exception:
+                pass
+        return fn
 
+# Import the Lite v1 calc bits (safe to re-import)
 from models.retirement.retirement_calc import (
     LiteV1Params,
     run_lite_det_v1,
     run_lite_mc_success_v1,
 )
 
-# Local no-op CSRF exemption (safe with/without Flask-WTF CSRF)
-def _csrf_exempt(fn):
-    for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt"):
-        try:
-            setattr(fn, attr, True)
-        except Exception:
-            pass
-    return fn
-
-@projects_bp.route("/lite_v1/ping", methods=["GET"])
-def lite_v1_ping():
-    return jsonify({"ok": True, "msg": "pong"})
-
-@projects_bp.route("/lite_v1/run_open", methods=["POST", "GET"])
-@_csrf_exempt  # diagnostics-only; your secured route stays unchanged
-def lite_v1_run_open():
-    # Accept JSON (POST) or query args (GET) for quick tests
+@projects_bp.route("/lite_v1/run", methods=["POST"])
+@_csrf_exempt  # keep this open for JSON; remove if you later want strict CSRF
+def lite_v1_run():
+    """Primary Lite v1 JSON endpoint used by the 'Run Lite v1' button."""
     data = request.get_json(silent=True) or {}
-    if not data and request.args:
-        data = request.args.to_dict()
 
     def _coerce(x, default):
         try:
@@ -1502,8 +1497,9 @@ def lite_v1_run_open():
     det = run_lite_det_v1(p)
     mc  = run_lite_mc_success_v1(p, n_sims=n_sims, seed=seed)
 
-    return jsonify({"ok": True, "open": True, "params": p.__dict__, "det": det, "mc": mc})
-# === END LITE V1 DIAG ROUTES =================================================
+    return jsonify({"ok": True, "params": p.__dict__, "det": det, "mc": mc})
+# === END LITE V1 RUN =========================================================
+
 
 
 
