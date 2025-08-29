@@ -2409,23 +2409,20 @@ function ensureLayout(layout, seriesForAxis){
   const urlTax = "/lite_v1/tax_det";
   const urlPing = "/lite_v1/tax_ping";
 
-  // status helper
-  function setStatus(msg){ Q("litev1_tax_status").textContent = msg; }
+  const setStatus = (msg) => { const el = Q("litev1_tax_status"); if (el) el.textContent = msg; };
 
-  // pull inputs from the Lite v1 skeleton so both cards stay in sync
   function collectLitePayload(){
     return {
-      start_age: Number(Q("litev1_start_age").value || 53),
-      end_age: Number(Q("litev1_end_age").value || 95),
-      taxable: Number(Q("litev1_taxable").value || 0),
-      rrsp: Number(Q("litev1_rrsp").value || 0),
-      tfsa: Number(Q("litev1_tfsa").value || 0),
-      monthly_spend: Number(Q("litev1_spend").value || 0),
-      return_rate: Number(Q("litev1_return").value || 0.05)
+      start_age: Number(Q("litev1_start_age")?.value ?? 53),
+      end_age: Number(Q("litev1_end_age")?.value ?? 95),
+      taxable: Number(Q("litev1_taxable")?.value ?? 0),
+      rrsp: Number(Q("litev1_rrsp")?.value ?? 0),
+      tfsa: Number(Q("litev1_tfsa")?.value ?? 0),
+      monthly_spend: Number(Q("litev1_spend")?.value ?? 0),
+      return_rate: Number(Q("litev1_return")?.value ?? 0.05)
     };
   }
 
-  // ping
   Q("litev1_tax_ping").addEventListener("click", async function(){
     try {
       const res = await fetch(urlPing, { method: "GET", credentials: "same-origin" });
@@ -2436,13 +2433,9 @@ function ensureLayout(layout, seriesForAxis){
     }
   });
 
-  // run
   Q("litev1_tax_run").addEventListener("click", async function(){
     const base = collectLitePayload();
-    const payload = {
-      ...base,
-      flat_tax_rate: Number(Q("litev1_tax_rate").value || 25) / 100.0
-    };
+    const payload = { ...base, flat_tax_rate: Number(Q("litev1_tax_rate").value || 25) / 100.0 };
 
     try {
       const res = await fetch(urlTax, {
@@ -2451,14 +2444,30 @@ function ensureLayout(layout, seriesForAxis){
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify(payload)
       });
-      const txt = await res.text();
-      if (!res.ok) {
-        setStatus(`TAX ${res.status}`);
-        console.error("tax_det failed", res.status, txt);
-        alert(`tax_det failed: ${res.status}\n` + txt.slice(0, 400));
+
+      // Show status immediately, even if parsing fails (auth redirect, etc.)
+      setStatus(`TAX ${res.status}`);
+
+      // Prefer res.json(); fall back to text -> JSON if server sent JSON-as-text.
+      let out;
+      try {
+        out = await res.json();
+      } catch {
+        const txt = await res.text();
+        try { out = JSON.parse(txt); } catch { out = null; }
+        if (!res.ok) {
+          console.error("tax_det failed", res.status, txt);
+          alert(`tax_det failed: ${res.status}\n` + txt.slice(0,400));
+          return;
+        }
+      }
+
+      if (!out || !out.tax_det) {
+        console.warn("tax_det returned no payload", out);
+        alert("tax_det returned no data.");
         return;
       }
-      const out = JSON.parse(txt);
+
       setStatus(`TAX OK ${res.status}`);
       renderTax(out.tax_det);
     } catch (e) {
@@ -2474,7 +2483,6 @@ function ensureLayout(layout, seriesForAxis){
   }
 
   function renderTax(taxdet){
-    if (!taxdet) return;
     const tb = Q("litev1_tax_table").querySelector("tbody");
     tb.innerHTML = "";
     const rows = taxdet.rows || [];
@@ -2486,7 +2494,7 @@ function ensureLayout(layout, seriesForAxis){
         <td>${fmt(r.From_Taxable)}</td>
         <td>${fmt(r.From_TFSA)}</td>
         <td>${fmt(r.From_RRSP_Gross)}</td>
-        <td>${fmt(r.tax_on_rrsp || r.Tax_On_RRSP)}</td>
+        <td>${fmt(r.Tax_On_RRSP ?? r.tax_on_rrsp)}</td>
         <td>${r.Shortfall ? fmt(r.Shortfall) : ""}</td>
         <td>${fmt(r.End_Taxable)}</td>
         <td>${fmt(r.End_TFSA)}</td>
@@ -2497,9 +2505,9 @@ function ensureLayout(layout, seriesForAxis){
     }
     const t = Number(taxdet.flat_tax_rate || 0);
     Q("litev1_tax_meta").textContent =
-      `Flat tax = ${(t*100).toFixed(1)}% | Annual spend = ${fmt(taxdet.annual_spend)} | ` +
-      `Total taxes (all years) = ${fmt(taxdet.total_taxes)} | ` +
-      `Earliest depletion age = ${taxdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
+      `Flat tax = ${(t*100).toFixed(1)}% | Annual spend = ${fmt(taxdet.annual_spend)} | `
+      + `Total taxes (all years) = ${fmt(taxdet.total_taxes)} | `
+      + `Earliest depletion age = ${taxdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
   }
 })();
 </script>

@@ -1492,26 +1492,26 @@ except Exception:
         t = max(0.0, min(0.90, float(p.flat_tax_rate)))
         taxable = float(p.taxable); rrsp = float(p.rrsp); tfsa = float(p.tfsa)
 
-        rows: List[Dict[str, Any]] = []
-        earliest: Optional[int] = None
+        rows = []
+        earliest = None
         total_taxes = 0.0
 
         for age in years:
-            # grow
             g = (1.0 + float(p.return_rate))
             taxable *= g; rrsp *= g; tfsa *= g
 
             need = annual_spend
             w_tax = min(taxable, need); taxable -= w_tax; need -= w_tax
-            w_tfsa = min(tfsa, need); tfsa -= w_tfsa; need -= w_tfsa
+            w_tfsa = min(tfsa, need);   tfsa    -= w_tfsa; need -= w_tfsa
 
             w_rrsp_g = 0.0; tax = 0.0
             if need > 0.0:
                 gross = (need / (1.0 - t)) if t < 0.999 else need
                 w_rrsp_g = min(rrsp, gross); rrsp -= w_rrsp_g
-                net = w_rrsp_g * (1.0 - t)
-                tax = w_rrsp_g - net
-                need -= net
+                const_net = w_rrsp_g * (1.0 - t)
+                tax = w_rrsp_g - const_net
+                need -= const_net
+                total_taxes += tax
 
             if need > 0 and earliest is None:
                 earliest = age
@@ -1538,6 +1538,7 @@ except Exception:
             "total_taxes": total_taxes,
             "rows": rows[:25],
         }
+
 
 def _num(v, d):
     try:
