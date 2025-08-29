@@ -1445,12 +1445,11 @@ def compare_vol_preview_json():
 
 
 
-# === LITE V1 DIAG ROUTES (final, attach to existing `projects`) ==============
+# === LITE V1 DIAG ROUTES (final, attach to existing `projects_bp`) ===========
 from flask import jsonify, request
 
-# MUST use the already-declared `projects` blueprint in this module.
-# Fail fast if it's missing (so we don't accidentally create an unregistered one).
-projects  # noqa: F401  # type: ignore
+# We already defined/registered `projects_bp` earlier in this file:
+#   projects_bp = Blueprint('projects', __name__, template_folder='templates')
 
 from models.retirement.retirement_calc import (
     LiteV1Params,
@@ -1458,7 +1457,7 @@ from models.retirement.retirement_calc import (
     run_lite_mc_success_v1,
 )
 
-# Local no-op CSRF exemption (safe even if you use Flask-WTF/CSRFProtect)
+# Local no-op CSRF exemption (safe with/without Flask-WTF CSRF)
 def _csrf_exempt(fn):
     for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt"):
         try:
@@ -1505,6 +1504,7 @@ def lite_v1_run_open():
 
     return jsonify({"ok": True, "open": True, "params": p.__dict__, "det": det, "mc": mc})
 # === END LITE V1 DIAG ROUTES =================================================
+
 
 
 
