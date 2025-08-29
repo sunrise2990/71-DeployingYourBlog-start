@@ -282,100 +282,51 @@ def run_mc_with_seed(seed: int, runner, *args, **kwargs):
 
 
 
-# === LITE V1 TAX-LITE (append-only) ==========================================
-from dataclasses import dataclass
-from typing import Dict, Any, List, Optional
+# === LITE V1 TAX-LITE ROUTES (fix) ===========================================
+from flask import jsonify, request
 
-@dataclass
-class LiteV1TaxParams:
-    start_age: int = 53
-    end_age: int = 95
-    taxable: float = 0.0
-    rrsp: float = 0.0
-    tfsa: float = 0.0
-    monthly_spend: float = 6000.0
-    return_rate: float = 0.05     # annual deterministic growth for all accounts (toy)
-    flat_tax_rate: float = 0.25   # applies ONLY to RRSP withdrawals (toy)
+# Reuse no-op CSRF decorator if we already defined one; otherwise define it.
+try:
+    _csrf_exempt  # type: ignore
+except NameError:  # pragma: no cover
+    def _csrf_exempt(fn):
+        for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt"):
+            try:
+                setattr(fn, attr, True)
+            except Exception:
+                pass
+        return fn
 
-def run_lite_tax_det_v1(p: LiteV1TaxParams) -> Dict[str, Any]:
-    """
-    Minimal account + tax demo:
-      - Accounts: taxable / TFSA / RRSP all grow at return_rate each year.
-      - Withdrawal order: Taxable -> TFSA -> RRSP.
-      - RRSP withdrawals are taxed at flat_tax_rate; taxable & TFSA assumed tax-free (toy).
-      - Goal: fund NET annual spend. If RRSP is used, gross-up that slice to cover tax.
-    Returns first 25 rows for display plus summary stats.
-    """
-    years = list(range(p.start_age, p.end_age + 1))
-    annual_spend = float(p.monthly_spend) * 12.0
-    t = max(0.0, min(0.90, float(p.flat_tax_rate)))  # clamp (0..90%)
+from models.retirement.retirement_calc import LiteV1TaxParams, run_lite_tax_det_v1
 
-    taxable = float(p.taxable)
-    rrsp    = float(p.rrsp)
-    tfsa    = float(p.tfsa)
+@projects_bp.route("/lite_v1/tax_ping", methods=["GET"])
+def lite_v1_tax_ping():
+    return jsonify({"ok": True})
 
-    rows: List[Dict[str, Any]] = []
-    earliest_depletion_age: Optional[int] = None
-    total_taxes = 0.0
+@projects_bp.route("/lite_v1/tax_det", methods=["POST"])
+@_csrf_exempt
+def lite_v1_tax_det():
+    data = request.get_json(silent=True) or {}
 
-    for idx, age in enumerate(years):
-        # Grow each account
-        taxable *= (1.0 + p.return_rate)
-        rrsp    *= (1.0 + p.return_rate)
-        tfsa    *= (1.0 + p.return_rate)
+    def _num(val, default):
+        try:
+            return type(default)(val)
+        except Exception:
+            return default
 
-        need_net = annual_spend
-        w_taxable = min(taxable, need_net); taxable -= w_taxable; need_net -= w_taxable
-        w_tfsa    = min(tfsa,    need_net); tfsa    -= w_tfsa;    need_net -= w_tfsa
+    p = LiteV1TaxParams(
+        start_age=_num(data.get("start_age"), 53),
+        end_age=_num(data.get("end_age"), 95),
+        taxable=_num(data.get("taxable"), 0.0),
+        rrsp=_num(data.get("rrsp"), 0.0),
+        tfsa=_num(data.get("tfsa"), 0.0),
+        monthly_spend=_num(data.get("monthly_spend"), 6000.0),
+        return_rate=_num(data.get("return_rate"), 0.05),
+        flat_tax_rate=_num(data.get("flat_tax_rate"), 0.25),
+    )
 
-        w_rrsp_gross = 0.0
-        w_rrsp_net   = 0.0
-        taxes        = 0.0
+    out = run_lite_tax_det_v1(p)
+    return jsonify({"ok": True, "tax_det": out}), 200
+# === END LITE V1 TAX-LITE ROUTES =============================================
 
-        if need_net > 0.0:
-            # Gross-up the remaining need from RRSP (if available)
-            gross_needed = (need_net / (1.0 - t)) if t < 0.999 else need_net
-            w_rrsp_gross = min(rrsp, gross_needed)
-            rrsp -= w_rrsp_gross
-            w_rrsp_net = w_rrsp_gross * (1.0 - t)
-            taxes = w_rrsp_gross - w_rrsp_net
-            need_net -= w_rrsp_net
-
-        total_taxes += taxes
-
-        shortfall = max(0.0, need_net)
-        total_assets = max(0.0, taxable) + max(0.0, tfsa) + max(0.0, rrsp)
-
-        if shortfall > 0.0 and earliest_depletion_age is None:
-            earliest_depletion_age = age
-            # After this year, we consider everything spent; keep balances at their current (post-withdrawal) values.
-
-        rows.append({
-            "Age": age,
-            "Start_Taxable": None,  # not tracked to keep this tiny; can add later
-            "Start_TFSA": None,
-            "Start_RRSP": None,
-            "Spend_Net": annual_spend,
-            "From_Taxable": w_taxable,
-            "From_TFSA": w_tfsa,
-            "From_RRSP_Gross": w_rrsp_gross,
-            "Tax_On_RRSP": taxes,
-            "Shortfall": shortfall if shortfall > 0 else None,
-            "End_Taxable": taxable,
-            "End_TFSA": tfsa,
-            "End_RRSP": rrsp,
-            "End_Total": total_assets,
-        })
-
-    # Return a light payload (first 25 rows for table)
-    out_rows = rows[:25]
-    return {
-        "years": years,
-        "annual_spend": annual_spend,
-        "flat_tax_rate": t,
-        "earliest_depletion_age": earliest_depletion_age,
-        "total_taxes": total_taxes,
-        "rows": out_rows,
-    }
-# === END LITE V1 TAX-LITE ====================================================
 
