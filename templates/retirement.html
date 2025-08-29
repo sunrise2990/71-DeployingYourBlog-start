@@ -2406,21 +2406,47 @@ function ensureLayout(layout, seriesForAxis){
 <script>
 (function(){
   const Q = (id) => document.getElementById(id);
-  const urlTax = "/lite_v1/tax_det";
+  const urlTax  = "/lite_v1/tax_det";
   const urlPing = "/lite_v1/tax_ping";
-
   const setStatus = (msg) => { const el = Q("litev1_tax_status"); if (el) el.textContent = msg; };
 
+  // Pull a numeric value if the input exists; otherwise return undefined (so server defaults apply)
+  function maybeNum(id){
+    const el = Q(id);
+    if (!el) return undefined;
+    const raw = (el.value ?? "").toString().replace(/,/g, "").trim();
+    if (raw === "") return undefined;
+    const v = Number(raw);
+    return Number.isFinite(v) ? v : undefined;
+  }
+
+  // Build payload only with present fields; if everything is missing, seed small demo defaults
   function collectLitePayload(){
-    return {
-      start_age: Number(Q("litev1_start_age")?.value ?? 53),
-      end_age: Number(Q("litev1_end_age")?.value ?? 95),
-      taxable: Number(Q("litev1_taxable")?.value ?? 0),
-      rrsp: Number(Q("litev1_rrsp")?.value ?? 0),
-      tfsa: Number(Q("litev1_tfsa")?.value ?? 0),
-      monthly_spend: Number(Q("litev1_spend")?.value ?? 0),
-      return_rate: Number(Q("litev1_return")?.value ?? 0.05)
+    const payload = {
+      start_age:      maybeNum("litev1_start_age"),
+      end_age:        maybeNum("litev1_end_age"),
+      taxable:        maybeNum("litev1_taxable"),
+      rrsp:           maybeNum("litev1_rrsp"),
+      tfsa:           maybeNum("litev1_tfsa"),
+      monthly_spend:  maybeNum("litev1_spend"),
+      return_rate:    maybeNum("litev1_return"),
+      flat_tax_rate:  (Number(Q("litev1_tax_rate")?.value || "25") / 100.0)
     };
+    // strip undefined so server-side defaults (e.g., monthly_spend=6000) are used
+    Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+
+    // if nothing was present, use a tiny demo seed so table isn't all zeros
+    const hasAny =
+      ["taxable","rrsp","tfsa","monthly_spend","start_age","end_age","return_rate"]
+        .some(k => payload[k] !== undefined);
+    if (!hasAny) {
+      Object.assign(payload, {
+        start_age: 53, end_age: 95,
+        taxable: 200000, rrsp: 500000, tfsa: 150000,
+        monthly_spend: 6000, return_rate: 0.05
+      });
+    }
+    return payload;
   }
 
   Q("litev1_tax_ping").addEventListener("click", async function(){
@@ -2428,15 +2454,12 @@ function ensureLayout(layout, seriesForAxis){
       const res = await fetch(urlPing, { method: "GET", credentials: "same-origin" });
       setStatus(`PING ${res.status}`);
     } catch (e) {
-      setStatus("PING network error");
-      console.error(e);
+      setStatus("PING network error"); console.error(e);
     }
   });
 
   Q("litev1_tax_run").addEventListener("click", async function(){
-    const base = collectLitePayload();
-    const payload = { ...base, flat_tax_rate: Number(Q("litev1_tax_rate").value || 25) / 100.0 };
-
+    const payload = collectLitePayload();
     try {
       const res = await fetch(urlTax, {
         method: "POST",
@@ -2444,50 +2467,28 @@ function ensureLayout(layout, seriesForAxis){
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify(payload)
       });
-
-      // Show status immediately, even if parsing fails (auth redirect, etc.)
       setStatus(`TAX ${res.status}`);
-
-      // Prefer res.json(); fall back to text -> JSON if server sent JSON-as-text.
       let out;
-      try {
-        out = await res.json();
-      } catch {
-        const txt = await res.text();
-        try { out = JSON.parse(txt); } catch { out = null; }
-        if (!res.ok) {
-          console.error("tax_det failed", res.status, txt);
-          alert(`tax_det failed: ${res.status}\n` + txt.slice(0,400));
-          return;
-        }
+      try { out = await res.json(); }
+      catch { const txt = await res.text(); try { out = JSON.parse(txt); } catch { out = null; } }
+      if (!res.ok || !out || !out.tax_det) {
+        console.error("tax_det failed", res.status, out);
+        alert("tax_det failed or returned no data."); return;
       }
-
-      if (!out || !out.tax_det) {
-        console.warn("tax_det returned no payload", out);
-        alert("tax_det returned no data.");
-        return;
-      }
-
       setStatus(`TAX OK ${res.status}`);
       renderTax(out.tax_det);
     } catch (e) {
-      setStatus("TAX network error");
-      console.error(e);
-      alert("Network error running tax-lite");
+      setStatus("TAX network error"); console.error(e); alert("Network error running tax-lite");
     }
   });
 
-  function fmt(x){
-    if (x === null || x === undefined || isNaN(x)) return "";
-    return Number(x).toLocaleString(undefined, { maximumFractionDigits: 0 });
-  }
+  function fmt(x){ return (x===null||x===undefined||isNaN(x)) ? "" :
+    Number(x).toLocaleString(undefined,{maximumFractionDigits:0}); }
 
   function renderTax(taxdet){
     const tb = Q("litev1_tax_table").querySelector("tbody");
     tb.innerHTML = "";
-    const rows = taxdet.rows || [];
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
+    (taxdet.rows||[]).forEach(r => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${r.Age}</td>
@@ -2499,18 +2500,18 @@ function ensureLayout(layout, seriesForAxis){
         <td>${fmt(r.End_Taxable)}</td>
         <td>${fmt(r.End_TFSA)}</td>
         <td>${fmt(r.End_RRSP)}</td>
-        <td>${fmt(r.End_Total)}</td>
-      `;
+        <td>${fmt(r.End_Total)}</td>`;
       tb.appendChild(tr);
-    }
+    });
     const t = Number(taxdet.flat_tax_rate || 0);
     Q("litev1_tax_meta").textContent =
-      `Flat tax = ${(t*100).toFixed(1)}% | Annual spend = ${fmt(taxdet.annual_spend)} | `
-      + `Total taxes (all years) = ${fmt(taxdet.total_taxes)} | `
-      + `Earliest depletion age = ${taxdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
+      `Flat tax = ${(t*100).toFixed(1)}% | Annual spend = ${fmt(taxdet.annual_spend)} | ` +
+      `Total taxes (all years) = ${fmt(taxdet.total_taxes)} | ` +
+      `Earliest depletion age = ${taxdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
   }
 })();
 </script>
+
 <!-- === END LITE V1: Tax-lite demo (fixed) ================================== -->
 
 
