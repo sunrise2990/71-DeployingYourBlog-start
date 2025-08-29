@@ -2452,11 +2452,18 @@ function ensureLayout(layout, seriesForAxis){
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  const urlSec  = "{{ url_for('projects.lite_v1_run') }}";        // POST (login + CSRF)
-  const urlPing = "{{ url_for('projects.lite_v1_ping') }}";       // GET (open)
-  const urlOpen = "{{ url_for('projects.lite_v1_run_open') }}";   // POST (open, CSRF-exempt)
+  // Use absolute paths to avoid template render errors if endpoints aren't registered yet.
+  const urlSec  = "/lite_v1/run";        // POST (login + CSRF if your app enforces)
+  const urlPing = "/lite_v1/ping";       // GET (open)
+  const urlOpen = "/lite_v1/run_open";   // POST (open, CSRF-exempt diag)
 
-  const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+  // Try common CSRF token sources; safe if missing.
+  let CSRF = "";
+  try {
+    // If you render a hidden token elsewhere in the page, read it here
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) CSRF = meta.getAttribute("content") || "";
+  } catch {}
 
   // --- Debug buttons ---
   $("litev1_ping").addEventListener("click", async function(){
@@ -2576,6 +2583,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END LITE V1 UI ====================================================== -->
+
 
 
 
