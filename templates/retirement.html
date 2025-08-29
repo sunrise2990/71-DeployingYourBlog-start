@@ -14,8 +14,8 @@
         ("Retirement Age", "retirement_age", "The age at which you plan to retire."),
         ("Monthly Savings ($)", "annual_saving", "Your monthly savings amount before retirement."),
         ("Annual Saving Increase Rate (%)", "saving_increase_rate", "The expected yearly percentage increase in your monthly savings, accounting for raises or increased capacity."),
-        ("Pre-Retire Return Rate (%)", "return_rate", "Expected average annual return on your investments before retirement. Influences how your assets grow during working years."),
-        ("Post-Retire Return Rate (%)", "return_rate_after", "Expected average annual return on your investments after retirement. Usually lower due to conservative investment strategies."),
+        ("Pre-Retire Return Rate (%)", "return_rate", "Enter your expected long-run CAGR before retirement. The deterministic line uses this rate. Monte Carlo converts it to an arithmetic mean μ = CAGR + ½·σ² (using Return Std Dev as σ) to draw yearly returns. Influences how your assets grow during working years."),
+        ("Post-Retire Return Rate (%)", "return_rate_after", "Enter your expected long-run CAGR after retirement. The deterministic line uses this rate. Monte Carlo converts it to an arithmetic mean μ = CAGR + ½·σ² (using Return Std Dev as σ) to draw yearly returns. Usually lower due to conservative investment strategies."),
         ("Expected Lifespan (Age)", "lifespan", "Your estimated age until which you expect to live. Important for planning how long your assets must last."),
         ("Monthly Living Expense ($)", "monthly_living_expense", "Average monthly spending expected during retirement for living costs."),
         ("Income Tax Rate (%)", "income_tax_rate", "Your effective income tax rate applied to income."),
@@ -160,139 +160,139 @@
 
 
 
-{% if chart_data %}
-<div class="mt-5">
-  <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
-  <div id="retirement-chart" style="height: 400px;"></div>
-  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-  <script>
-    (function () {
-      const age              = {{ chart_data["Age"] | tojson }};
-      const assetRetirement  = {{ chart_data["Asset_Retirement"] | tojson }};
-      const expense          = {{ chart_data["Living_Exp_Retirement"] | tojson }};
-      const withdrawalRate   = {{ chart_data["Withdrawal_Rate"] | tojson }};
+    {% if chart_data %}
+    <div class="mt-5">
+      <h5 class="text-center mb-3">📉 Asset vs. Retirement Expense</h5>
+      <div id="retirement-chart" style="height: 400px;"></div>
+      <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+      <script>
+        (function () {
+          const age              = {{ chart_data["Age"] | tojson }};
+          const assetRetirement  = {{ chart_data["Asset_Retirement"] | tojson }};
+          const expense          = {{ chart_data["Living_Exp_Retirement"] | tojson }};
+          const withdrawalRate   = {{ chart_data["Withdrawal_Rate"] | tojson }};
 
-      // ===== Amount ($K) axis ticks (right side), same approach as MC =====
-      const vals = []
-        .concat(assetRetirement || [])
-        .concat(expense || [])
-        .filter(v => v != null && isFinite(v))
-        .map(Number);
+          // ===== Amount ($K) axis ticks (right side), same approach as MC =====
+          const vals = []
+            .concat(assetRetirement || [])
+            .concat(expense || [])
+            .filter(v => v != null && isFinite(v))
+            .map(Number);
 
-      const maxY    = Math.max(1, ...(vals.length ? vals : [1]));
-      const nTicks  = 6;
-      const rawStep = maxY / nTicks;
-      function niceStep(x){
-        const pow  = Math.pow(10, Math.floor(Math.log10(x)));
-        const n    = x / pow;
-        const mult = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10);
-        return mult * pow;
-      }
-      const step = niceStep(rawStep);
-      const tickvals = [];
-      for (let t = 0; t <= maxY + 1e-9; t += step) tickvals.push(t);
-      const ticktext = tickvals.map(v => `${Math.round(v/1000).toLocaleString()}K`);
+          const maxY    = Math.max(1, ...(vals.length ? vals : [1]));
+          const nTicks  = 6;
+          const rawStep = maxY / nTicks;
+          function niceStep(x){
+            const pow  = Math.pow(10, Math.floor(Math.log10(x)));
+            const n    = x / pow;
+            const mult = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10);
+            return mult * pow;
+          }
+          const step = niceStep(rawStep);
+          const tickvals = [];
+          for (let t = 0; t <= maxY + 1e-9; t += step) tickvals.push(t);
+          const ticktext = tickvals.map(v => `${Math.round(v/1000).toLocaleString()}K`);
 
-      // ===== Emphasis for Withdrawal Rate =====
-      const WARN_THRESHOLD = 0.05;      // 5%
-      const WARN_COLOR     = '#ef4444'; // red-500
-      const WR_BASE_COLOR  = 'gray';
+          // ===== Emphasis for Withdrawal Rate =====
+          const WARN_THRESHOLD = 0.05;      // 5%
+          const WARN_COLOR     = '#ef4444'; // red-500
+          const WR_BASE_COLOR  = 'gray';
 
-      // Build overlay for >= threshold; keep full baseline to avoid gaps
-      const wrHi = (withdrawalRate || []).map(v => (v != null && v >= WARN_THRESHOLD) ? v : null);
+          // Build overlay for >= threshold; keep full baseline to avoid gaps
+          const wrHi = (withdrawalRate || []).map(v => (v != null && v >= WARN_THRESHOLD) ? v : null);
 
-      const traces = [
-        // Amounts on right axis
-        {
-          x: age, y: assetRetirement,
-          type: 'scatter', mode: 'lines+markers',
-          name: 'Asset – Retirement', line: { color: 'green' },
-          yaxis: 'y2',
-          hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>'
-        },
-        {
-          x: age, y: expense,
-          type: 'scatter', mode: 'lines+markers',
-          // changed color from red -> indigo so red is free for WR warning
-          name: 'Living Exp. – Retirement', line: { color: '#8B5CF6' },
-          yaxis: 'y2',
-          hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>'
-        },
+          const traces = [
+            // Amounts on right axis
+            {
+              x: age, y: assetRetirement,
+              type: 'scatter', mode: 'lines+markers',
+              name: 'Asset – Retirement', line: { color: 'green' },
+              yaxis: 'y2',
+              hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>'
+            },
+            {
+              x: age, y: expense,
+              type: 'scatter', mode: 'lines+markers',
+              // changed color from red -> indigo so red is free for WR warning
+              name: 'Living Exp. – Retirement', line: { color: '#8B5CF6' },
+              yaxis: 'y2',
+              hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>'
+            },
 
-        // Withdrawal Rate – full baseline (continuous, subtle)
-        {
-          x: age, y: withdrawalRate,
-          type: 'scatter', mode: 'lines+markers',
-          name: 'Withdrawal Rate',
-          line: { color: WR_BASE_COLOR, dash: 'dot', width: 2 },
-          marker: { size: 5 },
-          yaxis: 'y',
-          legendgroup: 'wr',
-          hovertemplate: 'Age %{x}<br>%{y:.1%}<extra></extra>'
-        },
+            // Withdrawal Rate – full baseline (continuous, subtle)
+            {
+              x: age, y: withdrawalRate,
+              type: 'scatter', mode: 'lines+markers',
+              name: 'Withdrawal Rate',
+              line: { color: WR_BASE_COLOR, dash: 'dot', width: 2 },
+              marker: { size: 5 },
+              yaxis: 'y',
+              legendgroup: 'wr',
+              hovertemplate: 'Age %{x}<br>%{y:.1%}<extra></extra>'
+            },
 
-        // Withdrawal Rate – overlay for >= threshold (emphasized, but thinner)
-        {
-          x: age, y: wrHi,
-          type: 'scatter', mode: 'lines+markers',
-          name: 'Withdrawal Rate – ⚠ Above 5%',
-          line: { color: WARN_COLOR, width: 3 },     // toned down from 4 -> 3
-          marker: { size: 6, symbol: 'circle', color: WARN_COLOR },
-          yaxis: 'y',
-          legendgroup: 'wr',
-          showlegend: false,                          // keep single legend item
-          hovertemplate: 'Age %{x}<br><b>⚠ %{y:.1%}</b><extra></extra>'
-        }
-      ];
+            // Withdrawal Rate – overlay for >= threshold (emphasized, but thinner)
+            {
+              x: age, y: wrHi,
+              type: 'scatter', mode: 'lines+markers',
+              name: 'Withdrawal Rate – ⚠ Above 5%',
+              line: { color: WARN_COLOR, width: 3 },     // toned down from 4 -> 3
+              marker: { size: 6, symbol: 'circle', color: WARN_COLOR },
+              yaxis: 'y',
+              legendgroup: 'wr',
+              showlegend: false,                          // keep single legend item
+              hovertemplate: 'Age %{x}<br><b>⚠ %{y:.1%}</b><extra></extra>'
+            }
+          ];
 
-      const layout = {
-        margin: { t: 30 },
-        xaxis: { title: 'Age' },
+          const layout = {
+            margin: { t: 30 },
+            xaxis: { title: 'Age' },
 
-        // LEFT axis: percentage
-        yaxis: {
-          title: 'Withdrawal Rate (%)',
-          tickformat: '.1%',
-          side: 'left',
-          showgrid: false
-        },
+            // LEFT axis: percentage
+            yaxis: {
+              title: 'Withdrawal Rate (%)',
+              tickformat: '.1%',
+              side: 'left',
+              showgrid: false
+            },
 
-        // RIGHT axis: Amount ($K)
-        yaxis2: {
-          title: 'Amount ($K)',
-          overlaying: 'y',
-          side: 'right',
-          tickvals,
-          ticktext,
-          gridcolor: 'rgba(0,0,0,0.05)'
-        },
+            // RIGHT axis: Amount ($K)
+            yaxis2: {
+              title: 'Amount ($K)',
+              overlaying: 'y',
+              side: 'right',
+              tickvals,
+              ticktext,
+              gridcolor: 'rgba(0,0,0,0.05)'
+            },
 
-        // Horizontal warning line at threshold
-        shapes: [{
-          type: 'line',
-          xref: 'x', yref: 'y',
-          x0: Math.min(...age), x1: Math.max(...age),
-          y0: WARN_THRESHOLD,  y1: WARN_THRESHOLD,
-          line: { color: WARN_COLOR, width: 2, dash: 'dash' }
-        }],
-        annotations: [{
-          xref: 'paper', yref: 'y',
-          x: 0.01, y: WARN_THRESHOLD,
-          xanchor: 'left', ay: -25, ax: 0,
-          text: '⚠ 5% threshold',
-          showarrow: true,
-          arrowcolor: WARN_COLOR,
-          font: { color: WARN_COLOR, size: 12 }
-        }],
+            // Horizontal warning line at threshold
+            shapes: [{
+              type: 'line',
+              xref: 'x', yref: 'y',
+              x0: Math.min(...age), x1: Math.max(...age),
+              y0: WARN_THRESHOLD,  y1: WARN_THRESHOLD,
+              line: { color: WARN_COLOR, width: 2, dash: 'dash' }
+            }],
+            annotations: [{
+              xref: 'paper', yref: 'y',
+              x: 0.01, y: WARN_THRESHOLD,
+              xanchor: 'left', ay: -25, ax: 0,
+              text: '⚠ 5% threshold',
+              showarrow: true,
+              arrowcolor: WARN_COLOR,
+              font: { color: WARN_COLOR, size: 12 }
+            }],
 
-        legend: { orientation: 'h', x: 0.1, y: -0.2 }
-      };
+            legend: { orientation: 'h', x: 0.1, y: -0.2 }
+          };
 
-      Plotly.newPlot('retirement-chart', traces, layout, { responsive: true });
-    })();
-  </script>
-</div>
-{% endif %}
+          Plotly.newPlot('retirement-chart', traces, layout, { responsive: true });
+        })();
+      </script>
+    </div>
+    {% endif %}
 
 
 
