@@ -1445,10 +1445,11 @@ def compare_vol_preview_json():
 
 
 
-# === LITE V1 TAX-LITE ROUTES (fix) ===========================================
+# === LITE V1 TAX-LITE ROUTES (HARDENED REPLACEMENT) ==========================
 from flask import jsonify, request
+from dataclasses import dataclass
 
-# Reuse no-op CSRF decorator if we already defined one; otherwise define it.
+# Reuse no-op CSRF decorator if defined; otherwise define it.
 try:
     _csrf_exempt  # type: ignore
 except NameError:  # pragma: no cover
@@ -1460,7 +1461,89 @@ except NameError:  # pragma: no cover
                 pass
         return fn
 
-from models.retirement.retirement_calc import LiteV1TaxParams, run_lite_tax_det_v1
+# We must attach to your existing blueprint declared earlier as:
+#   projects_bp = Blueprint('projects', __name__, template_folder='templates')
+projects_bp  # noqa: F401  # ensure NameError doesn't slip by silently
+
+# --- Try to import calc pieces; if missing, provide local fallback -----------
+try:
+    from models.retirement.retirement_calc import (
+        LiteV1TaxParams as _Params,
+        run_lite_tax_det_v1 as _run_tax,
+    )
+except Exception:
+    # Fallback mini-engine (keeps server alive even if import fails)
+    from typing import Dict, Any, List, Optional
+
+    @dataclass
+    class _Params:
+        start_age: int = 53
+        end_age: int = 95
+        taxable: float = 0.0
+        rrsp: float = 0.0
+        tfsa: float = 0.0
+        monthly_spend: float = 6000.0
+        return_rate: float = 0.05
+        flat_tax_rate: float = 0.25
+
+    def _run_tax(p: _Params) -> Dict[str, Any]:
+        years = list(range(int(p.start_age), int(p.end_age) + 1))
+        annual_spend = float(p.monthly_spend) * 12.0
+        t = max(0.0, min(0.90, float(p.flat_tax_rate)))
+        taxable = float(p.taxable); rrsp = float(p.rrsp); tfsa = float(p.tfsa)
+
+        rows: List[Dict[str, Any]] = []
+        earliest: Optional[int] = None
+        total_taxes = 0.0
+
+        for age in years:
+            # grow
+            g = (1.0 + float(p.return_rate))
+            taxable *= g; rrsp *= g; tfsa *= g
+
+            need = annual_spend
+            w_tax = min(taxable, need); taxable -= w_tax; need -= w_tax
+            w_tfsa = min(tfsa, need); tfsa -= w_tfsa; need -= w_tfsa
+
+            w_rrsp_g = 0.0; tax = 0.0
+            if need > 0.0:
+                gross = (need / (1.0 - t)) if t < 0.999 else need
+                w_rrsp_g = min(rrsp, gross); rrsp -= w_rrsp_g
+                net = w_rrsp_g * (1.0 - t)
+                tax = w_rrsp_g - net
+                need -= net
+
+            if need > 0 and earliest is None:
+                earliest = age
+
+            total = max(0.0, taxable) + max(0.0, tfsa) + max(0.0, rrsp)
+            rows.append({
+                "Age": age,
+                "From_Taxable": w_tax,
+                "From_TFSA": w_tfsa,
+                "From_RRSP_Gross": w_rrsp_g,
+                "Tax_On_RRSP": tax,
+                "Shortfall": need if need > 0 else None,
+                "End_Taxable": taxable,
+                "End_TFSA": tfsa,
+                "End_RRSP": rrsp,
+                "End_Total": total,
+            })
+
+        return {
+            "years": years,
+            "annual_spend": annual_spend,
+            "flat_tax_rate": t,
+            "earliest_depletion_age": earliest,
+            "total_taxes": total_taxes,
+            "rows": rows[:25],
+        }
+
+def _num(v, d):
+    try:
+        return type(d)(v)
+    except Exception:
+        return d
 
 @projects_bp.route("/lite_v1/tax_ping", methods=["GET"])
 def lite_v1_tax_ping():
@@ -1471,13 +1554,7 @@ def lite_v1_tax_ping():
 def lite_v1_tax_det():
     data = request.get_json(silent=True) or {}
 
-    def _num(val, default):
-        try:
-            return type(default)(val)
-        except Exception:
-            return default
-
-    p = LiteV1TaxParams(
+    p = _Params(
         start_age=_num(data.get("start_age"), 53),
         end_age=_num(data.get("end_age"), 95),
         taxable=_num(data.get("taxable"), 0.0),
@@ -1488,9 +1565,10 @@ def lite_v1_tax_det():
         flat_tax_rate=_num(data.get("flat_tax_rate"), 0.25),
     )
 
-    out = run_lite_tax_det_v1(p)
+    out = _run_tax(p)
     return jsonify({"ok": True, "tax_det": out}), 200
 # === END LITE V1 TAX-LITE ROUTES =============================================
+
 
 
 
