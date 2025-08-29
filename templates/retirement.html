@@ -230,89 +230,76 @@
 <div class="mt-5">
   <h5 class="text-center mb-3">🎲 Monte Carlo Simulation: Retirement Asset Range</h5>
   <div id="monte-carlo-chart" style="height: 400px;"></div>
-  <script>
-    const mc_age = {{ monte_carlo_data["Age"] | tojson }};
-    const mc_p10 = {{ monte_carlo_data["Percentile_10"] | tojson }};
-    const mc_p50 = {{ monte_carlo_data["Percentile_50"] | tojson }};
-    const mc_p90 = {{ monte_carlo_data["Percentile_90"] | tojson }};
+</div>
 
-    const money = v => '$' + Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+<script>
+(function () {
+  const ages = {{ monte_carlo_data["Age"] | tojson }};
+  const p10  = {{ monte_carlo_data["Percentile_10"] | tojson }};
+  const p50  = {{ monte_carlo_data["Percentile_50"] | tojson }};
+  const p90  = {{ monte_carlo_data["Percentile_90"] | tojson }};
 
-    // --- Build right-axis ticks in "K" ---
-    const maxY = Math.max(...mc_p90.filter(v => v != null));
-    const tickCount = 7;                          // ~how many ticks to show
-    const stepK = Math.ceil((maxY / 1000) / (tickCount - 1));  // step in thousands
-    const tickvals = Array.from({ length: tickCount }, (_, i) => i * stepK * 1000);
-    const ticktext = tickvals.map(v => (v / 1000).toLocaleString() + 'K');
+  const traces = [
+    // band: 10th → 90th
+    { x: ages, y: p10, connectgaps: false, fill: 'none',
+      line: { color: 'rgba(0,100,200,0.2)', width: 0 },
+      hoverinfo: 'skip', showlegend: false },
 
-    // Label only the last median point and nudge left so it doesn’t clip
-    const lastIdx = mc_age.length - 1;
-    const medianText = mc_p50.map((v, i) => (i === lastIdx ? money(v) : ''));
+    { x: ages, y: p90, connectgaps: false, fill: 'tonexty',
+      fillcolor: 'rgba(0,100,200,0.2)',
+      line: { color: 'rgba(0,100,200,0.2)', width: 0 },
+      hoverinfo: 'skip', showlegend: false },
 
-    const traces = [
-      {
-        x: mc_age, y: mc_p10,
-        fill: 'none',
-        line: { color: 'rgba(0,100,200,0.2)', width: 0 },
-        name: '10th Percentile',
-        hovertemplate: '<b>Age %{x}</b><br>10th Percentile: $%{y:,.0f}<extra></extra>',
-        showlegend: false
-      },
-      {
-        x: mc_age, y: mc_p90,
-        fill: 'tonexty',
-        fillcolor: 'rgba(0,100,200,0.2)',
-        line: { color: 'rgba(0,100,200,0.2)', width: 0 },
-        name: '90th Percentile',
-        hovertemplate: '<b>Age %{x}</b><br>90th Percentile: $%{y:,.0f}<extra></extra>',
-        showlegend: false
-      },
-      {
-        x: mc_age, y: mc_p50,
-        mode: 'lines+markers+text',
-        name: 'Median',
-        line: { color: 'blue' },
-        text: medianText,
-        textposition: 'top right',
-        textfont: { size: 12 },
-        texttemplate: '%{text}',
-        cliponaxis: false,            // allow the label to render past the plot area
-        xaxis: 'x',
-        hovertemplate: '<b>Age %{x}</b><br>Median: $%{y:,.0f}<extra></extra>',
-        // small nudge so the end label doesn’t overlap the axis
-        textpositionsrc: null,
-        textfontsrc: null,
-        xshift: -10
-      }
-    ];
+    // median line
+    { x: ages, y: p50, connectgaps: false, mode: 'lines+markers',
+      name: 'Median', line: { color: 'blue' },
+      hovertemplate: 'Age %{x}<br>$%{y:,.0f}<extra></extra>' }
+  ];
 
-    const layout = {
-      margin: { t: 30, r: 110, l: 10, b: 40 },   // more right margin to avoid clipping
-      xaxis: {
-        title: 'Age',
-        // add a tiny pad so the last label has space
-        range: [mc_age[0], mc_age[mc_age.length - 1] + 0.8]
-      },
-      yaxis: {
-        title: 'Projected Assets ($)',
-        side: 'right',
-        automargin: true,              // let Plotly expand margins if needed
-        tickmode: 'array',
-        tickvals: tickvals,
-        ticktext: ticktext,
-        ticks: 'outside',
-        ticklen: 6,
-        tickfont: { size: 11 },
-        gridcolor: 'rgba(0,0,0,0.06)'
-      },
-      hovermode: 'x unified',
-      legend: { orientation: 'h', x: 0.1, y: -0.2 }
+  const layout = {};
+  ensureLayout(layout, [p10, p50, p90]);
+  Plotly.react('monte-carlo-chart', traces, layout, { responsive: true });
+
+  // ---- same axis builder you used in Compare ----
+  function ensureLayout(layout, seriesForAxis){
+    layout.margin = { t: 30 };
+    layout.xaxis  = { title: 'Age' };
+
+    // Compute nice $K ticks for the right-side axis
+    const vals = [];
+    (seriesForAxis || []).forEach(arr => (arr || []).forEach(v => {
+      if (v != null && isFinite(v)) vals.push(+v);
+    }));
+    const maxY    = Math.max(1, ...(vals.length ? vals : [1]));
+    const nTicks  = 6;
+    const rawStep = maxY / nTicks;
+
+    function niceStep(x){
+      const pow  = Math.pow(10, Math.floor(Math.log10(x)));
+      const n    = x / pow;
+      const mult = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10);
+      return mult * pow;
+    }
+    const step = niceStep(rawStep);
+
+    const tickvals = [];
+    for (let t = 0; t <= maxY + 1e-9; t += step) tickvals.push(t);
+    const ticktext = tickvals.map(v => `${Math.round(v/1000).toLocaleString()}K`);
+
+    layout.yaxis = {
+      side: 'right',
+      title: 'Projected Assets ($K)',
+      tickvals,
+      ticktext,
+      gridcolor: 'rgba(0,0,0,0.05)'
     };
 
-    Plotly.newPlot('monte-carlo-chart', traces, layout, { responsive: true });
-  </script>
-</div>
+    layout.legend = { orientation: 'h', x: 0.1, y: -0.2 };
+  }
+})();
+</script>
 {% endif %}
+
 
 
 
