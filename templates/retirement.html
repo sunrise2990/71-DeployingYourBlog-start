@@ -2359,24 +2359,131 @@ function ensureLayout(layout, seriesForAxis){
 
 
 
-<!-- === LITE V1: Tax-lite demo (fixed) ====================================== -->
+<!-- === APPEND-ONLY: LITE V1 + TAX-LITE UI ================================== -->
+<div class="card mt-5" id="litev1_card">
+  <div class="card-body">
+    <div class="d-flex align-items-center justify-content-between">
+      <h5 class="card-title mb-0">🧪 Lite v1 (skeleton) – end-to-end check</h5>
+      <div class="d-flex gap-2">
+        <button id="litev1_ping" class="btn btn-outline-secondary btn-sm">Ping route</button>
+        <span id="litev1_status" class="small text-muted"></span>
+      </div>
+    </div>
+
+    <!-- Core inputs (diagnostic) -->
+    <div class="row g-3 mt-3">
+      <div class="col-md-2">
+        <label class="form-label">Start Age</label>
+        <input id="litev1_start_age" type="number" class="form-control" value="53">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">End Age</label>
+        <input id="litev1_end_age" type="number" class="form-control" value="95">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Taxable ($)</label>
+        <input id="litev1_taxable" type="number" class="form-control" value="200000">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">RRSP ($)</label>
+        <input id="litev1_rrsp" type="number" class="form-control" value="500000">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">TFSA ($)</label>
+        <input id="litev1_tfsa" type="number" class="form-control" value="150000">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Monthly Spend ($)</label>
+        <input id="litev1_spend" type="number" class="form-control" value="6000">
+      </div>
+    </div>
+    <div class="row g-3 mt-2">
+      <div class="col-md-2">
+        <label class="form-label">Return Rate (ann., decimal)</label>
+        <input id="litev1_return" type="number" class="form-control" value="0.05" step="0.005">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">MC Sims</label>
+        <input id="litev1_sims" type="number" class="form-control" value="300" min="50">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Seed</label>
+        <input id="litev1_seed" type="number" class="form-control" value="123" min="0">
+      </div>
+      <div class="col-md-6 d-flex align-items-end justify-content-end">
+        <button id="litev1_run" class="btn btn-primary">Run Lite v1</button>
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    <div class="row">
+      <div class="col-md-6">
+        <h6>Deterministic (toy)</h6>
+        <div class="table-responsive">
+          <table class="table table-sm" id="litev1_det_table">
+            <thead><tr><th>Age</th><th>Assets (toy)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="small text-muted mb-0" id="litev1_det_meta"></p>
+      </div>
+      <div class="col-md-6">
+        <h6>Monte Carlo (toy)</h6>
+        <p class="mb-1"><strong id="litev1_success">Success: —</strong></p>
+        <div class="table-responsive" style="max-height: 220px; overflow:auto;">
+          <table class="table table-sm" id="litev1_ruin_table">
+            <thead><tr><th>Age</th><th>P(Ruin by age) %</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="small text-muted mb-0">Skeleton only—no taxes or account rules yet.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tax-lite demo -->
 <div class="card mt-4" id="litev1_tax_card">
   <div class="card-body">
     <div class="d-flex align-items-center justify-content-between">
       <h6 class="card-title mb-0">Tax-lite demo (flat tax on RRSP withdrawals)</h6>
-      <div class="d-flex gap-2">
+      <div class="d-flex align-items-center gap-2">
+        <button id="litev1_sync_top" class="btn btn-outline-primary btn-sm">Use top inputs</button>
         <button id="litev1_tax_ping" class="btn btn-outline-secondary btn-sm">Ping tax route</button>
         <span id="litev1_tax_status" class="small text-muted"></span>
       </div>
     </div>
 
+    <!-- Small helpers: asset split + net CPP toggle -->
     <div class="row g-3 mt-2">
-      <div class="col-md-2">
+      <div class="col-md-3">
         <label class="form-label">Flat Tax Rate (%)</label>
         <input id="litev1_tax_rate" type="number" class="form-control" value="25" step="1" min="0" max="90">
       </div>
-      <div class="col-md-10 d-flex align-items-end justify-content-end">
+      <div class="col-md-6">
+        <label class="form-label">Asset split from Current Assets (when syncing)</label>
+        <div class="input-group">
+          <span class="input-group-text">Taxable %</span>
+          <input id="split_taxable" type="number" class="form-control" value="100" min="0" max="100">
+          <span class="input-group-text">TFSA %</span>
+          <input id="split_tfsa" type="number" class="form-control" value="0" min="0" max="100">
+          <span class="input-group-text">RRSP %</span>
+          <input id="split_rrsp" type="number" class="form-control" value="0" min="0" max="100">
+        </div>
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="net_cpp_toggle">
+          <label class="form-check-label" for="net_cpp_toggle">Net CPP from spend when syncing</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-2">
+      <div class="col-md-12 d-flex justify-content-end gap-2">
         <button id="litev1_tax_run" class="btn btn-secondary">Run Tax-lite</button>
+        <button id="litev1_tax_run_rrif" class="btn btn-dark">Run Tax-lite + RRIF</button>
       </div>
     </div>
 
@@ -2384,16 +2491,8 @@ function ensureLayout(layout, seriesForAxis){
       <table class="table table-sm" id="litev1_tax_table">
         <thead>
           <tr>
-            <th>Age</th>
-            <th>From Taxable</th>
-            <th>From TFSA</th>
-            <th>From RRSP (Gross)</th>
-            <th>Tax on RRSP</th>
-            <th>Shortfall</th>
-            <th>End Taxable</th>
-            <th>End TFSA</th>
-            <th>End RRSP</th>
-            <th>End Total</th>
+            <th>Age</th><th>From Taxable</th><th>From TFSA</th><th>From RRSP (Gross)</th>
+            <th>Tax on RRSP</th><th>Shortfall</th><th>End Taxable</th><th>End TFSA</th><th>End RRSP</th><th>End Total</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -2405,114 +2504,154 @@ function ensureLayout(layout, seriesForAxis){
 
 <script>
 (function(){
-  const Q = (id) => document.getElementById(id);
+  const $ = (id) => document.getElementById(id);
+  const urlPing = "/lite_v1/ping";
+  const urlRun  = "/lite_v1/run";
   const urlTax  = "/lite_v1/tax_det";
-  const urlPing = "/lite_v1/tax_ping";
-  const setStatus = (msg) => { const el = Q("litev1_tax_status"); if (el) el.textContent = msg; };
+  const urlRRIF = "/lite_v1/tax_det_rrif";
+  const setStatus = (el, msg) => { const n=$(el); if(n) n.textContent=msg; };
 
-  // Pull a numeric value if the input exists; otherwise return undefined (so server defaults apply)
-  function maybeNum(id){
-    const el = Q(id);
+  // ---- helpers to read top planner (if present) -----------------------------
+  const pick = (name) => document.getElementById(name) || document.querySelector(`[name="${name}"]`);
+  const numVal = (el) => {
     if (!el) return undefined;
-    const raw = (el.value ?? "").toString().replace(/,/g, "").trim();
-    if (raw === "") return undefined;
-    const v = Number(raw);
-    return Number.isFinite(v) ? v : undefined;
-  }
+    const s = (el.value ?? '').toString().replace(/,/g,'').trim();
+    if (s==='') return undefined;
+    const v = Number(s); return Number.isFinite(v) ? v : undefined;
+  };
 
-  // Build payload only with present fields; if everything is missing, seed small demo defaults
-  function collectLitePayload(){
+  // ---- Ping ----------------------------------------------------------------
+  $("litev1_ping").addEventListener("click", async ()=>{
+    try{ const r=await fetch(urlPing,{credentials:"same-origin"}); setStatus("litev1_status",`PING ${r.status}`);}
+    catch{ setStatus("litev1_status","PING network error"); }
+  });
+  $("litev1_tax_ping").addEventListener("click", async ()=>{
+    try{ const r=await fetch("/lite_v1/tax_ping",{credentials:"same-origin"}); setStatus("litev1_tax_status",`PING ${r.status}`);}
+    catch{ setStatus("litev1_tax_status","PING network error"); }
+  });
+
+  // ---- Lite v1 run ----------------------------------------------------------
+  $("litev1_run").addEventListener("click", async ()=>{
     const payload = {
-      start_age:      maybeNum("litev1_start_age"),
-      end_age:        maybeNum("litev1_end_age"),
-      taxable:        maybeNum("litev1_taxable"),
-      rrsp:           maybeNum("litev1_rrsp"),
-      tfsa:           maybeNum("litev1_tfsa"),
-      monthly_spend:  maybeNum("litev1_spend"),
-      return_rate:    maybeNum("litev1_return"),
-      flat_tax_rate:  (Number(Q("litev1_tax_rate")?.value || "25") / 100.0)
+      start_age:Number($("litev1_start_age").value),
+      end_age:Number($("litev1_end_age").value),
+      taxable:Number($("litev1_taxable").value),
+      rrsp:Number($("litev1_rrsp").value),
+      tfsa:Number($("litev1_tfsa").value),
+      monthly_spend:Number($("litev1_spend").value),
+      return_rate:Number($("litev1_return").value),
+      n_sims:Number($("litev1_sims").value),
+      seed:Number($("litev1_seed").value)
     };
-    // strip undefined so server-side defaults (e.g., monthly_spend=6000) are used
-    Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+    try{
+      const res=await fetch(urlRun,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      setStatus("litev1_status",`SEC ${res.status}`);
+      const out=await res.json();
+      renderDet(out.det); renderMC(out.mc);
+    }catch(e){ setStatus("litev1_status","run error"); console.error(e); }
+  });
 
-    // if nothing was present, use a tiny demo seed so table isn't all zeros
-    const hasAny =
-      ["taxable","rrsp","tfsa","monthly_spend","start_age","end_age","return_rate"]
-        .some(k => payload[k] !== undefined);
-    if (!hasAny) {
-      Object.assign(payload, {
-        start_age: 53, end_age: 95,
-        taxable: 200000, rrsp: 500000, tfsa: 150000,
-        monthly_spend: 6000, return_rate: 0.05
-      });
+  function renderDet(det){
+    const tb=$("litev1_det_table").querySelector("tbody"); tb.innerHTML="";
+    const ages=det.years||[]; const assets=det.assets||[];
+    for(let i=0;i<Math.min(ages.length,25);i++){
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td>${ages[i]}</td><td>${Number(assets[i]||0).toLocaleString()}</td>`;
+      tb.appendChild(tr);
     }
-    return payload;
+    $("litev1_det_meta").textContent=`Annual spend = ${Number(det.annual_spend||0).toLocaleString()} | Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing first 25 rows)`;
+  }
+  function renderMC(mc){
+    $("litev1_success").textContent=`Success: ${Number(mc.success_pct||0).toFixed(1)}% (n=${mc.n_sims}, seed=${mc.seed})`;
+    const tb=$("litev1_ruin_table").querySelector("tbody"); tb.innerHTML="";
+    const ages=(mc.ruin_by_age||{}).ages||[]; const pct=(mc.ruin_by_age||{}).pct||[];
+    for(let i=0;i<ages.length;i+=2){
+      const tr=document.createElement("tr"); tr.innerHTML=`<td>${ages[i]}</td><td>${Number(pct[i]||0).toFixed(1)}</td>`;
+      tb.appendChild(tr);
+    }
   }
 
-  Q("litev1_tax_ping").addEventListener("click", async function(){
-    try {
-      const res = await fetch(urlPing, { method: "GET", credentials: "same-origin" });
-      setStatus(`PING ${res.status}`);
-    } catch (e) {
-      setStatus("PING network error"); console.error(e);
+  // ---- Sync from top planner -----------------------------------------------
+  $("litev1_sync_top").addEventListener("click", ()=>{
+    const curAge = numVal(pick("current_age"));
+    const life   = numVal(pick("lifespan"));
+    const mExp   = numVal(pick("monthly_living_expense"));
+    const retPct = numVal(pick("return_rate"));            // % in UI
+    const assets = numVal(pick("current_assets"));
+    const cpp    = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
+
+    if (curAge !== undefined) $("litev1_start_age").value = curAge;
+    if (life   !== undefined) $("litev1_end_age").value   = life;
+    if (mExp   !== undefined) {
+      let spend = mExp;
+      if ($("net_cpp_toggle")?.checked && cpp !== undefined) spend = Math.max(0, spend - cpp);
+      $("litev1_spend").value = Math.round(spend);
+    }
+    if (retPct !== undefined) $("litev1_return").value = (retPct/100).toFixed(4);
+
+    // apply split to Current Assets -> three accounts
+    if (assets !== undefined) {
+      const st = Number($("#split_taxable")?.value || 100);
+      const sf = Number($("#split_tfsa")?.value || 0);
+      const sr = Number($("#split_rrsp")?.value || 0);
+      const k = Math.max(1, st+sf+sr);
+      const T = assets*(st/k)/100, F = assets*(sf/k)/100, R = assets*(sr/k)/100;
+      $("litev1_taxable").value = Math.round(T);
+      $("litev1_tfsa").value    = Math.round(F);
+      $("litev1_rrsp").value    = Math.round(R);
     }
   });
 
-  Q("litev1_tax_run").addEventListener("click", async function(){
-    const payload = collectLitePayload();
-    try {
-      const res = await fetch(urlTax, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      setStatus(`TAX ${res.status}`);
-      let out;
-      try { out = await res.json(); }
-      catch { const txt = await res.text(); try { out = JSON.parse(txt); } catch { out = null; } }
-      if (!res.ok || !out || !out.tax_det) {
-        console.error("tax_det failed", res.status, out);
-        alert("tax_det failed or returned no data."); return;
-      }
-      setStatus(`TAX OK ${res.status}`);
-      renderTax(out.tax_det);
-    } catch (e) {
-      setStatus("TAX network error"); console.error(e); alert("Network error running tax-lite");
-    }
-  });
-
-  function fmt(x){ return (x===null||x===undefined||isNaN(x)) ? "" :
-    Number(x).toLocaleString(undefined,{maximumFractionDigits:0}); }
-
-  function renderTax(taxdet){
-    const tb = Q("litev1_tax_table").querySelector("tbody");
-    tb.innerHTML = "";
-    (taxdet.rows||[]).forEach(r => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${r.Age}</td>
-        <td>${fmt(r.From_Taxable)}</td>
-        <td>${fmt(r.From_TFSA)}</td>
-        <td>${fmt(r.From_RRSP_Gross)}</td>
-        <td>${fmt(r.Tax_On_RRSP ?? r.tax_on_rrsp)}</td>
-        <td>${r.Shortfall ? fmt(r.Shortfall) : ""}</td>
-        <td>${fmt(r.End_Taxable)}</td>
-        <td>${fmt(r.End_TFSA)}</td>
-        <td>${fmt(r.End_RRSP)}</td>
-        <td>${fmt(r.End_Total)}</td>`;
+  // ---- Tax-lite runners -----------------------------------------------------
+  function collectTaxPayload(){
+    return {
+      start_age: Number($("litev1_start_age").value),
+      end_age: Number($("litev1_end_age").value),
+      taxable: Number($("litev1_taxable").value),
+      rrsp: Number($("litev1_rrsp").value),
+      tfsa: Number($("litev1_tfsa").value),
+      monthly_spend: Number($("litev1_spend").value),
+      return_rate: Number($("litev1_return").value),
+      flat_tax_rate: Number($("litev1_tax_rate").value)/100.0
+    };
+  }
+  function renderTax(tdet, tag){
+    const tb=$("litev1_tax_table").querySelector("tbody"); tb.innerHTML="";
+    (tdet.rows||[]).forEach(r=>{
+      const tr=document.createElement("tr");
+      function fmt(x){return (x==null||isNaN(x))?"":Number(x).toLocaleString();}
+      tr.innerHTML=`<td>${r.Age}</td><td>${fmt(r.From_Taxable)}</td><td>${fmt(r.From_TFSA)}</td><td>${fmt(r.From_RRSP_Gross)}</td><td>${fmt(r.Tax_On_RRSP)}</td><td>${r.Shortfall?fmt(r.Shortfall):""}</td><td>${fmt(r.End_Taxable)}</td><td>${fmt(r.End_TFSA)}</td><td>${fmt(r.End_RRSP)}</td><td>${fmt(r.End_Total)}</td>`;
       tb.appendChild(tr);
     });
-    const t = Number(taxdet.flat_tax_rate || 0);
-    Q("litev1_tax_meta").textContent =
-      `Flat tax = ${(t*100).toFixed(1)}% | Annual spend = ${fmt(taxdet.annual_spend)} | ` +
-      `Total taxes (all years) = ${fmt(taxdet.total_taxes)} | ` +
-      `Earliest depletion age = ${taxdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
+    const t=Number(tdet.flat_tax_rate||0);
+    $("litev1_tax_meta").textContent = `${tag} | Flat tax = ${(t*100).toFixed(1)}% | Annual spend = ${Number(tdet.annual_spend||0).toLocaleString()} | Total taxes (all years) = ${Number(tdet.total_taxes||0).toLocaleString()} | Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
   }
+
+  $("litev1_tax_run").addEventListener("click", async ()=>{
+    const payload=collectTaxPayload();
+    try{
+      const res=await fetch(urlTax,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      setStatus("litev1_tax_status",`TAX ${res.status}`);
+      const out=await res.json(); if(!out?.tax_det) return alert("tax_det returned no data");
+      setStatus("litev1_tax_status",`TAX OK ${res.status}`);
+      renderTax(out.tax_det,"RRIF min: OFF");
+    }catch(e){ setStatus("litev1_tax_status","TAX network error"); console.error(e); }
+  });
+
+  $("litev1_tax_run_rrif").addEventListener("click", async ()=>{
+    const payload=collectTaxPayload(); payload.rrif_min=true;
+    try{
+      const res=await fetch(urlRRIF,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      setStatus("litev1_tax_status",`RRIF ${res.status}`);
+      const out=await res.json(); if(!out?.tax_det_rrif) return alert("tax_det_rrif returned no data");
+      setStatus("litev1_tax_status",`RRIF OK ${res.status}`);
+      renderTax(out.tax_det_rrif, (out.tax_det_rrif.rrif_min ? "RRIF min: ON" : "RRIF min: OFF"));
+    }catch(e){ setStatus("litev1_tax_status","RRIF network error"); console.error(e); }
+  });
 })();
 </script>
+<!-- === END APPEND-ONLY UI =================================================== -->
 
-<!-- === END LITE V1: Tax-lite demo (fixed) ================================== -->
 
 
 

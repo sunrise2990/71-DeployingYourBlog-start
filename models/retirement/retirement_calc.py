@@ -282,101 +282,166 @@ def run_mc_with_seed(seed: int, runner, *args, **kwargs):
 
 
 
-# === LITE V1 (stand-alone skeleton) ==========================================
-# Append this block to the END of retirement_calc.py. Do not edit existing code.
-
+# === APPEND-ONLY: Lite v1 tax-lite + RRIF helpers ============================
 from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
-import numpy as np
 
 @dataclass
-class LiteV1Params:
-    # Minimal inputs to validate end-to-end flow
+class LiteV1TaxParams:
     start_age: int = 53
     end_age: int = 95
     taxable: float = 0.0
     rrsp: float = 0.0
     tfsa: float = 0.0
     monthly_spend: float = 6000.0
-    policy: str = "fixed_real"      # placeholder; not used yet
-    return_rate: float = 0.05       # annual deterministic return (toy)
-    inflation: float = 0.02         # unused in skeleton, reserved
+    return_rate: float = 0.05       # annual deterministic growth (toy)
+    flat_tax_rate: float = 0.25     # tax only on RRSP withdrawals (toy)
 
-def run_lite_det_v1(params: LiteV1Params) -> Dict[str, Any]:
-    """
-    Toy deterministic pass:
-    - Single bucket of assets (taxes/flows ignored on purpose).
-    - Grow at return_rate, subtract annual spend.
-    - Returns per-year assets and earliest depletion age (if any).
-    """
-    years = list(range(params.start_age, params.end_age + 1))
-    horizon = len(years)
-    total_assets0 = params.taxable + params.rrsp + params.tfsa
-    annual_spend = params.monthly_spend * 12.0
+def run_lite_tax_det_v1(p: LiteV1TaxParams) -> Dict[str, Any]:
+    """Toy deterministic engine with simple account order and flat tax on RRSP."""
+    years = list(range(int(p.start_age), int(p.end_age) + 1))
+    annual_spend = float(p.monthly_spend) * 12.0
+    t = max(0.0, min(0.90, float(p.flat_tax_rate)))
 
-    assets_path: List[float] = []
-    a = float(total_assets0)
+    taxable = float(p.taxable)
+    rrsp    = float(p.rrsp)
+    tfsa    = float(p.tfsa)
+
+    rows: List[Dict[str, Any]] = []
     earliest_depletion_age: Optional[int] = None
+    total_taxes = 0.0
 
-    for i in range(horizon):
-        a = a * (1.0 + params.return_rate) - annual_spend
-        assets_path.append(a)
-        if earliest_depletion_age is None and a <= 0.0:
-            earliest_depletion_age = params.start_age + i
+    for age in years:
+        # grow accounts
+        g = 1.0 + float(p.return_rate)
+        taxable *= g; rrsp *= g; tfsa *= g
+
+        need = annual_spend
+
+        # spend from taxable, then TFSA
+        use_tax = min(taxable, need); taxable -= use_tax; need -= use_tax
+        use_tfsa = min(tfsa, need);   tfsa    -= use_tfsa; need -= use_tfsa
+
+        # RRSP gross-up if still short
+        use_rrsp_g = 0.0
+        tax_rrsp   = 0.0
+        if need > 0.0 and rrsp > 0.0:
+            gross = (need / (1.0 - t)) if t < 0.999 else need
+            use_rrsp_g = min(rrsp, gross)
+            rrsp -= use_rrsp_g
+            net = use_rrsp_g * (1.0 - t)
+            tax_rrsp = use_rrsp_g - net
+            need -= net
+            total_taxes += tax_rrsp
+
+        shortfall = need if need > 0 else None
+        if shortfall and earliest_depletion_age is None:
+            earliest_depletion_age = age
+
+        total = max(0.0, taxable) + max(0.0, tfsa) + max(0.0, rrsp)
+        rows.append({
+            "Age": age,
+            "From_Taxable": use_tax,
+            "From_TFSA": use_tfsa,
+            "From_RRSP_Gross": use_rrsp_g,
+            "Tax_On_RRSP": tax_rrsp,
+            "Shortfall": shortfall,
+            "End_Taxable": taxable,
+            "End_TFSA": tfsa,
+            "End_RRSP": rrsp,
+            "End_Total": total,
+        })
 
     return {
         "years": years,
         "annual_spend": annual_spend,
-        "assets": assets_path,
+        "flat_tax_rate": t,
         "earliest_depletion_age": earliest_depletion_age,
+        "total_taxes": total_taxes,
+        "rows": rows[:25],
     }
 
-def run_lite_mc_success_v1(
-    params: LiteV1Params,
-    n_sims: int = 300,
-    seed: int = 123,
-    vol: float = 0.10,  # placeholder volatility to prove MC plumbing
-) -> Dict[str, Any]:
-    """
-    Toy Monte Carlo pass:
-    - Normal draws around params.return_rate with stdev 'vol'.
-    - No taxes or account rules; just proves MC & JSON wiring.
-    - Returns success %, and P(ruin by age) curve for UI checks.
-    """
-    rng = np.random.default_rng(seed)
-    start_age, end_age = params.start_age, params.end_age
-    years = list(range(start_age, end_age + 1))
-    horizon = len(years)
-    annual_spend = params.monthly_spend * 12.0
+# ---- RRIF minimums (approx) -------------------------------------------------
+@dataclass
+class LiteV1TaxRrifParams(LiteV1TaxParams):
+    rrif_min: bool = True  # apply approx min from 71+ if True
 
-    ruin_ages: List[Optional[int]] = []
-    success = 0
+def _approx_rrif_min_pct(age: int) -> float:
+    # simple CRA-like curve for demo: 1 / (90 - age) from 71+
+    if age < 71:
+        return 0.0
+    denom = max(1, 90 - int(age))
+    return 1.0 / float(denom)
 
-    for _ in range(n_sims):
-        a = params.taxable + params.rrsp + params.tfsa
-        ruined_at: Optional[int] = None
-        for i in range(horizon):
-            r = rng.normal(loc=params.return_rate, scale=vol)
-            a = a * (1.0 + r) - annual_spend
-            if ruined_at is None and a <= 0.0:
-                ruined_at = start_age + i
-        ruin_ages.append(ruined_at)
-        if ruined_at is None:
-            success += 1
+def run_lite_tax_det_rrif_v1(p: LiteV1TaxRrifParams) -> Dict[str, Any]:
+    years = list(range(int(p.start_age), int(p.end_age) + 1))
+    annual_spend = float(p.monthly_spend) * 12.0
+    t = max(0.0, min(0.90, float(p.flat_tax_rate)))
 
-    success_pct = 100.0 * success / float(n_sims)
+    taxable = float(p.taxable)
+    rrsp    = float(p.rrsp)
+    tfsa    = float(p.tfsa)
 
-    # Build cumulative P(ruin by age)
-    ruin_by_age_pct: List[float] = []
+    rows: List[Dict[str, Any]] = []
+    earliest: Optional[int] = None
+    total_taxes = 0.0
+
     for age in years:
-        c = sum(1 for ra in ruin_ages if (ra is not None and ra <= age))
-        ruin_by_age_pct.append(100.0 * c / float(n_sims))
+        g = 1.0 + float(p.return_rate)
+        taxable *= g; rrsp *= g; tfsa *= g
+
+        # Forced RRIF min first
+        if p.rrif_min:
+            pct = _approx_rrif_min_pct(age)
+            if pct > 0 and rrsp > 0:
+                forced_g = rrsp * pct
+                forced_g = min(forced_g, rrsp)
+                rrsp -= forced_g
+                forced_net = forced_g * (1.0 - t)
+                forced_tax = forced_g - forced_net
+                taxable += forced_net     # net deposits into taxable
+                total_taxes += forced_tax
+
+        need = annual_spend
+        use_tax = min(taxable, need); taxable -= use_tax; need -= use_tax
+        use_tfsa = min(tfsa, need);   tfsa    -= use_tfsa; need -= use_tfsa
+
+        use_rrsp_g = 0.0
+        tax_rrsp   = 0.0
+        if need > 0.0 and rrsp > 0.0:
+            gross = (need / (1.0 - t)) if t < 0.999 else need
+            use_rrsp_g = min(rrsp, gross)
+            rrsp -= use_rrsp_g
+            net = use_rrsp_g * (1.0 - t)
+            tax_rrsp = use_rrsp_g - net
+            need -= net
+            total_taxes += tax_rrsp
+
+        if need > 0 and earliest is None:
+            earliest = age
+
+        total = max(0.0, taxable) + max(0.0, tfsa) + max(0.0, rrsp)
+        rows.append({
+            "Age": age,
+            "From_Taxable": use_tax,
+            "From_TFSA": use_tfsa,
+            "From_RRSP_Gross": use_rrsp_g,
+            "Tax_On_RRSP": tax_rrsp,
+            "Shortfall": need if need > 0 else None,
+            "End_Taxable": taxable,
+            "End_TFSA": tfsa,
+            "End_RRSP": rrsp,
+            "End_Total": total,
+        })
 
     return {
-        "n_sims": n_sims,
-        "seed": seed,
-        "success_pct": success_pct,
-        "ruin_by_age": {"ages": years, "pct": ruin_by_age_pct},
+        "years": years,
+        "annual_spend": annual_spend,
+        "flat_tax_rate": t,
+        "rrif_min": bool(p.rrif_min),
+        "earliest_depletion_age": earliest,
+        "total_taxes": total_taxes,
+        "rows": rows[:25],
     }
-# === END LITE V1 =============================================================
+# === END APPEND-ONLY =========================================================
 
