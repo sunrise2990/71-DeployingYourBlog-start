@@ -2378,7 +2378,8 @@ function ensureLayout(layout, seriesForAxis){
       <h5 class="card-title mb-0">🧪 Lite v1 (skeleton) – end-to-end check</h5>
       <div class="d-flex align-items-center gap-2">
         <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="litev1_full_mirror">
+          <!-- ✅ default ON -->
+          <input class="form-check-input" type="checkbox" id="litev1_full_mirror" checked>
           <label class="form-check-label small" for="litev1_full_mirror">Mirror top (full engine)</label>
         </div>
         <button id="litev1_ping" class="btn btn-outline-secondary btn-sm">Ping route</button>
@@ -2436,8 +2437,9 @@ function ensureLayout(layout, seriesForAxis){
     <div class="row">
       <div class="col-md-6">
         <h6>Deterministic</h6>
-        <div class="table-responsive">
-          <table class="table table-sm" id="litev1_det_table">
+        <!-- ✅ scroll like MC -->
+        <div class="table-responsive" style="max-height: 220px; overflow:auto;">
+          <table class="table table-sm mb-0" id="litev1_det_table">
             <thead><tr><th>Age</th><th>Assets</th></tr></thead>
             <tbody></tbody>
           </table>
@@ -2521,11 +2523,11 @@ function ensureLayout(layout, seriesForAxis){
 <script>
 (function(){
   const $ = (id) => document.getElementById(id);
-  const urlPing = "/lite_v1/ping";
-  const urlRunToy  = "/lite_v1/run";            // toy path (existing)
-  const urlRunFull = "/lite_v1/det_from_top";   // full engine mirror (new tiny route)
-  const urlTax  = "/lite_v1/tax_det";
-  const urlRRIF = "/lite_v1/tax_det_rrif";
+  const urlPing   = "/lite_v1/ping";
+  const urlRunToy = "/lite_v1/run";            // toy path (existing)
+  const urlRunFull= "/lite_v1/det_from_top";   // full engine mirror (server tiny route)
+  const urlTax    = "/lite_v1/tax_det";
+  const urlRRIF   = "/lite_v1/tax_det_rrif";
   const setStatus = (el, msg) => { const n=$(el); if(n) n.textContent=msg; };
 
   // Integer formatter (no decimals)
@@ -2548,19 +2550,29 @@ function ensureLayout(layout, seriesForAxis){
     const current_age    = numVal(pick("current_age"));
     const retirement_age = numVal(pick("retirement_age"));
     const lifespan       = numVal(pick("lifespan"));
-    const monthly_saving = numVal(pick("annual_saving"));          // UI stores monthly
-    const saving_inc     = (numVal(pick("saving_increase_rate"))||0) / 100;
+
+    // ⚠️ Monthly Savings field robustness: prefer 'monthly_saving', fall back to 'annual_saving'
+    const monthlySavingEl = pick("monthly_saving") || pick("annual_saving");
+    const monthly_saving  = numVal(monthlySavingEl);
+
+    const saving_inc     = (numVal(pick("saving_increase_rate")) ?? 0) / 100;
     const current_assets = numVal(pick("current_assets"));
-    const pre_ret        = (numVal(pick("return_rate"))||0) / 100;
-    const post_ret       = (numVal(pick("return_rate_after"))||0) / 100;
-    const monthly_exp    = numVal(pick("monthly_living_expense"));
-    const infl           = (numVal(pick("inflation_rate"))||0) / 100;
-    const tax_rate       = (numVal(pick("income_tax_rate"))||0) / 100;
+
+    // ⚠️ Robust pre/post return rate IDs
+    const pre_ret  = ((numVal(pick("pre_retire_return_rate")) ?? numVal(pick("return_rate")) ?? 0) / 100);
+    const post_ret = ((numVal(pick("post_retire_return_rate")) ?? numVal(pick("return_rate_after")) ?? pre_ret) / 100);
+
+    // ⚠️ Monthly expense robustness
+    const monthly_exp    = numVal(pick("monthly_living_expense")) ?? numVal(pick("monthly_living_expenses"));
+
+    const infl           = (numVal(pick("inflation_rate")) ?? 0) / 100;
+    const tax_rate       = (numVal(pick("income_tax_rate")) ?? 0) / 100;
+
     const cpp_mo         = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
     const cpp_from       = numVal(pick("cpp_from_age")) ?? retirement_age;
-    const cpp_to         = numVal(pick("cpp_to_age")) ?? lifespan;
+    const cpp_to         = numVal(pick("cpp_to_age"))   ?? lifespan;
 
-    // 🔹Inline: collect up to 3 liquidation rows from the top form
+    // inline: collect up to 3 liquidation rows from the top form
     const liqs = [];
     for (let i = 1; i <= 3; i++) {
       const amt = numVal(pick(`asset_liquidation_${i}`));
@@ -2573,21 +2585,18 @@ function ensureLayout(layout, seriesForAxis){
     return {
       current_age: current_age,
       retirement_age: retirement_age,
-      annual_saving: (monthly_saving||0) * 12.0,
+      annual_saving: (monthly_saving || 0) * 12.0,      // top is monthly; API expects annual
       saving_increase_rate: saving_inc,
       current_assets: current_assets,
       return_rate: pre_ret,
       return_rate_after: post_ret,
-      annual_expense: (monthly_exp||0) * 12.0,
+      annual_expense: (monthly_exp || 0) * 12.0,
       cpp_monthly: cpp_mo || 0,
       cpp_start_age: cpp_from || retirement_age,
       cpp_end_age: cpp_to || lifespan,
-
-      // ✅ now sending top liquidations
       asset_liquidations: liqs,
-
       inflation_rate: infl,
-      life_expectancy: lifespan || (retirement_age+30),
+      life_expectancy: lifespan || (retirement_age + 30),
       income_tax_rate: tax_rate
     };
   }
@@ -2604,7 +2613,8 @@ function ensureLayout(layout, seriesForAxis){
 
   // ---- Run (toy OR full mirror) --------------------------------------------
   $("litev1_run").addEventListener("click", async ()=>{
-    const mirror = $("litev1_full_mirror")?.checked;
+    // ✅ default to TRUE if the toggle element is missing for any reason
+    const mirror = $("litev1_full_mirror") ? $("litev1_full_mirror").checked : true;
 
     try{
       if (mirror) {
@@ -2617,11 +2627,7 @@ function ensureLayout(layout, seriesForAxis){
         });
         setStatus("litev1_status",`FULL ${res.status}`);
         const out = await res.json();
-
-        // Expected server response shape (simple & stable):
-        // { ok: true, det: { ages:[..], assets:[..], annual_spend, earliest_depletion_age } }
         renderDet(out.det || {});
-        // MC is not available for the mirror path — keep old success text:
         $("litev1_success").textContent = "Success: — (mirror uses full deterministic engine)";
       } else {
         // toy path (existing)
@@ -2655,16 +2661,17 @@ function ensureLayout(layout, seriesForAxis){
   // --- Deterministic table (NO DECIMALS) ---
   function renderDet(det){
     const tb=$("litev1_det_table").querySelector("tbody"); tb.innerHTML="";
-    const ages=det.ages || det.years || [];
-    const assets=det.assets || [];
-    for(let i=0;i<Math.min(ages.length,50);i++){
+    const ages   = det.ages || det.years || [];
+    const assets = det.assets || [];
+    const rows   = Math.min(ages.length, 50);
+    for(let i=0;i<rows;i++){
       const tr=document.createElement("tr");
       tr.innerHTML=`<td>${ages[i]}</td><td>${iFmt(assets[i])}</td>`;
       tb.appendChild(tr);
     }
     $("litev1_det_meta").textContent =
       `Annual spend = ${iFmt(det.annual_spend)} | ` +
-      `Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing ${Math.min(ages.length,50)} rows)`;
+      `Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing ${rows} rows)`;
   }
 
   function renderMC(mc){
@@ -2681,8 +2688,8 @@ function ensureLayout(layout, seriesForAxis){
   $("litev1_sync_top").addEventListener("click", ()=>{
     const curAge = numVal(pick("current_age"));
     const life   = numVal(pick("lifespan"));
-    const mExp   = numVal(pick("monthly_living_expense"));
-    const retPct = numVal(pick("return_rate"));            // % in UI (pre-ret)
+    const mExp   = numVal(pick("monthly_living_expense")) ?? numVal(pick("monthly_living_expenses"));
+    const retPct = numVal(pick("pre_retire_return_rate")) ?? numVal(pick("return_rate")); // % in UI (pre-ret)
     const assets = numVal(pick("current_assets"));
     const cpp    = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
 
@@ -2771,6 +2778,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END APPEND-ONLY UI =================================================== -->
+
 
 
 
