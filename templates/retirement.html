@@ -152,92 +152,13 @@
       </div>
     </div>
 
-    <!-- Init tooltips (safe inside this form) + load/delete with emphasized popup -->
+    <!-- Init tooltips (safe inside this form) -->
     <script>
-      // Tooltips
       var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
       var tooltipList = tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
-
-      // CSRF (if present)
-      const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
-
-      // Utility: apply loaded inputs to the form
-      function applyScenarioInputs(inputs) {
-        if (!inputs) return;
-        Object.keys(inputs).forEach(function (name) {
-          var el = document.querySelector('[name="' + name + '"]');
-          if (!el) return;
-          try {
-            if (el.type === 'checkbox') {
-              el.checked = !!inputs[name];
-            } else if (el.type === 'radio') {
-              var r = document.querySelector('input[type="radio"][name="'+name+'"][value="'+inputs[name]+'"]');
-              if (r) r.checked = true;
-            } else {
-              el.value = inputs[name];
-            }
-          } catch (_) {}
-        });
-      }
-
-      // Load scenario -> show emphasized browser alert
-      async function loadSelectedScenario () {
-        const select = document.getElementById('load_scenario_select');
-        const id = (select && select.value) ? select.value.trim() : "";
-        if (!id) { alert('Please select a scenario to load.'); return; }
-
-        try {
-          const res = await fetch(`/scenarios/load/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const data = await res.json();
-
-          const payload = data.inputs_json || data.inputs || {};
-          applyScenarioInputs(payload);
-
-          // NOTE: browser alert cannot render bold text; we emphasize with CAPS & emoji.
-          const title = data.scenario_name || 'Selected scenario';
-          alert(
-            `Loaded scenario: ${title}\n\n` +
-            `👉 IMPORTANT: After closing this message, please click **CALCULATE** to recompute results.`
-          );
-        } catch (e) {
-          console.error(e);
-          alert('Failed to load scenario.');
-        }
-      }
-
-      // Delete scenario
-      async function deleteSelectedScenario () {
-        const select = document.getElementById('load_scenario_select');
-        const id = (select && select.value) ? select.value.trim() : "";
-        if (!id) { alert('Please select a scenario to delete.'); return; }
-        if (!confirm('Delete this scenario? This cannot be undone.')) return;
-
-        try {
-          const headers = { 'Content-Type': 'application/json' };
-          if (CSRF) headers['X-CSRFToken'] = CSRF;
-
-          const res = await fetch(`/scenarios/delete/${encodeURIComponent(id)}`, {
-            method: 'DELETE',
-            credentials: 'same-origin',
-            headers
-          });
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const data = await res.json();
-
-          alert(data.message || 'Scenario deleted.');
-          const opt = select.querySelector(`option[value="${id}"]`);
-          if (opt) opt.remove();
-          select.value = '';
-        } catch (e) {
-          console.error(e);
-          alert('Failed to delete scenario.');
-        }
-      }
     </script>
   </form>
   <!-- ===== END CALCULATE FORM ===== -->
-
 
 
 
@@ -2410,7 +2331,8 @@ function ensureLayout(layout, seriesForAxis){
         // Set the dropdown selection explicitly to the loaded scenario
         select.value = data.id || data.scenario_id || scenarioId;
 
-        alert(`Loaded scenario: ${data.scenario_name}`);
+        alert(`Loaded scenario: ${data.scenario_name || 'Selected scenario'}\n\n⚠️  IMPORTANT: After closing this message, please click the CALCULATE button to recompute results.`);
+
       })
       .catch(err => alert('Failed to load scenario: ' + err.message));
   }
