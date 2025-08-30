@@ -120,6 +120,8 @@
       </div>
     </div> <!-- /row g-3 -->
 
+
+
     <!-- Buttons (inside calc form) -->
     <div class="text-center mt-4">
       <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
@@ -150,13 +152,103 @@
       </div>
     </div>
 
-    <!-- Init tooltips (safe inside this form) -->
+    <!-- Init tooltips + load/delete logic -->
     <script>
-      var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-      var tooltipList = tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
+      (function () {
+        // tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
+
+        const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+
+        // Submit the calc form EXACTLY like clicking the Calculate button
+        function submitCalculate() {
+          const form = document.getElementById('retirement_form') || document.querySelector('form');
+          if (!form) return;
+          const calcBtn = form.querySelector('button[name="action"][value="calculate"], input[type="submit"][name="action"][value="calculate"]');
+
+          if (form.requestSubmit) {
+            // Submits with the specified submitter so name/value are included
+            if (calcBtn) { form.requestSubmit(calcBtn); return; }
+            form.requestSubmit(); // still fine; see hidden-field fallback below if needed
+            return;
+          }
+
+        // Fallback: inject hidden action=calculate (covers older browsers)
+          let act = form.querySelector('input[name="action"]');
+          if (!act) {
+            act = document.createElement('input');
+            act.type = 'hidden';
+            act.name = 'action';
+            form.appendChild(act);
+          }
+          act.value = 'calculate';
+          form.submit();
+        }
+
+        function applyScenarioInputs(inputs) {
+          if (!inputs) return;
+          Object.keys(inputs).forEach((name) => {
+            const el = document.querySelector('[name="' + name + '"]');
+            if (!el) return;
+            try { el.value = inputs[name]; } catch (_) {}
+          });
+        }
+
+        window.loadSelectedScenario = async function () {
+          const select = document.getElementById('load_scenario_select');
+          const id = (select && select.value) ? select.value.trim() : "";
+          if (!id) { alert('Please select a scenario to load.'); return; }
+
+          try {
+            const res = await fetch(`/scenarios/load/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+
+            const payload = data.inputs_json || data.inputs || {};
+            applyScenarioInputs(payload);
+
+            // Show confirmation, then auto-calc AFTER the user presses OK
+            alert(`Loaded scenario: ${data.scenario_name}`);
+            setTimeout(submitCalculate, 0);
+          } catch (e) {
+            console.error(e);
+            alert('Failed to load scenario.');
+          }
+        };
+
+        window.deleteSelectedScenario = async function () {
+          const select = document.getElementById('load_scenario_select');
+          const id = (select && select.value) ? select.value.trim() : "";
+          if (!id) { alert('Please select a scenario to delete.'); return; }
+          if (!confirm('Delete this scenario? This cannot be undone.')) return;
+
+          try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (CSRF) headers['X-CSRFToken'] = CSRF;
+
+            const res = await fetch(`/scenarios/delete/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+              credentials: 'same-origin',
+              headers
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+
+            alert(data.message || 'Scenario deleted.');
+            const opt = select.querySelector(`option[value="${id}"]`);
+            if (opt) opt.remove();
+            select.value = '';
+          } catch (e) {
+            console.error(e);
+            alert('Failed to delete scenario.');
+          }
+        };
+      })();
     </script>
   </form>
   <!-- ===== END CALCULATE FORM ===== -->
+
 
 
         {% if result %}
