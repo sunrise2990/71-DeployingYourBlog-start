@@ -2642,32 +2642,37 @@ function ensureLayout(layout, seriesForAxis){
     };
   }
 
-  // --- Helpers for yearly cashflows -----------------------------------------
-  const within = (x, a, b) => (x >= a && x <= b);
+    // --- Helpers for yearly cashflows -----------------------------------------
+    const within = (x, a, b) => (x >= a && x <= b);
 
-  function livingExpenseAtAge(cfg, age){
-    const yearsFromStart = Math.max(0, age - cfg.current_age);
-    return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, yearsFromStart);
-  }
-  function cppAtAge(cfg, age){
-    return within(age, cfg.cpp_start_age, cfg.cpp_end_age) ? (cfg.cpp_monthly || 0) * 12 : 0;
-  }
-  // Requested overlay formula (retired only)
-  function incomeTaxPaymentAtAge(cfg, age){
-    if (age < cfg.retirement_age) return 0;
-    const E = livingExpenseAtAge(cfg, age);
-    const C = cppAtAge(cfg, age);
-    const r = cfg.income_tax_rate || 0;
-    if (r <= 0) return 0;
-    return ((E + C) / (1 - r)) * r;
-  }
-  // Required draw from portfolio for the year (used as backend spend input)
-  function requiredWithdrawalAtAge(cfg, age){
-    const E = livingExpenseAtAge(cfg, age);
-    const C = cppAtAge(cfg, age);
-    const T = incomeTaxPaymentAtAge(cfg, age);
-    return Math.max(0, E + T - C);
-  }
+    function livingExpenseAtAge(cfg, age){
+      const yearsFromStart = Math.max(0, age - cfg.current_age);
+      return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, yearsFromStart);
+    }
+    function cppAtAge(cfg, age){
+      if (!within(age, cfg.cpp_start_age, cfg.cpp_end_age)) return 0;
+      // Inflate CPP annually from its first-pay year, not from current_age
+      const yearsFromCppStart = Math.max(0, age - cfg.cpp_start_age);
+      const baseAnnualCPP = (cfg.cpp_monthly || 0) * 12;
+      return baseAnnualCPP * Math.pow(1 + cfg.inflation_rate, yearsFromCppStart);
+    }
+    // Requested overlay formula (retired only)
+    function incomeTaxPaymentAtAge(cfg, age){
+      if (age < cfg.retirement_age) return 0;
+      const E = livingExpenseAtAge(cfg, age);
+      const C = cppAtAge(cfg, age);
+      const r = cfg.income_tax_rate || 0;
+      if (r <= 0) return 0;
+      return ((E + C) / (1 - r)) * r;
+    }
+    // Required draw from portfolio for the year
+    function requiredWithdrawalAtAge(cfg, age){
+      const E = livingExpenseAtAge(cfg, age);
+      const C = cppAtAge(cfg, age);
+      const T = incomeTaxPaymentAtAge(cfg, age);
+      return Math.max(0, E + T - C);
+    }
+
   function liqMap(asset_liquidations){
     const m = {};
     (asset_liquidations || []).forEach(l=>{
