@@ -2467,14 +2467,14 @@ function ensureLayout(layout, seriesForAxis){
       </div>
     </div>
 
-    <!-- Small helpers: asset split + net CPP toggle (split not used; 100% → taxable on sync) -->
+    <!-- Small helpers: asset split + net CPP toggle -->
     <div class="row g-3 mt-2">
       <div class="col-md-3">
         <label class="form-label">Flat Tax Rate (%)</label>
         <input id="litev1_tax_rate" type="number" class="form-control" value="25" step="1" min="0" max="90">
       </div>
       <div class="col-md-6">
-        <label class="form-label">Asset split (reserved)</label>
+        <label class="form-label">Asset split from Current Assets (when syncing)</label>
         <div class="input-group">
           <span class="input-group-text">Taxable %</span>
           <input id="split_taxable" type="number" class="form-control" value="100" min="0" max="100">
@@ -2593,43 +2593,37 @@ function ensureLayout(layout, seriesForAxis){
     }
   }
 
-  // ---- Sync from top planner (EXACT mirror; 100% assets -> taxable) --------
-  function syncLiteFromTop(){
+  // ---- Sync from top planner -----------------------------------------------
+  $("litev1_sync_top").addEventListener("click", ()=>{
     const curAge = numVal(pick("current_age"));
     const life   = numVal(pick("lifespan"));
     const mExp   = numVal(pick("monthly_living_expense"));
-    const retPct = numVal(pick("return_rate"));            // % in UI (pre-ret)
+    const retPct = numVal(pick("return_rate"));            // % in UI
     const assets = numVal(pick("current_assets"));
     const cpp    = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
 
-    if (curAge != null) $("litev1_start_age").value = Math.round(curAge);
-    if (life   != null) $("litev1_end_age").value   = Math.round(life);
-
-    // exact spend from top (optionally net CPP if the toggle is on)
-    if (mExp  != null) {
+    if (curAge !== undefined) $("litev1_start_age").value = curAge;
+    if (life   !== undefined) $("litev1_end_age").value   = life;
+    if (mExp   !== undefined) {
       let spend = mExp;
-      if ($("net_cpp_toggle")?.checked && cpp != null) spend = Math.max(0, spend - cpp);
+      if ($("net_cpp_toggle")?.checked && cpp !== undefined) spend = Math.max(0, spend - cpp);
       $("litev1_spend").value = Math.round(spend);
     }
+    if (retPct !== undefined) $("litev1_return").value = (retPct/100).toFixed(4);
 
-    if (retPct != null) $("litev1_return").value = (retPct/100).toFixed(4);
-
-    // **Key requirement**: ALL current assets → Taxable to align curves
-    if (assets != null) {
-      $("litev1_taxable").value = Math.round(assets);
-      $("litev1_tfsa").value    = 0;
-      $("litev1_rrsp").value    = 0;
+    // apply split to Current Assets -> three accounts
+    if (assets !== undefined) {
+      // NOTE: use ids without '#' since $() is getElementById
+      const st = Number($("split_taxable")?.value || 100);
+      const sf = Number($("split_tfsa")?.value || 0);
+      const sr = Number($("split_rrsp")?.value || 0);
+      const k = Math.max(1, st+sf+sr);
+      const T = assets*(st/k)/100, F = assets*(sf/k)/100, R = assets*(sr/k)/100;
+      $("litev1_taxable").value = Math.round(T);
+      $("litev1_tfsa").value    = Math.round(F);
+      $("litev1_rrsp").value    = Math.round(R);
     }
-  }
-
-  // Button and auto-bind
-  $("litev1_sync_top").addEventListener("click", (e)=>{ e.preventDefault(); syncLiteFromTop(); });
-  document.addEventListener("DOMContentLoaded", ()=> { setTimeout(syncLiteFromTop, 0); });
-  ['current_age','lifespan','monthly_living_expense','return_rate','current_assets','cpp_support','cpp_monthly']
-    .forEach(id=>{
-      const el = pick(id);
-      if (el) { el.addEventListener('change', syncLiteFromTop); el.addEventListener('input', syncLiteFromTop); }
-    });
+  });
 
   // ---- Tax-lite runners -----------------------------------------------------
   function collectTaxPayload(){
@@ -2694,7 +2688,6 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END APPEND-ONLY UI =================================================== -->
-
 
 
 
