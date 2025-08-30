@@ -120,8 +120,6 @@
       </div>
     </div> <!-- /row g-3 -->
 
-
-
     <!-- Buttons (inside calc form) -->
     <div class="text-center mt-4">
       <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
@@ -135,7 +133,7 @@
         Load Saved Scenario
         <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top"
               title="Select a saved scenario to load."
-              style="cursor:pointer;color:#0d6efd;font-weight:bold">&#9432;</span>
+              style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
       </label>
       <select id="load_scenario_select" name="load_scenario_select" class="form-select">
         <option value="">-- Select Scenario --</option>
@@ -155,13 +153,14 @@
     <!-- Init tooltips + load/delete + auto-calc -->
     <script>
       (function () {
-        // tooltips
+        // Bootstrap tooltips
         [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
           .forEach(el => new bootstrap.Tooltip(el));
 
+        // CSRF (if available)
         const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
 
-        // Find the retirement form robustly
+        // Locate the calculator form
         function getCalcForm() {
           return document.getElementById('retirement_form')
               || document.querySelector('form[action$="/retirement"]')
@@ -169,54 +168,19 @@
               || document.querySelector('form');
         }
 
-        // Submit exactly like pressing Calculate, with multiple fallbacks
-        function forceCalculate() {
-          const form = getCalcForm();
-          if (!form) return;
-
-          const calcBtn = form.querySelector('button[name="action"][value="calculate"], input[type="submit"][name="action"][value="calculate"]');
-
-          // 1) Best: submit with a submitter so name/value go through
-          if (form.requestSubmit) {
-            form.requestSubmit(calcBtn || undefined);
-            return;
-          }
-
-          // 2) Try a real click on the submitter
-          if (calcBtn) {
-            calcBtn.focus();
-            calcBtn.click();
-            return;
-          }
-
-          // 3) Hidden input fallback
-          let hidden = form.querySelector('input[name="action"]');
-          if (!hidden) {
-            hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.name = 'action';
-            form.appendChild(hidden);
-          }
-          hidden.value = 'calculate';
-
-          // 4) Old-school form submit
-          form.submit();
-        }
-
-        // Write returned inputs into the form
+        // Write loaded inputs into the form
         function applyScenarioInputs(inputs) {
           if (!inputs) return;
           Object.keys(inputs).forEach((name) => {
             const el = document.querySelector('[name="' + name + '"]');
-            if (!el) return;
-            try { el.value = inputs[name]; } catch (_) {}
+            if (el) { try { el.value = inputs[name]; } catch (_) {} }
           });
         }
 
-        // Expose for the Load button
+        // ---- Load & auto-calculate -----------------------------------------
         window.loadSelectedScenario = async function () {
-          const sel = document.getElementById('load_scenario_select');
-          const id = (sel && sel.value) ? sel.value.trim() : "";
+          const select = document.getElementById('load_scenario_select');
+          const id = (select && select.value) ? select.value.trim() : "";
           if (!id) { alert('Please select a scenario to load.'); return; }
 
           try {
@@ -224,30 +188,43 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
-            // Server returns form-ready keys
+            // Fill form fields
             const payload = data.inputs_json || data.inputs || {};
             applyScenarioInputs(payload);
 
-            // Show confirmation, then compute immediately after OK
+            // Inform user, then submit EXACTLY like pressing "Calculate"
             alert(`Loaded scenario: ${data.scenario_name}`);
-            // Use microtask + macrotask to run after the alert and after layout updates
-            queueMicrotask(() => setTimeout(forceCalculate, 0));
+
+            const form = getCalcForm();
+            if (!form) return;
+
+            // Create a temporary hidden submitter that mimics the Calculate button
+            const tmp = document.createElement('button');
+            tmp.type = 'submit';
+            tmp.name = 'action';
+            tmp.value = 'calculate';
+            tmp.style.display = 'none';
+            form.appendChild(tmp);
+            tmp.click();                 // event.submitter will be this button
+            setTimeout(() => { try { form.removeChild(tmp); } catch(_){} }, 0);
+
           } catch (e) {
             console.error(e);
             alert('Failed to load scenario.');
           }
         };
 
-        // Expose for the Delete button
+        // ---- Delete scenario -----------------------------------------------
         window.deleteSelectedScenario = async function () {
-          const sel = document.getElementById('load_scenario_select');
-          const id = (sel && sel.value) ? sel.value.trim() : "";
+          const select = document.getElementById('load_scenario_select');
+          const id = (select && select.value) ? select.value.trim() : "";
           if (!id) { alert('Please select a scenario to delete.'); return; }
           if (!confirm('Delete this scenario? This cannot be undone.')) return;
 
           try {
             const headers = { 'Content-Type': 'application/json' };
             if (CSRF) headers['X-CSRFToken'] = CSRF;
+
             const res = await fetch(`/scenarios/delete/${encodeURIComponent(id)}`, {
               method: 'DELETE',
               credentials: 'same-origin',
@@ -257,9 +234,9 @@
             const data = await res.json();
 
             alert(data.message || 'Scenario deleted.');
-            const opt = sel.querySelector(`option[value="${id}"]`);
+            const opt = select.querySelector(`option[value="${id}"]`);
             if (opt) opt.remove();
-            sel.value = '';
+            select.value = '';
           } catch (e) {
             console.error(e);
             alert('Failed to delete scenario.');
@@ -268,8 +245,7 @@
       })();
     </script>
   </form>
-  <!-- ===== END CALCULATE FORM ====== -->
-
+  <!-- ===== END CALCULATE FORM ===== -->
 
 
 
