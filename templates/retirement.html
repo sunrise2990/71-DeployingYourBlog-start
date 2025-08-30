@@ -2441,7 +2441,6 @@ function ensureLayout(layout, seriesForAxis){
     <div class="row">
       <div class="col-md-6">
         <h6>Deterministic</h6>
-        <!-- scroll like MC -->
         <div class="table-responsive" style="max-height: 220px; overflow:auto;">
           <table class="table table-sm mb-0" id="litev1_det_table">
             <thead><tr><th>Age</th><th>Assets</th></tr></thead>
@@ -2573,7 +2572,7 @@ function ensureLayout(layout, seriesForAxis){
     }
   }
 
-  // Build /det_from_top payload from the edited Lite v1 inputs + remaining top knobs
+  // Build /det_from_top payload from Lite v1 fields + remaining top knobs
   function buildFullPayloadFromLiteAndTop() {
     const current_age    = Number($("litev1_start_age").value);
     const end_age        = Number($("litev1_end_age").value);
@@ -2584,7 +2583,7 @@ function ensureLayout(layout, seriesForAxis){
     const pre_ret_pct    = Number($("litev1_return").value);         // % in UI
     const tax_pct        = Number($("litev1_income_tax").value);     // % in UI
 
-    // Pull missing knobs from the top (still mirrored) ------------------------
+    // Pull missing knobs from the top (still mirrored)
     const post_ret_pct   = numVal(pick("post_retire_return_rate")) ?? numVal(pick("return_rate_after")) ?? pre_ret_pct;
     const infl_pct       = numVal(pick("inflation_rate")) ?? 2;
     const retirement_age = numVal(pick("retirement_age")) ?? current_age;
@@ -2593,7 +2592,7 @@ function ensureLayout(layout, seriesForAxis){
     const cpp_to         = numVal(pick("cpp_to_age"))   ?? end_age;
     const saving_inc_pct = numVal(pick("saving_increase_rate")) ?? 0;
 
-    // Up to 3 liquidation rows from the top form
+    // Liquidations (up to 3) from the top form
     const liqs = [];
     for (let i = 1; i <= 3; i++) {
       const amt = numVal(pick(`asset_liquidation_${i}`));
@@ -2604,21 +2603,28 @@ function ensureLayout(layout, seriesForAxis){
     }
 
     return {
+      // full deterministic inputs
       current_age: current_age,
       retirement_age: retirement_age,
+      life_expectancy: end_age,
+      current_assets: current_assets,
+
       annual_saving: (monthly_saving || 0) * 12,
       saving_increase_rate: (saving_inc_pct || 0) / 100,
-      current_assets: current_assets,
-      return_rate: (pre_ret_pct || 0) / 100,        // convert % → decimal
-      return_rate_after: (post_ret_pct || 0) / 100, // convert % → decimal
+
       annual_expense: (monthly_exp || 0) * 12,
+      return_rate: (pre_ret_pct || 0) / 100,        // % → decimal
+      return_rate_after: (post_ret_pct || 0) / 100, // % → decimal
+      inflation_rate: (infl_pct || 0) / 100,
+      income_tax_rate: (tax_pct || 0) / 100,
+
       cpp_monthly: cpp_mo || 0,
       cpp_start_age: cpp_from || retirement_age,
       cpp_end_age: cpp_to || end_age,
+
       asset_liquidations: liqs,
-      inflation_rate: (infl_pct || 0) / 100,
-      life_expectancy: end_age,
-      income_tax_rate: (tax_pct || 0) / 100
+      // show full span if the server supports it
+      max_rows: 500
     };
   }
 
@@ -2670,7 +2676,7 @@ function ensureLayout(layout, seriesForAxis){
       `Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing ${rows} rows)`;
   }
 
-  // --- MC table (toy placeholder) ---
+  // --- MC (toy placeholder) ---
   function renderMC(mc){
     $("litev1_success").textContent=`Success: ${Number(mc.success_pct||0).toFixed(1)}% (n=${mc.n_sims||0}, seed=${mc.seed||"-"})`;
     const tb=$("litev1_ruin_table").querySelector("tbody"); tb.innerHTML="";
@@ -2689,18 +2695,37 @@ function ensureLayout(layout, seriesForAxis){
     $("split_rrsp").value    = 0;
   });
 
-  // ---- Tax-lite runners (use edited Lite v1 fields) ------------------------
+  // ---- Tax-lite runners (now pass full context so it can match top) --------
   function collectTaxPayload(){
+    // mirror the same structure as buildFullPayloadFromLiteAndTop,
+    // but keep account split explicit for tax route
+    const full = buildFullPayloadFromLiteAndTop();
     return {
-      start_age: Number($("litev1_start_age").value),
-      end_age: Number($("litev1_end_age").value),
+      start_age: full.current_age,
+      end_age: full.life_expectancy,
       taxable: Number($("litev1_taxable").value),
       rrsp: Number($("litev1_rrsp").value),
       tfsa: Number($("litev1_tfsa").value),
-      monthly_spend: Number($("litev1_spend").value),
-      // UI is %, backend expects decimal:
-      return_rate: Number($("litev1_return").value) / 100,
-      flat_tax_rate: Number($("litev1_tax_rate").value)/100.0
+
+      monthly_spend: full.annual_expense / 12,
+      // include savings & other knobs so server can model them
+      annual_saving: full.annual_saving,
+      saving_increase_rate: full.saving_increase_rate,
+
+      return_rate: full.return_rate,                // decimal
+      return_rate_after: full.return_rate_after,    // decimal
+      inflation_rate: full.inflation_rate,
+      income_tax_rate: full.income_tax_rate,
+
+      retirement_age: full.retirement_age,
+      cpp_monthly: full.cpp_monthly,
+      cpp_start_age: full.cpp_start_age,
+      cpp_end_age: full.cpp_end_age,
+
+      asset_liquidations: full.asset_liquidations,
+      flat_tax_rate: Number($("litev1_tax_rate").value)/100.0,
+
+      max_rows: 500  // ask for full span (server may ignore if unsupported)
     };
   }
 
@@ -2747,14 +2772,11 @@ function ensureLayout(layout, seriesForAxis){
       `${tag} | Flat tax = ${(t*100).toFixed(0)}% | ` +
       `Annual spend = ${iFmt(tdet.annual_spend)} | ` +
       `Total taxes (all years) = ${iFmt(tdet.total_taxes)} | ` +
-      `Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
+      `Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (first ${tdet.rows?.length ?? 0} rows)`;
   }
 })();
 </script>
 <!-- === END APPEND-ONLY UI =================================================== -->
-
-
-
 
 
 
