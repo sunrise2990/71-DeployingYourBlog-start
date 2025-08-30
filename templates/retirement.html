@@ -152,115 +152,88 @@
       </div>
     </div>
 
-    <!-- Modal: Loaded Scenario (emphasized guidance) -->
-    <div class="modal fade" id="scenarioLoadedModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0">
-          <div class="modal-header">
-            <h5 class="modal-title">Scenario loaded</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" ></button>
-          </div>
-          <div class="modal-body">
-            <p class="mb-2" id="scenarioLoadedName"></p>
-            <div class="alert alert-warning mb-2" role="alert" style="font-weight:600;">
-              <span class="me-1">⚠️</span>
-              <strong>Next step:</strong> <strong>Click <span class="text-primary">Calculate</span></strong> to recompute results with the loaded inputs.
-            </div>
-            <p class="mb-0 text-muted small">Tip: tweak any fields if needed, then click <em>Calculate</em>.</p>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Init tooltips + load/delete + popup text -->
+    <!-- Init tooltips (safe inside this form) + load/delete with emphasized popup -->
     <script>
-      (function () {
-        // Bootstrap tooltips
-        [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-          .forEach(el => new bootstrap.Tooltip(el));
+      // Tooltips
+      var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+      var tooltipList = tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
 
-        const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
+      // CSRF (if present)
+      const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
 
-        function applyScenarioInputs(inputs) {
-          if (!inputs) return;
-          Object.keys(inputs).forEach((name) => {
-            const el = document.querySelector('[name="' + name + '"]');
-            if (!el) return;
-            try {
-              if (el.type === 'checkbox') {
-                el.checked = !!inputs[name];
-              } else if (el.type === 'radio') {
-                const r = document.querySelector('input[type="radio"][name="'+name+'"][value="'+inputs[name]+'"]');
-                if (r) r.checked = true;
-              } else {
-                el.value = inputs[name];
-              }
-            } catch (_) {}
-          });
-        }
-
-        // ---- Load scenario (shows bold/emphasized popup) --------------------
-        window.loadSelectedScenario = async function () {
-          const select = document.getElementById('load_scenario_select');
-          const id = (select && select.value) ? select.value.trim() : "";
-          if (!id) { alert('Please select a scenario to load.'); return; }
-
+      // Utility: apply loaded inputs to the form
+      function applyScenarioInputs(inputs) {
+        if (!inputs) return;
+        Object.keys(inputs).forEach(function (name) {
+          var el = document.querySelector('[name="' + name + '"]');
+          if (!el) return;
           try {
-            const res = await fetch(`/scenarios/load/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-
-            const payload = data.inputs_json || data.inputs || {};
-            applyScenarioInputs(payload);
-
-            // Emphasized popup (Bootstrap modal); fallback to alert if Bootstrap missing
-            const title = data.scenario_name || 'Selected scenario';
-            const modalEl = document.getElementById('scenarioLoadedModal');
-            if (modalEl && window.bootstrap?.Modal) {
-              const nameEl = document.getElementById('scenarioLoadedName');
-              if (nameEl) nameEl.innerHTML = `Loaded: <strong>${title}</strong>`;
-              bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            if (el.type === 'checkbox') {
+              el.checked = !!inputs[name];
+            } else if (el.type === 'radio') {
+              var r = document.querySelector('input[type="radio"][name="'+name+'"][value="'+inputs[name]+'"]');
+              if (r) r.checked = true;
             } else {
-              alert(`Loaded scenario: ${title}\n\nNext: CLICK "Calculate" to recompute results.`);
+              el.value = inputs[name];
             }
-          } catch (e) {
-            console.error(e);
-            alert('Failed to load scenario.');
-          }
-        };
+          } catch (_) {}
+        });
+      }
 
-        // ---- Delete scenario -------------------------------------------------
-        window.deleteSelectedScenario = async function () {
-          const select = document.getElementById('load_scenario_select');
-          const id = (select && select.value) ? select.value.trim() : "";
-          if (!id) { alert('Please select a scenario to delete.'); return; }
-          if (!confirm('Delete this scenario? This cannot be undone.')) return;
+      // Load scenario -> show emphasized browser alert
+      async function loadSelectedScenario () {
+        const select = document.getElementById('load_scenario_select');
+        const id = (select && select.value) ? select.value.trim() : "";
+        if (!id) { alert('Please select a scenario to load.'); return; }
 
-          try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (CSRF) headers['X-CSRFToken'] = CSRF;
+        try {
+          const res = await fetch(`/scenarios/load/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
 
-            const res = await fetch(`/scenarios/delete/${encodeURIComponent(id)}`, {
-              method: 'DELETE',
-              credentials: 'same-origin',
-              headers
-            });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
+          const payload = data.inputs_json || data.inputs || {};
+          applyScenarioInputs(payload);
 
-            alert(data.message || 'Scenario deleted.');
-            const opt = select.querySelector(`option[value="${id}"]`);
-            if (opt) opt.remove();
-            select.value = '';
-          } catch (e) {
-            console.error(e);
-            alert('Failed to delete scenario.');
-          }
-        };
-      })();
+          // NOTE: browser alert cannot render bold text; we emphasize with CAPS & emoji.
+          const title = data.scenario_name || 'Selected scenario';
+          alert(
+            `Loaded scenario: ${title}\n\n` +
+            `👉 IMPORTANT: After closing this message, please click **CALCULATE** to recompute results.`
+          );
+        } catch (e) {
+          console.error(e);
+          alert('Failed to load scenario.');
+        }
+      }
+
+      // Delete scenario
+      async function deleteSelectedScenario () {
+        const select = document.getElementById('load_scenario_select');
+        const id = (select && select.value) ? select.value.trim() : "";
+        if (!id) { alert('Please select a scenario to delete.'); return; }
+        if (!confirm('Delete this scenario? This cannot be undone.')) return;
+
+        try {
+          const headers = { 'Content-Type': 'application/json' };
+          if (CSRF) headers['X-CSRFToken'] = CSRF;
+
+          const res = await fetch(`/scenarios/delete/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+
+          alert(data.message || 'Scenario deleted.');
+          const opt = select.querySelector(`option[value="${id}"]`);
+          if (opt) opt.remove();
+          select.value = '';
+        } catch (e) {
+          console.error(e);
+          alert('Failed to delete scenario.');
+        }
+      }
     </script>
   </form>
   <!-- ===== END CALCULATE FORM ===== -->
