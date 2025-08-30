@@ -2545,24 +2545,32 @@ function ensureLayout(layout, seriesForAxis){
 
   // Build payload that mirrors the TOP calculator (what your big table uses)
   function buildFullMirrorPayloadFromTop() {
-    // IDs used below match your top form fields
-    const current_age  = numVal(pick("current_age"));
+    const current_age    = numVal(pick("current_age"));
     const retirement_age = numVal(pick("retirement_age"));
-    const lifespan     = numVal(pick("lifespan"));
+    const lifespan       = numVal(pick("lifespan"));
     const monthly_saving = numVal(pick("annual_saving"));          // UI stores monthly
-    const saving_inc   = (numVal(pick("saving_increase_rate"))||0) / 100;
+    const saving_inc     = (numVal(pick("saving_increase_rate"))||0) / 100;
     const current_assets = numVal(pick("current_assets"));
-    const pre_ret  = (numVal(pick("return_rate"))||0) / 100;
-    const post_ret = (numVal(pick("return_rate_after"))||0) / 100;
-    const monthly_exp = numVal(pick("monthly_living_expense"));
-    const infl      = (numVal(pick("inflation_rate"))||0) / 100;
-    const tax_rate  = (numVal(pick("income_tax_rate"))||0) / 100;
-    const cpp_mo    = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
-    const cpp_from  = numVal(pick("cpp_from_age")) ?? retirement_age;
-    const cpp_to    = numVal(pick("cpp_to_age")) ?? lifespan;
+    const pre_ret        = (numVal(pick("return_rate"))||0) / 100;
+    const post_ret       = (numVal(pick("return_rate_after"))||0) / 100;
+    const monthly_exp    = numVal(pick("monthly_living_expense"));
+    const infl           = (numVal(pick("inflation_rate"))||0) / 100;
+    const tax_rate       = (numVal(pick("income_tax_rate"))||0) / 100;
+    const cpp_mo         = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
+    const cpp_from       = numVal(pick("cpp_from_age")) ?? retirement_age;
+    const cpp_to         = numVal(pick("cpp_to_age")) ?? lifespan;
+
+    // 🔹Inline: collect up to 3 liquidation rows from the top form
+    const liqs = [];
+    for (let i = 1; i <= 3; i++) {
+      const amt = numVal(pick(`asset_liquidation_${i}`));
+      const age = numVal(pick(`asset_liquidation_age_${i}`));
+      if (amt !== undefined && amt !== 0 && age !== undefined && age > 0) {
+        liqs.push({ amount: amt, age: age });
+      }
+    }
 
     return {
-      // deterministic fields the server route should expect:
       current_age: current_age,
       retirement_age: retirement_age,
       annual_saving: (monthly_saving||0) * 12.0,
@@ -2574,7 +2582,9 @@ function ensureLayout(layout, seriesForAxis){
       cpp_monthly: cpp_mo || 0,
       cpp_start_age: cpp_from || retirement_age,
       cpp_end_age: cpp_to || lifespan,
-      asset_liquidations: [],
+
+      // ✅ now sending top liquidations
+      asset_liquidations: liqs,
 
       inflation_rate: infl,
       life_expectancy: lifespan || (retirement_age+30),
