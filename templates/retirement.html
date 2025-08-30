@@ -2511,6 +2511,12 @@ function ensureLayout(layout, seriesForAxis){
   const urlRRIF = "/lite_v1/tax_det_rrif";
   const setStatus = (el, msg) => { const n=$(el); if(n) n.textContent=msg; };
 
+  // Integer formatter (no decimals, with thousands separators)
+  function iFmt(n) {
+    if (n === null || n === undefined || isNaN(n)) return "";
+    return Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
   // ---- helpers to read top planner (if present) -----------------------------
   const pick = (name) => document.getElementById(name) || document.querySelector(`[name="${name}"]`);
   const numVal = (el) => {
@@ -2551,16 +2557,20 @@ function ensureLayout(layout, seriesForAxis){
     }catch(e){ setStatus("litev1_status","run error"); console.error(e); }
   });
 
+  // --- Deterministic table (NO DECIMALS) ---
   function renderDet(det){
     const tb=$("litev1_det_table").querySelector("tbody"); tb.innerHTML="";
     const ages=det.years||[]; const assets=det.assets||[];
     for(let i=0;i<Math.min(ages.length,25);i++){
       const tr=document.createElement("tr");
-      tr.innerHTML=`<td>${ages[i]}</td><td>${Number(assets[i]||0).toLocaleString()}</td>`;
+      tr.innerHTML=`<td>${ages[i]}</td><td>${iFmt(assets[i])}</td>`;
       tb.appendChild(tr);
     }
-    $("litev1_det_meta").textContent=`Annual spend = ${Number(det.annual_spend||0).toLocaleString()} | Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing first 25 rows)`;
+    $("litev1_det_meta").textContent=
+      `Annual spend = ${iFmt(det.annual_spend)} | ` +
+      `Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing first 25 rows)`;
   }
+
   function renderMC(mc){
     $("litev1_success").textContent=`Success: ${Number(mc.success_pct||0).toFixed(1)}% (n=${mc.n_sims}, seed=${mc.seed})`;
     const tb=$("litev1_ruin_table").querySelector("tbody"); tb.innerHTML="";
@@ -2591,9 +2601,10 @@ function ensureLayout(layout, seriesForAxis){
 
     // apply split to Current Assets -> three accounts
     if (assets !== undefined) {
-      const st = Number($("#split_taxable")?.value || 100);
-      const sf = Number($("#split_tfsa")?.value || 0);
-      const sr = Number($("#split_rrsp")?.value || 0);
+      // NOTE: use ids without '#' since $() is getElementById
+      const st = Number($("split_taxable")?.value || 100);
+      const sf = Number($("split_tfsa")?.value || 0);
+      const sr = Number($("split_rrsp")?.value || 0);
       const k = Math.max(1, st+sf+sr);
       const T = assets*(st/k)/100, F = assets*(sf/k)/100, R = assets*(sr/k)/100;
       $("litev1_taxable").value = Math.round(T);
@@ -2615,16 +2626,30 @@ function ensureLayout(layout, seriesForAxis){
       flat_tax_rate: Number($("litev1_tax_rate").value)/100.0
     };
   }
+
+  // --- Tax table (NO DECIMALS) ---
   function renderTax(tdet, tag){
     const tb=$("litev1_tax_table").querySelector("tbody"); tb.innerHTML="";
     (tdet.rows||[]).forEach(r=>{
       const tr=document.createElement("tr");
-      function fmt(x){return (x==null||isNaN(x))?"":Number(x).toLocaleString();}
-      tr.innerHTML=`<td>${r.Age}</td><td>${fmt(r.From_Taxable)}</td><td>${fmt(r.From_TFSA)}</td><td>${fmt(r.From_RRSP_Gross)}</td><td>${fmt(r.Tax_On_RRSP)}</td><td>${r.Shortfall?fmt(r.Shortfall):""}</td><td>${fmt(r.End_Taxable)}</td><td>${fmt(r.End_TFSA)}</td><td>${fmt(r.End_RRSP)}</td><td>${fmt(r.End_Total)}</td>`;
+      tr.innerHTML=`<td>${r.Age}</td>
+        <td>${iFmt(r.From_Taxable)}</td>
+        <td>${iFmt(r.From_TFSA)}</td>
+        <td>${iFmt(r.From_RRSP_Gross)}</td>
+        <td>${iFmt(r.Tax_On_RRSP)}</td>
+        <td>${r.Shortfall?iFmt(r.Shortfall):""}</td>
+        <td>${iFmt(r.End_Taxable)}</td>
+        <td>${iFmt(r.End_TFSA)}</td>
+        <td>${iFmt(r.End_RRSP)}</td>
+        <td>${iFmt(r.End_Total)}</td>`;
       tb.appendChild(tr);
     });
     const t=Number(tdet.flat_tax_rate||0);
-    $("litev1_tax_meta").textContent = `${tag} | Flat tax = ${(t*100).toFixed(1)}% | Annual spend = ${Number(tdet.annual_spend||0).toLocaleString()} | Total taxes (all years) = ${Number(tdet.total_taxes||0).toLocaleString()} | Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
+    $("litev1_tax_meta").textContent =
+      `${tag} | Flat tax = ${(t*100).toFixed(0)}% | ` +
+      `Annual spend = ${iFmt(tdet.annual_spend)} | ` +
+      `Total taxes (all years) = ${iFmt(tdet.total_taxes)} | ` +
+      `Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
   }
 
   $("litev1_tax_run").addEventListener("click", async ()=>{
@@ -2651,6 +2676,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END APPEND-ONLY UI =================================================== -->
+
 
 
 
