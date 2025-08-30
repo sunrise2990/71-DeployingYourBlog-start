@@ -2376,7 +2376,11 @@ function ensureLayout(layout, seriesForAxis){
   <div class="card-body">
     <div class="d-flex align-items-center justify-content-between">
       <h5 class="card-title mb-0">🧪 Lite v1 (skeleton) – end-to-end check</h5>
-      <div class="d-flex gap-2">
+      <div class="d-flex align-items-center gap-2">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="litev1_full_mirror">
+          <label class="form-check-label small" for="litev1_full_mirror">Mirror top (full engine)</label>
+        </div>
         <button id="litev1_ping" class="btn btn-outline-secondary btn-sm">Ping route</button>
         <span id="litev1_status" class="small text-muted"></span>
       </div>
@@ -2431,10 +2435,10 @@ function ensureLayout(layout, seriesForAxis){
 
     <div class="row">
       <div class="col-md-6">
-        <h6>Deterministic (toy)</h6>
+        <h6>Deterministic</h6>
         <div class="table-responsive">
           <table class="table table-sm" id="litev1_det_table">
-            <thead><tr><th>Age</th><th>Assets (toy)</th></tr></thead>
+            <thead><tr><th>Age</th><th>Assets</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -2449,7 +2453,7 @@ function ensureLayout(layout, seriesForAxis){
             <tbody></tbody>
           </table>
         </div>
-        <p class="small text-muted mb-0">Skeleton only—no taxes or account rules yet.</p>
+        <p class="small text-muted mb-0">Toy path only—no taxes or account rules yet.</p>
       </div>
     </div>
   </div>
@@ -2467,14 +2471,14 @@ function ensureLayout(layout, seriesForAxis){
       </div>
     </div>
 
-    <!-- Small helpers: asset split + net CPP toggle (split not used; 100% → taxable on sync) -->
+    <!-- Small helpers: asset split + net CPP toggle -->
     <div class="row g-3 mt-2">
       <div class="col-md-3">
         <label class="form-label">Flat Tax Rate (%)</label>
         <input id="litev1_tax_rate" type="number" class="form-control" value="25" step="1" min="0" max="90">
       </div>
       <div class="col-md-6">
-        <label class="form-label">Asset split (reserved)</label>
+        <label class="form-label">Asset split from Current Assets (when syncing)</label>
         <div class="input-group">
           <span class="input-group-text">Taxable %</span>
           <input id="split_taxable" type="number" class="form-control" value="100" min="0" max="100">
@@ -2518,16 +2522,16 @@ function ensureLayout(layout, seriesForAxis){
 (function(){
   const $ = (id) => document.getElementById(id);
   const urlPing = "/lite_v1/ping";
-  const urlRun  = "/lite_v1/run";
+  const urlRunToy  = "/lite_v1/run";            // toy path (existing)
+  const urlRunFull = "/lite_v1/det_from_top";   // full engine mirror (new tiny route)
   const urlTax  = "/lite_v1/tax_det";
   const urlRRIF = "/lite_v1/tax_det_rrif";
   const setStatus = (el, msg) => { const n=$(el); if(n) n.textContent=msg; };
 
-  // Integer formatter (no decimals, with thousands separators)
-  function iFmt(n) {
-    if (n === null || n === undefined || isNaN(n)) return "";
-    return Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  }
+  // Integer formatter (no decimals)
+  const iFmt = (n) =>
+    (n===null || n===undefined || isNaN(n)) ? "" :
+    Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
 
   // ---- helpers to read top planner (if present) -----------------------------
   const pick = (name) => document.getElementById(name) || document.querySelector(`[name="${name}"]`);
@@ -2535,56 +2539,126 @@ function ensureLayout(layout, seriesForAxis){
     if (!el) return undefined;
     const s = (el.value ?? '').toString().replace(/,/g,'').trim();
     if (s==='') return undefined;
-    const v = Number(s); return Number.isFinite(v) ? v : undefined;
+    const v = Number(s);
+    return Number.isFinite(v) ? v : undefined;
   };
+
+  // Build payload that mirrors the TOP calculator (what your big table uses)
+  function buildFullMirrorPayloadFromTop() {
+    // IDs used below match your top form fields
+    const current_age  = numVal(pick("current_age"));
+    const retirement_age = numVal(pick("retirement_age"));
+    const lifespan     = numVal(pick("lifespan"));
+    const monthly_saving = numVal(pick("annual_saving"));          // UI stores monthly
+    const saving_inc   = (numVal(pick("saving_increase_rate"))||0) / 100;
+    const current_assets = numVal(pick("current_assets"));
+    const pre_ret  = (numVal(pick("return_rate"))||0) / 100;
+    const post_ret = (numVal(pick("return_rate_after"))||0) / 100;
+    const monthly_exp = numVal(pick("monthly_living_expense"));
+    const infl      = (numVal(pick("inflation_rate"))||0) / 100;
+    const tax_rate  = (numVal(pick("income_tax_rate"))||0) / 100;
+    const cpp_mo    = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
+    const cpp_from  = numVal(pick("cpp_from_age")) ?? retirement_age;
+    const cpp_to    = numVal(pick("cpp_to_age")) ?? lifespan;
+
+    return {
+      // deterministic fields the server route should expect:
+      current_age: current_age,
+      retirement_age: retirement_age,
+      annual_saving: (monthly_saving||0) * 12.0,
+      saving_increase_rate: saving_inc,
+      current_assets: current_assets,
+      return_rate: pre_ret,
+      return_rate_after: post_ret,
+      annual_expense: (monthly_exp||0) * 12.0,
+      cpp_monthly: cpp_mo || 0,
+      cpp_start_age: cpp_from || retirement_age,
+      cpp_end_age: cpp_to || lifespan,
+      asset_liquidations: [],
+
+      inflation_rate: infl,
+      life_expectancy: lifespan || (retirement_age+30),
+      income_tax_rate: tax_rate
+    };
+  }
 
   // ---- Ping ----------------------------------------------------------------
   $("litev1_ping").addEventListener("click", async ()=>{
-    try{ const r=await fetch(urlPing,{credentials:"same-origin"}); setStatus("litev1_status",`PING ${r.status}`);}
-    catch{ setStatus("litev1_status","PING network error"); }
+    try { const r=await fetch(urlPing,{credentials:"same-origin"}); setStatus("litev1_status",`PING ${r.status}`); }
+    catch { setStatus("litev1_status","PING network error"); }
   });
   $("litev1_tax_ping").addEventListener("click", async ()=>{
-    try{ const r=await fetch("/lite_v1/tax_ping",{credentials:"same-origin"}); setStatus("litev1_tax_status",`PING ${r.status}`);}
+    try{ const r=await fetch("/lite_v1/tax_ping",{credentials:"same-origin"}); setStatus("litev1_tax_status",`PING ${r.status}`); }
     catch{ setStatus("litev1_tax_status","PING network error"); }
   });
 
-  // ---- Lite v1 run ----------------------------------------------------------
+  // ---- Run (toy OR full mirror) --------------------------------------------
   $("litev1_run").addEventListener("click", async ()=>{
-    const payload = {
-      start_age:Number($("litev1_start_age").value),
-      end_age:Number($("litev1_end_age").value),
-      taxable:Number($("litev1_taxable").value),
-      rrsp:Number($("litev1_rrsp").value),
-      tfsa:Number($("litev1_tfsa").value),
-      monthly_spend:Number($("litev1_spend").value),
-      return_rate:Number($("litev1_return").value),
-      n_sims:Number($("litev1_sims").value),
-      seed:Number($("litev1_seed").value)
-    };
+    const mirror = $("litev1_full_mirror")?.checked;
+
     try{
-      const res=await fetch(urlRun,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-      setStatus("litev1_status",`SEC ${res.status}`);
-      const out=await res.json();
-      renderDet(out.det); renderMC(out.mc);
-    }catch(e){ setStatus("litev1_status","run error"); console.error(e); }
+      if (mirror) {
+        // full mirror: send top inputs to tiny route that should call run_retirement_projection
+        const payload = buildFullMirrorPayloadFromTop();
+        const res = await fetch(urlRunFull, {
+          method:"POST", credentials:"same-origin",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(payload)
+        });
+        setStatus("litev1_status",`FULL ${res.status}`);
+        const out = await res.json();
+
+        // Expected server response shape (simple & stable):
+        // { ok: true, det: { ages:[..], assets:[..], annual_spend, earliest_depletion_age } }
+        renderDet(out.det || {});
+        // MC is not available for the mirror path — keep old success text:
+        $("litev1_success").textContent = "Success: — (mirror uses full deterministic engine)";
+      } else {
+        // toy path (existing)
+        const payload = {
+          start_age:Number($("litev1_start_age").value),
+          end_age:Number($("litev1_end_age").value),
+          taxable:Number($("litev1_taxable").value),
+          rrsp:Number($("litev1_rrsp").value),
+          tfsa:Number($("litev1_tfsa").value),
+          monthly_spend:Number($("litev1_spend").value),
+          return_rate:Number($("litev1_return").value),
+          n_sims:Number($("litev1_sims").value),
+          seed:Number($("litev1_seed").value)
+        };
+        const res=await fetch(urlRunToy,{
+          method:"POST", credentials:"same-origin",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(payload)
+        });
+        setStatus("litev1_status",`SEC ${res.status}`);
+        const out=await res.json();
+        renderDet(out.det || {});
+        renderMC(out.mc  || {});
+      }
+    }catch(e){
+      setStatus("litev1_status","run error");
+      console.error(e);
+    }
   });
 
   // --- Deterministic table (NO DECIMALS) ---
   function renderDet(det){
     const tb=$("litev1_det_table").querySelector("tbody"); tb.innerHTML="";
-    const ages=det.years||[]; const assets=det.assets||[];
-    for(let i=0;i<Math.min(ages.length,25);i++){
+    const ages=det.ages || det.years || [];
+    const assets=det.assets || [];
+    for(let i=0;i<Math.min(ages.length,50);i++){
       const tr=document.createElement("tr");
       tr.innerHTML=`<td>${ages[i]}</td><td>${iFmt(assets[i])}</td>`;
       tb.appendChild(tr);
     }
-    $("litev1_det_meta").textContent=
+    $("litev1_det_meta").textContent =
       `Annual spend = ${iFmt(det.annual_spend)} | ` +
-      `Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing first 25 rows)`;
+      `Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing ${Math.min(ages.length,50)} rows)`;
   }
 
   function renderMC(mc){
-    $("litev1_success").textContent=`Success: ${Number(mc.success_pct||0).toFixed(1)}% (n=${mc.n_sims}, seed=${mc.seed})`;
+    $("litev1_success").textContent=`Success: ${Number(mc.success_pct||0).toFixed(1)}% (n=${mc.n_sims||0}, seed=${mc.seed||"-"})`;
     const tb=$("litev1_ruin_table").querySelector("tbody"); tb.innerHTML="";
     const ages=(mc.ruin_by_age||{}).ages||[]; const pct=(mc.ruin_by_age||{}).pct||[];
     for(let i=0;i<ages.length;i+=2){
@@ -2593,8 +2667,8 @@ function ensureLayout(layout, seriesForAxis){
     }
   }
 
-  // ---- Sync from top planner (EXACT mirror; 100% assets -> taxable) --------
-  function syncLiteFromTop(){
+  // ---- Sync from top planner (forces 100% to Taxable) ----------------------
+  $("litev1_sync_top").addEventListener("click", ()=>{
     const curAge = numVal(pick("current_age"));
     const life   = numVal(pick("lifespan"));
     const mExp   = numVal(pick("monthly_living_expense"));
@@ -2602,34 +2676,27 @@ function ensureLayout(layout, seriesForAxis){
     const assets = numVal(pick("current_assets"));
     const cpp    = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
 
-    if (curAge != null) $("litev1_start_age").value = Math.round(curAge);
-    if (life   != null) $("litev1_end_age").value   = Math.round(life);
+    if (curAge !== undefined) $("litev1_start_age").value = curAge;
+    if (life   !== undefined) $("litev1_end_age").value   = life;
 
-    // exact spend from top (optionally net CPP if the toggle is on)
-    if (mExp  != null) {
+    if (mExp !== undefined) {
       let spend = mExp;
-      if ($("net_cpp_toggle")?.checked && cpp != null) spend = Math.max(0, spend - cpp);
+      if ($("net_cpp_toggle")?.checked && cpp !== undefined) spend = Math.max(0, spend - cpp);
       $("litev1_spend").value = Math.round(spend);
     }
+    if (retPct !== undefined) $("litev1_return").value = (retPct/100).toFixed(4);
 
-    if (retPct != null) $("litev1_return").value = (retPct/100).toFixed(4);
+    // Force 100% to Taxable (your request)
+    if (assets !== undefined) {
+      $("split_taxable").value = 100;
+      $("split_tfsa").value    = 0;
+      $("split_rrsp").value    = 0;
 
-    // **Key requirement**: ALL current assets → Taxable to align curves
-    if (assets != null) {
       $("litev1_taxable").value = Math.round(assets);
       $("litev1_tfsa").value    = 0;
       $("litev1_rrsp").value    = 0;
     }
-  }
-
-  // Button and auto-bind
-  $("litev1_sync_top").addEventListener("click", (e)=>{ e.preventDefault(); syncLiteFromTop(); });
-  document.addEventListener("DOMContentLoaded", ()=> { setTimeout(syncLiteFromTop, 0); });
-  ['current_age','lifespan','monthly_living_expense','return_rate','current_assets','cpp_support','cpp_monthly']
-    .forEach(id=>{
-      const el = pick(id);
-      if (el) { el.addEventListener('change', syncLiteFromTop); el.addEventListener('input', syncLiteFromTop); }
-    });
+  });
 
   // ---- Tax-lite runners -----------------------------------------------------
   function collectTaxPayload(){
@@ -2694,6 +2761,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END APPEND-ONLY UI =================================================== -->
+
 
 
 

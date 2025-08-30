@@ -1446,7 +1446,7 @@ def compare_vol_preview_json():
 
 
 # === APPEND-ONLY: Lite v1 + Tax-lite routes (guarded) ========================
-from flask import jsonify, request
+from flask import jsonify, request, current_app
 
 # Use your existing projects blueprint
 projects_bp  # noqa: F401
@@ -1457,8 +1457,10 @@ try:
 except NameError:  # pragma: no cover
     def _csrf_exempt(fn):
         for attr in ("csrf_exempt", "_exempt_from_csrf", "exempt"):
-            try: setattr(fn, attr, True)
-            except Exception: pass
+            try:
+                setattr(fn, attr, True)
+            except Exception:
+                pass
         return fn
 
 # Avoid double registration if this block is appended twice
@@ -1466,37 +1468,122 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
     # --- imports with safe fallbacks -----------------------------------------
     try:
         from models.retirement.retirement_calc import (
-            LiteV1Params, run_lite_det_v1, run_lite_mc_success_v1,
+            LiteV1Params,
+            run_lite_det_v1,
+            run_lite_mc_success_v1,
         )
     except Exception:
         # Minimal fallbacks to keep route alive if your module name differs
         from dataclasses import dataclass
+
         @dataclass
         class LiteV1Params:
-            start_age:int=53; end_age:int=95; taxable:float=0; rrsp:float=0; tfsa:float=0
-            monthly_spend:float=6000; policy:str="fixed_real"; return_rate:float=0.05; inflation:float=0.02
+            start_age: int = 53
+            end_age: int = 95
+            taxable: float = 0
+            rrsp: float = 0
+            tfsa: float = 0
+            monthly_spend: float = 6000
+            policy: str = "fixed_real"
+            return_rate: float = 0.05
+            inflation: float = 0.02
+
         def run_lite_det_v1(p):  # type: ignore
-            years=list(range(p.start_age,p.end_age+1)); bal=p.taxable+p.rrsp+p.tfsa
-            assets=[];
-            for _ in years: bal=bal*(1+p.return_rate)-p.monthly_spend*12; assets.append(max(bal,0))
-            return {"years":years,"annual_spend":p.monthly_spend*12,"assets":assets,"earliest_depletion_age":None}
+            years = list(range(p.start_age, p.end_age + 1))
+            bal = p.taxable + p.rrsp + p.tfsa
+            assets = []
+            for _ in years:
+                bal = bal * (1 + p.return_rate) - p.monthly_spend * 12
+                assets.append(max(bal, 0))
+            return {
+                "years": years,
+                "annual_spend": p.monthly_spend * 12,
+                "assets": assets,
+                "earliest_depletion_age": None,
+            }
+
         def run_lite_mc_success_v1(p, n_sims=300, seed=123):  # type: ignore
-            ages=list(range(p.start_age,p.end_age+1)); ruin=[0.0]*len(ages)
-            return {"n_sims":n_sims,"seed":seed,"success_pct":50.0,"ruin_by_age":{"ages":ages,"pct":ruin}}
+            ages = list(range(p.start_age, p.end_age + 1))
+            ruin = [0.0] * len(ages)
+            return {
+                "n_sims": n_sims,
+                "seed": seed,
+                "success_pct": 50.0,
+                "ruin_by_age": {"ages": ages, "pct": ruin},
+            }
+
+    try:
+        # Deterministic "full" calculator used by det_from_top
+        from models.retirement.retirement_calc import (
+            run_retirement_projection as _DET,
+        )
+    except Exception:
+        # Very small fallback so this file won't 5xx at import time
+        def _DET(**params):  # type: ignore
+            start = int(params.get("current_age", 53))
+            end = int(params.get("life_expectancy", start + 30))
+            r_pre = float(params.get("return_rate", 0.05))
+            r_post = float(params.get("return_rate_after", r_pre))
+            retire_age = int(params.get("retirement_age", start + 10))
+            bal = float(params.get("current_assets", 0.0))
+            save = float(params.get("annual_saving", 0.0))
+            spend = float(params.get("annual_expense", 0.0))
+            cpp = float(params.get("cpp_monthly", 0.0)) * 12.0
+            cpp_a = int(params.get("cpp_start_age", retire_age))
+            cpp_b = int(params.get("cpp_end_age", end))
+            rows = []
+            for age in range(start, end + 1):
+                rate = r_pre if age < retire_age else r_post
+                if age < retire_age:
+                    bal = bal * (1 + rate) + save
+                else:
+                    spend_net = spend - (cpp if cpp_a <= age <= cpp_b else 0.0)
+                    bal = bal * (1 + rate) - max(spend_net, 0.0)
+                rows.append(
+                    {
+                        "Age": age,
+                        "Asset": bal,
+                        "Asset_Retirement": bal,
+                    }
+                )
+            return {
+                "table": rows,
+                "annual_spend": spend,
+                "earliest_depletion_age": None,
+            }
 
     try:
         from models.retirement.retirement_calc import (
-            LiteV1TaxParams, run_lite_tax_det_v1,
-            LiteV1TaxRrifParams, run_lite_tax_det_rrif_v1,
+            LiteV1TaxParams,
+            run_lite_tax_det_v1,
+            LiteV1TaxRrifParams,
+            run_lite_tax_det_rrif_v1,
         )
     except Exception:
         # Fallback to avoid import-time 5xx if model not yet appended
         from dataclasses import dataclass
+
         @dataclass
         class LiteV1TaxParams:
-            start_age:int=53; end_age:int=95; taxable:float=0; rrsp:float=0; tfsa:float=0
-            monthly_spend:float=6000; return_rate:float=0.05; flat_tax_rate:float=0.25
-        run_lite_tax_det_v1 = lambda p: {"years":[], "annual_spend":0, "flat_tax_rate":p.flat_tax_rate, "rows":[], "total_taxes":0, "earliest_depletion_age":None}  # type: ignore
+            start_age: int = 53
+            end_age: int = 95
+            taxable: float = 0
+            rrsp: float = 0
+            tfsa: float = 0
+            monthly_spend: float = 6000
+            return_rate: float = 0.05
+            flat_tax_rate: float = 0.25
+
+        run_lite_tax_det_v1 = (
+            lambda p: {  # type: ignore
+                "years": [],
+                "annual_spend": 0,
+                "flat_tax_rate": p.flat_tax_rate,
+                "rows": [],
+                "total_taxes": 0,
+                "earliest_depletion_age": None,
+            }
+        )
         LiteV1TaxRrifParams = LiteV1TaxParams  # type: ignore
         run_lite_tax_det_rrif_v1 = run_lite_tax_det_v1  # type: ignore
 
@@ -1510,9 +1597,13 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
     @_csrf_exempt
     def lite_v1_run():
         data = request.get_json(silent=True) or {}
+
         def C(x, d):
-            try: return type(d)(x)
-            except Exception: return d
+            try:
+                return type(d)(x)
+            except Exception:
+                return d
+
         p = LiteV1Params(
             start_age=C(data.get("start_age"), 53),
             end_age=C(data.get("end_age"), 95),
@@ -1525,10 +1616,73 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
             inflation=C(data.get("inflation"), 0.02),
         )
         n_sims = C(data.get("n_sims"), 300)
-        seed   = C(data.get("seed"), 123)
+        seed = C(data.get("seed"), 123)
         det = run_lite_det_v1(p)
-        mc  = run_lite_mc_success_v1(p, n_sims=n_sims, seed=seed)
+        mc = run_lite_mc_success_v1(p, n_sims=n_sims, seed=seed)
         return jsonify({"ok": True, "params": p.__dict__, "det": det, "mc": mc})
+
+    # Deterministic curve that mirrors the TOP planner (for exact match)
+    @projects_bp.route("/lite_v1/det_from_top", methods=["POST"])
+    @_csrf_exempt
+    def lite_v1_det_from_top():
+        """
+        Mirror the top-of-page inputs and return the deterministic series from
+        the full calculator so Lite v1 can render the same curve.
+        """
+        data = request.get_json(silent=True) or {}
+
+        def _i(v, d=0):
+            try:
+                return int(float(v))
+            except Exception:
+                return d
+
+        def _f(v, d=0.0):
+            try:
+                return float(v)
+            except Exception:
+                return d
+
+        params = dict(
+            current_age=_i(data.get("current_age")),
+            retirement_age=_i(data.get("retirement_age")),
+            annual_saving=_f(data.get("annual_saving")),
+            saving_increase_rate=_f(data.get("saving_increase_rate", 0.0)),
+            current_assets=_f(data.get("current_assets")),
+            return_rate=_f(data.get("return_rate")),
+            return_rate_after=_f(
+                data.get("return_rate_after", data.get("return_rate", 0.0))
+            ),
+            annual_expense=_f(data.get("annual_expense")),
+            cpp_monthly=_f(data.get("cpp_monthly")),
+            cpp_start_age=_i(data.get("cpp_start_age", data.get("retirement_age"))),
+            cpp_end_age=_i(data.get("cpp_end_age", data.get("life_expectancy"))),
+            asset_liquidations=list(data.get("asset_liquidations") or []),
+            inflation_rate=_f(data.get("inflation_rate")),
+            life_expectancy=_i(
+                data.get(
+                    "life_expectancy",
+                    max(_i(data.get("retirement_age"), 65) + 25, 0),
+                )
+            ),
+            income_tax_rate=_f(data.get("income_tax_rate", 0.0)),
+        )
+
+        try:
+            out = _DET(**params)
+            rows = out.get("table", []) or []
+            ages = [r.get("Age") for r in rows]
+            assets = [r.get("Asset_Retirement", r.get("Asset")) for r in rows]
+            det_payload = dict(
+                ages=ages,
+                assets=assets,
+                annual_spend=out.get("annual_spend") or params["annual_expense"],
+                earliest_depletion_age=out.get("earliest_depletion_age"),
+            )
+            return jsonify({"ok": True, "det": det_payload}), 200
+        except Exception as e:
+            current_app.logger.exception("lite_v1 det_from_top failed: %s", e)
+            return jsonify({"ok": False, "error": str(e)}), 400
 
     # Tax-lite diagnostics
     @projects_bp.route("/lite_v1/tax_ping", methods=["GET"])
@@ -1539,9 +1693,13 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
     @_csrf_exempt
     def lite_v1_tax_det():
         data = request.get_json(silent=True) or {}
+
         def N(x, d):
-            try: return type(d)(x)
-            except Exception: return d
+            try:
+                return type(d)(x)
+            except Exception:
+                return d
+
         p = LiteV1TaxParams(
             start_age=N(data.get("start_age"), 53),
             end_age=N(data.get("end_age"), 95),
@@ -1559,9 +1717,13 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
     @_csrf_exempt
     def lite_v1_tax_det_rrif():
         data = request.get_json(silent=True) or {}
+
         def N(x, d):
-            try: return type(d)(x)
-            except Exception: return d
+            try:
+                return type(d)(x)
+            except Exception:
+                return d
+
         p = LiteV1TaxRrifParams(
             start_age=N(data.get("start_age"), 53),
             end_age=N(data.get("end_age"), 95),
@@ -1579,6 +1741,7 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
     # mark attached
     projects_bp._litev1_routes_attached = True
 # === END APPEND-ONLY ROUTES ===================================================
+
 
 
 
