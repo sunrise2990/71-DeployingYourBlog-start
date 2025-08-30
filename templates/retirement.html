@@ -2532,12 +2532,10 @@ function ensureLayout(layout, seriesForAxis){
 
   const setStatus = (el, msg) => { const n=$(el); if(n) n.textContent=msg; };
 
-  // Integer formatter (no decimals)
   const iFmt = (n) =>
     (n===null || n===undefined || isNaN(n)) ? "" :
     Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
 
-  // ---- helpers to read top planner (if present) -----------------------------
   const pick = (name) => document.getElementById(name) || document.querySelector(`[name="${name}"]`);
   const numVal = (el) => {
     if (!el) return undefined;
@@ -2547,7 +2545,7 @@ function ensureLayout(layout, seriesForAxis){
     return Number.isFinite(v) ? v : undefined;
   };
 
-  // Prefill Lite v1 from the top calculator and force 100% -> Taxable
+  // --- Prefill from top + force 100% to Taxable ------------------------------
   function prefillFromTop() {
     const current_age    = numVal(pick("current_age"));
     const lifespan       = numVal(pick("lifespan"));
@@ -2572,18 +2570,19 @@ function ensureLayout(layout, seriesForAxis){
     }
   }
 
-  // Build /det_from_top payload from Lite v1 fields + remaining top knobs
+  // ---- Build full deterministic payload from Lite + Top ---------------------
   function buildFullPayloadFromLiteAndTop() {
     const current_age    = Number($("litev1_start_age").value);
     const end_age        = Number($("litev1_end_age").value);
-    const current_assets = Number($("litev1_taxable").value) + Number($("litev1_rrsp").value) + Number($("litev1_tfsa").value);
+    const taxable0       = Number($("litev1_taxable").value);
+    const rrsp0          = Number($("litev1_rrsp").value);
+    const tfsa0          = Number($("litev1_tfsa").value);
 
     const monthly_saving = Number($("litev1_monthly_saving").value);
     const monthly_exp    = Number($("litev1_spend").value);
     const pre_ret_pct    = Number($("litev1_return").value);         // % in UI
     const tax_pct        = Number($("litev1_income_tax").value);     // % in UI
 
-    // Pull missing knobs from the top (still mirrored)
     const post_ret_pct   = numVal(pick("post_retire_return_rate")) ?? numVal(pick("return_rate_after")) ?? pre_ret_pct;
     const infl_pct       = numVal(pick("inflation_rate")) ?? 2;
     const retirement_age = numVal(pick("retirement_age")) ?? current_age;
@@ -2592,7 +2591,7 @@ function ensureLayout(layout, seriesForAxis){
     const cpp_to         = numVal(pick("cpp_to_age"))   ?? end_age;
     const saving_inc_pct = numVal(pick("saving_increase_rate")) ?? 0;
 
-    // Liquidations (up to 3) from the top form
+    // Liquidations (up to 3)
     const liqs = [];
     for (let i = 1; i <= 3; i++) {
       const amt = numVal(pick(`asset_liquidation_${i}`));
@@ -2603,18 +2602,18 @@ function ensureLayout(layout, seriesForAxis){
     }
 
     return {
-      // full deterministic inputs
-      current_age: current_age,
-      retirement_age: retirement_age,
+      current_age,
+      retirement_age,
       life_expectancy: end_age,
-      current_assets: current_assets,
+
+      taxable0, rrsp0, tfsa0,
 
       annual_saving: (monthly_saving || 0) * 12,
       saving_increase_rate: (saving_inc_pct || 0) / 100,
 
       annual_expense: (monthly_exp || 0) * 12,
-      return_rate: (pre_ret_pct || 0) / 100,        // % → decimal
-      return_rate_after: (post_ret_pct || 0) / 100, // % → decimal
+      return_rate: (pre_ret_pct || 0) / 100,
+      return_rate_after: (post_ret_pct || 0) / 100,
       inflation_rate: (infl_pct || 0) / 100,
       income_tax_rate: (tax_pct || 0) / 100,
 
@@ -2622,13 +2621,138 @@ function ensureLayout(layout, seriesForAxis){
       cpp_start_age: cpp_from || retirement_age,
       cpp_end_age: cpp_to || end_age,
 
-      asset_liquidations: liqs,
-      // show full span if the server supports it
-      max_rows: 500
+      asset_liquidations: liqs
     };
   }
 
-  // ---- Ping ----------------------------------------------------------------
+  // --- Pre-retirement roll-forward (client-side) -----------------------------
+  function prerollToRetirement(cfg) {
+    let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
+          taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
+
+    let age = current_age;
+    let rows = [];
+    let taxable = taxable0, rrsp = rrsp0, tfsa = tfsa0;
+    let save = annual_saving;
+
+    const liqByAge = {};
+    (asset_liquidations || []).forEach(l => { liqByAge[l.age] = (liqByAge[l.age] || 0) + (l.amount || 0); });
+
+    while (age < retirement_age) {
+      // grow all accounts at pre-ret rate
+      taxable = taxable * (1 + return_rate);
+      rrsp    = rrsp    * (1 + return_rate);
+      tfsa    = tfsa    * (1 + return_rate);
+
+      // add that year's savings to taxable
+      taxable += save;
+
+      // subtract any one-off liquidation from taxable
+      if (liqByAge[age]) taxable = Math.max(0, taxable - liqByAge[age]);
+
+      const endTotal = taxable + rrsp + tfsa;
+
+      rows.push({
+        Age: age,
+        From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0, Tax_On_RRSP: 0, Shortfall: 0,
+        End_Taxable: taxable, End_TFSA: tfsa, End_RRSP: rrsp, End_Total: endTotal
+      });
+
+      // next year saving bumps if any
+      save = save * (1 + saving_increase_rate);
+      age += 1;
+    }
+
+    return { rows, taxable, rrsp, tfsa, lastAge: age - 1 };
+  }
+
+  // --- Call tax route in chained ≤25y segments to reach End Age --------------
+  async function runTaxChained(cfg, balances, rrif_min) {
+    const endAge = cfg.life_expectancy;
+    const startRet = cfg.retirement_age;
+
+    // spend (optionally net CPP) during retirement
+    const netSpendMonthly = Math.max(
+      0,
+      (cfg.annual_expense / 12) - ($("net_cpp_toggle").checked ? (cfg.cpp_monthly || 0) : 0)
+    );
+
+    let start = startRet;
+    let taxRows = [];
+    let taxMeta = null;
+
+    while (start <= endAge) {
+      const segEnd = Math.min(start + 24, endAge); // ≤25 rows
+
+      const payload = {
+        start_age: start,
+        end_age: segEnd,
+        taxable: balances.taxable,
+        rrsp: balances.rrsp,
+        tfsa: balances.tfsa,
+
+        monthly_spend: netSpendMonthly,
+        return_rate: cfg.return_rate_after,     // post-ret decimal
+        flat_tax_rate: Number($("litev1_tax_rate").value) / 100,
+
+        retirement_age: startRet,               // context (server may ignore)
+        inflation_rate: cfg.inflation_rate,
+        income_tax_rate: cfg.income_tax_rate,
+
+        cpp_monthly: cfg.cpp_monthly,
+        cpp_start_age: cfg.cpp_start_age,
+        cpp_end_age: cfg.cpp_end_age,
+
+        asset_liquidations: (cfg.asset_liquidations || []).filter(l => l.age >= start && l.age <= segEnd),
+
+        rrif_min: !!rrif_min
+      };
+
+      const res = await fetch(rrif_min ? urlRRIF : urlTax, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const out = await res.json();
+      const det = (rrif_min ? out.tax_det_rrif : out.tax_det) || { rows: [] };
+
+      if (!taxMeta) {
+        taxMeta = {
+          flat_tax_rate: payload.flat_tax_rate,
+          annual_spend: Math.round(netSpendMonthly * 12)
+        };
+      }
+
+      // accumulate
+      (det.rows || []).forEach(r => taxRows.push(r));
+
+      // advance balances from last row of this segment
+      const last = (det.rows || [])[ (det.rows || []).length - 1 ];
+      if (!last) break;
+      balances = {
+        taxable: Number(last.End_Taxable || 0),
+        rrsp:    Number(last.End_RRSP   || 0),
+        tfsa:    Number(last.End_TFSA   || 0)
+      };
+      start = (Number(last.Age) || start) + 1;
+    }
+
+    // earliest depletion
+    let earliest = null;
+    for (const r of taxRows) {
+      if (Number(r.End_Total) <= 0) { earliest = Number(r.Age); break; }
+    }
+
+    return {
+      rows: taxRows,
+      flat_tax_rate: taxMeta?.flat_tax_rate ?? 0,
+      annual_spend: taxMeta?.annual_spend ?? Math.round(cfg.annual_expense),
+      earliest_depletion_age: earliest
+    };
+  }
+
+  // ---- Ping -----------------------------------------------------------------
   $("litev1_ping").addEventListener("click", async ()=>{
     try { const r=await fetch(urlPing,{credentials:"same-origin"}); setStatus("litev1_status",`PING ${r.status}`); }
     catch { setStatus("litev1_status","PING network error"); }
@@ -2641,14 +2765,30 @@ function ensureLayout(layout, seriesForAxis){
   // Initial prefill from the top
   document.addEventListener("DOMContentLoaded", prefillFromTop);
 
-  // ---- Run deterministic via full engine -----------------------------------
+  // ---- Deterministic (full engine) ------------------------------------------
   $("litev1_run").addEventListener("click", async ()=>{
     try{
-      const payload = buildFullPayloadFromLiteAndTop();
+      const cfg = buildFullPayloadFromLiteAndTop();
       const res = await fetch(urlRunFull, {
         method:"POST", credentials:"same-origin",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          current_age: cfg.current_age,
+          retirement_age: cfg.retirement_age,
+          life_expectancy: cfg.life_expectancy,
+          current_assets: cfg.taxable0 + cfg.rrsp0 + cfg.tfsa0,
+          annual_saving: cfg.annual_saving,
+          saving_increase_rate: cfg.saving_increase_rate,
+          return_rate: cfg.return_rate,
+          return_rate_after: cfg.return_rate_after,
+          annual_expense: cfg.annual_expense,
+          cpp_monthly: cfg.cpp_monthly,
+          cpp_start_age: cfg.cpp_start_age,
+          cpp_end_age: cfg.cpp_end_age,
+          asset_liquidations: cfg.asset_liquidations,
+          inflation_rate: cfg.inflation_rate,
+          income_tax_rate: cfg.income_tax_rate
+        })
       });
       setStatus("litev1_status",`FULL ${res.status}`);
       const out = await res.json();
@@ -2660,7 +2800,7 @@ function ensureLayout(layout, seriesForAxis){
     }
   });
 
-  // --- Deterministic table (NO DECIMALS) ---
+  // --- Deterministic table (NO DECIMALS) ------------------------------------
   function renderDet(det){
     const tb=$("litev1_det_table").querySelector("tbody"); tb.innerHTML="";
     const ages   = det.ages || det.years || [];
@@ -2676,107 +2816,75 @@ function ensureLayout(layout, seriesForAxis){
       `Earliest depletion age = ${det.earliest_depletion_age ?? "—"} (showing ${rows} rows)`;
   }
 
-  // --- MC (toy placeholder) ---
-  function renderMC(mc){
-    $("litev1_success").textContent=`Success: ${Number(mc.success_pct||0).toFixed(1)}% (n=${mc.n_sims||0}, seed=${mc.seed||"-"})`;
-    const tb=$("litev1_ruin_table").querySelector("tbody"); tb.innerHTML="";
-    const ages=(mc.ruin_by_age||{}).ages||[]; const pct=(mc.ruin_by_age||{}).pct||[];
-    for(let i=0;i<ages.length;i+=2){
-      const tr=document.createElement("tr"); tr.innerHTML=`<td>${ages[i]}</td><td>${Number(pct[i]||0).toFixed(1)}</td>`;
-      tb.appendChild(tr);
+  // ---- “Use top inputs” convenience ----------------------------------------
+  $("litev1_sync_top").addEventListener("click", ()=>{
+    prefillFromTop();
+    $("split_taxable").value = 100; $("split_tfsa").value = 0; $("split_rrsp").value = 0;
+  });
+
+  // ---- Tax-lite runners (now matches the top path) --------------------------
+  async function runTaxLite(rrifMin){
+    try{
+      const cfg = buildFullPayloadFromLiteAndTop();
+
+      // 1) Pre-retirement client-side
+      const pre = prerollToRetirement({
+        current_age: cfg.current_age,
+        retirement_age: cfg.retirement_age,
+        return_rate: cfg.return_rate,
+        annual_saving: cfg.annual_saving,
+        saving_increase_rate: cfg.saving_increase_rate,
+        taxable0: cfg.taxable0, rrsp0: cfg.rrsp0, tfsa0: cfg.tfsa0,
+        asset_liquidations: cfg.asset_liquidations
+      });
+
+      // 2) Retirement to End Age via chained server calls
+      const tax = await runTaxChained(cfg, { taxable: pre.taxable, rrsp: pre.rrsp, tfsa: pre.tfsa }, rrifMin);
+
+      // 3) Merge rows and render
+      const merged = {
+        rows: [...pre.rows, ...tax.rows],
+        flat_tax_rate: tax.flat_tax_rate,
+        annual_spend: tax.annual_spend,
+        earliest_depletion_age: tax.earliest_depletion_age
+      };
+      renderTax(merged, rrifMin ? "RRIF min: ON" : "RRIF min: OFF");
+      setStatus("litev1_tax_status", rrifMin ? "RRIF OK 200" : "TAX OK 200");
+    }catch(e){
+      setStatus("litev1_tax_status","Tax run error");
+      console.error(e);
     }
   }
 
-  // ---- “Use top inputs” button: prefill & set split 100%→Taxable -----------
-  $("litev1_sync_top").addEventListener("click", ()=>{
-    prefillFromTop();
-    $("split_taxable").value = 100;
-    $("split_tfsa").value    = 0;
-    $("split_rrsp").value    = 0;
-  });
-
-  // ---- Tax-lite runners (now pass full context so it can match top) --------
-  function collectTaxPayload(){
-    // mirror the same structure as buildFullPayloadFromLiteAndTop,
-    // but keep account split explicit for tax route
-    const full = buildFullPayloadFromLiteAndTop();
-    return {
-      start_age: full.current_age,
-      end_age: full.life_expectancy,
-      taxable: Number($("litev1_taxable").value),
-      rrsp: Number($("litev1_rrsp").value),
-      tfsa: Number($("litev1_tfsa").value),
-
-      monthly_spend: full.annual_expense / 12,
-      // include savings & other knobs so server can model them
-      annual_saving: full.annual_saving,
-      saving_increase_rate: full.saving_increase_rate,
-
-      return_rate: full.return_rate,                // decimal
-      return_rate_after: full.return_rate_after,    // decimal
-      inflation_rate: full.inflation_rate,
-      income_tax_rate: full.income_tax_rate,
-
-      retirement_age: full.retirement_age,
-      cpp_monthly: full.cpp_monthly,
-      cpp_start_age: full.cpp_start_age,
-      cpp_end_age: full.cpp_end_age,
-
-      asset_liquidations: full.asset_liquidations,
-      flat_tax_rate: Number($("litev1_tax_rate").value)/100.0,
-
-      max_rows: 500  // ask for full span (server may ignore if unsupported)
-    };
-  }
-
-  $("litev1_tax_run").addEventListener("click", async ()=>{
-    const payload=collectTaxPayload();
-    try{
-      const res=await fetch(urlTax,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-      setStatus("litev1_tax_status",`TAX ${res.status}`);
-      const out=await res.json(); if(!out?.tax_det) return alert("tax_det returned no data");
-      setStatus("litev1_tax_status",`TAX OK ${res.status}`);
-      renderTax(out.tax_det,"RRIF min: OFF");
-    }catch(e){ setStatus("litev1_tax_status","TAX network error"); console.error(e); }
-  });
-
-  $("litev1_tax_run_rrif").addEventListener("click", async ()=>{
-    const payload=collectTaxPayload(); payload.rrif_min=true;
-    try{
-      const res=await fetch(urlRRIF,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-      setStatus("litev1_tax_status",`RRIF ${res.status}`);
-      const out=await res.json(); if(!out?.tax_det_rrif) return alert("tax_det_rrif returned no data");
-      setStatus("litev1_tax_status",`RRIF OK ${res.status}`);
-      renderTax(out.tax_det_rrif, (out.tax_det_rrif.rrif_min ? "RRIF min: ON" : "RRIF min: OFF"));
-    }catch(e){ setStatus("litev1_tax_status","RRIF network error"); console.error(e); }
-  });
+  $("litev1_tax_run").addEventListener("click", ()=> runTaxLite(false));
+  $("litev1_tax_run_rrif").addEventListener("click", ()=> runTaxLite(true));
 
   function renderTax(tdet, tag){
     const tb=$("litev1_tax_table").querySelector("tbody"); tb.innerHTML="";
     (tdet.rows||[]).forEach(r=>{
       const tr=document.createElement("tr");
       tr.innerHTML=`<td>${r.Age}</td>
-        <td>${iFmt(r.From_Taxable)}</td>
-        <td>${iFmt(r.From_TFSA)}</td>
-        <td>${iFmt(r.From_RRSP_Gross)}</td>
-        <td>${iFmt(r.Tax_On_RRSP)}</td>
+        <td>${iFmt(r.From_Taxable||0)}</td>
+        <td>${iFmt(r.From_TFSA||0)}</td>
+        <td>${iFmt(r.From_RRSP_Gross||0)}</td>
+        <td>${iFmt(r.Tax_On_RRSP||0)}</td>
         <td>${r.Shortfall?iFmt(r.Shortfall):""}</td>
-        <td>${iFmt(r.End_Taxable)}</td>
-        <td>${iFmt(r.End_TFSA)}</td>
-        <td>${iFmt(r.End_RRSP)}</td>
-        <td>${iFmt(r.End_Total)}</td>`;
+        <td>${iFmt(r.End_Taxable||0)}</td>
+        <td>${iFmt(r.End_TFSA||0)}</td>
+        <td>${iFmt(r.End_RRSP||0)}</td>
+        <td>${iFmt(r.End_Total||0)}</td>`;
       tb.appendChild(tr);
     });
     const t=Number(tdet.flat_tax_rate||0);
     $("litev1_tax_meta").textContent =
       `${tag} | Flat tax = ${(t*100).toFixed(0)}% | ` +
       `Annual spend = ${iFmt(tdet.annual_spend)} | ` +
-      `Total taxes (all years) = ${iFmt(tdet.total_taxes)} | ` +
-      `Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (first ${tdet.rows?.length ?? 0} rows)`;
+      `Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (rows: ${tdet.rows?.length ?? 0})`;
   }
 })();
 </script>
 <!-- === END APPEND-ONLY UI =================================================== -->
+
 
 
 
