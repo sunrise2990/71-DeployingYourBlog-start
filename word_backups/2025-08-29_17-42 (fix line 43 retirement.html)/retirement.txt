@@ -152,115 +152,11 @@
 
     <!-- Init tooltips (safe inside this form) -->
     <script>
-      (function () {
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
-
-        // CSRF (if present)
-        const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
-
-        // Helper: submit the calc form as action=calculate (runs after alert OK)
-        function autoCalculateAfterLoad() {
-          setTimeout(() => {
-            // 1) Try clicking the existing Calculate button
-            const calcBtn = document.querySelector(
-              'button[name="action"][value="calculate"], input[type="submit"][name="action"][value="calculate"]'
-            );
-            if (calcBtn) { calcBtn.click(); return; }
-
-            // 2) Fallback: submit the form with action=calculate
-            const form =
-              document.getElementById('retirement_form') ||
-              document.querySelector('form[action*="/retirement"]') ||
-              document.querySelector('form');
-            if (!form) return;
-
-            let act = form.querySelector('input[name="action"]');
-            if (!act) {
-              act = document.createElement('input');
-              act.type = 'hidden';
-              act.name = 'action';
-              form.appendChild(act);
-            }
-            act.value = 'calculate';
-            if (form.requestSubmit) form.requestSubmit(); else form.submit();
-          }, 0);
-        }
-
-        // Helper: write returned inputs into the form (keys match input names)
-        function applyScenarioInputs(inputs) {
-          if (!inputs) return;
-          Object.keys(inputs).forEach((name) => {
-            const el = document.querySelector('[name="' + name + '"]');
-            if (!el) return;
-            let v = inputs[name];
-            // keep strings as-is; numbers go straight in
-            try { el.value = v; } catch (_) {}
-          });
-        }
-
-        // Expose globally for onclick handlers
-        window.loadSelectedScenario = async function () {
-          const select = document.getElementById('load_scenario_select');
-          const id = (select && select.value) ? select.value.trim() : "";
-          if (!id) { alert('Please select a scenario to load.'); return; }
-
-          try {
-            const res = await fetch(`/scenarios/load/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-
-            // Data shape from your route: { scenario_name, inputs_json: <form-ready keys>, created_at, ... }
-            const payload = data.inputs_json || data.inputs || {};
-            if (typeof window.applyScenarioInputs === 'function') {
-              // If you already defined a richer applier elsewhere, use it
-              window.applyScenarioInputs(payload);
-            } else {
-              applyScenarioInputs(payload);
-            }
-
-            alert(`Loaded scenario: ${data.scenario_name}`);
-            // One-click flow: compute immediately after the user presses OK
-            autoCalculateAfterLoad();
-          } catch (e) {
-            console.error(e);
-            alert('Failed to load scenario.');
-          }
-        };
-
-        window.deleteSelectedScenario = async function () {
-          const select = document.getElementById('load_scenario_select');
-          const id = (select && select.value) ? select.value.trim() : "";
-          if (!id) { alert('Please select a scenario to delete.'); return; }
-          if (!confirm('Delete this scenario? This cannot be undone.')) return;
-
-          try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (CSRF) headers['X-CSRFToken'] = CSRF;
-
-            const res = await fetch(`/scenarios/delete/${encodeURIComponent(id)}`, {
-              method: 'DELETE',
-              credentials: 'same-origin',
-              headers
-            });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-
-            alert(data.message || 'Scenario deleted.');
-            // Remove the option from the select
-            const opt = select.querySelector(`option[value="${id}"]`);
-            if (opt) opt.remove();
-            select.value = '';
-          } catch (e) {
-            console.error(e);
-            alert('Failed to delete scenario.');
-          }
-        };
-      })();
+      var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+      var tooltipList = tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
     </script>
   </form>
   <!-- ===== END CALCULATE FORM ===== -->
-
 
 
         {% if result %}
