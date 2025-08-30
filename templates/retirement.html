@@ -152,73 +152,44 @@
       </div>
     </div>
 
-    <!-- Init tooltips + load/delete + auto-calc -->
+    <!-- Modal: Loaded Scenario (emphasized guidance) -->
+    <div class="modal fade" id="scenarioLoadedModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0">
+          <div class="modal-header">
+            <h5 class="modal-title">Scenario loaded</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" ></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2" id="scenarioLoadedName"></p>
+            <div class="alert alert-warning mb-2" role="alert" style="font-weight:600;">
+              <span class="me-1">⚠️</span>
+              <strong>Next step:</strong> <strong>Click <span class="text-primary">Calculate</span></strong> to recompute results with the loaded inputs.
+            </div>
+            <p class="mb-0 text-muted small">Tip: tweak any fields if needed, then click <em>Calculate</em>.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Init tooltips + load/delete + popup text -->
     <script>
       (function () {
         // Bootstrap tooltips
         [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
           .forEach(el => new bootstrap.Tooltip(el));
 
-        // CSRF (if available)
         const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
 
-        // Find the calculator form
-        function getCalcForm() {
-          return document.getElementById('retirement_form')
-              || document.querySelector('form[action$="/retirement"]')
-              || document.querySelector('form[action*="/retirement"]')
-              || document.querySelector('form');
-        }
-
-        // Find the real Calculate submitter inside the form
-        function getCalcSubmitter(form) {
-          return form.querySelector('button[type="submit"][name="action"][value="calculate"]')
-              || form.querySelector('input[type="submit"][name="action"][value="calculate"]');
-        }
-
-        // Submit EXACTLY like pressing Calculate (sets event.submitter properly)
-        function requestSubmitCalculate() {
-          const form = getCalcForm();
-          if (!form) return;
-
-          const calcBtn = getCalcSubmitter(form);
-
-          // If the calculate button exists but is disabled, enable it just for this submit
-          let reDisable = false;
-          if (calcBtn && calcBtn.disabled) {
-            calcBtn.disabled = false;
-            reDisable = true;
-          }
-
-          try {
-            if (typeof form.requestSubmit === 'function' && calcBtn) {
-              form.requestSubmit(calcBtn);        // Preferred: passes submitter
-            } else if (calcBtn) {
-              calcBtn.click();                    // Fallback: real click on submitter
-            } else {
-              // Last resort: create a temporary submitter so name/value are sent
-              const tmp = document.createElement('button');
-              tmp.type = 'submit';
-              tmp.name = 'action';
-              tmp.value = 'calculate';
-              tmp.style.display = 'none';
-              form.appendChild(tmp);
-              tmp.click();
-              setTimeout(() => { try { form.removeChild(tmp); } catch(_){} }, 0);
-            }
-          } finally {
-            if (reDisable) calcBtn.disabled = true;
-          }
-        }
-
-        // Fill the form with loaded inputs (keys match input names)
         function applyScenarioInputs(inputs) {
           if (!inputs) return;
           Object.keys(inputs).forEach((name) => {
             const el = document.querySelector('[name="' + name + '"]');
             if (!el) return;
             try {
-              // Handle checkboxes/radios vs others
               if (el.type === 'checkbox') {
                 el.checked = !!inputs[name];
               } else if (el.type === 'radio') {
@@ -231,7 +202,7 @@
           });
         }
 
-        // ---- Load & auto-calculate -----------------------------------------
+        // ---- Load scenario (shows bold/emphasized popup) --------------------
         window.loadSelectedScenario = async function () {
           const select = document.getElementById('load_scenario_select');
           const id = (select && select.value) ? select.value.trim() : "";
@@ -242,23 +213,26 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
-            // The route returns form-ready keys under inputs_json
             const payload = data.inputs_json || data.inputs || {};
             applyScenarioInputs(payload);
 
-            // Show confirmation, then submit as if "Calculate" was pressed
-            alert(`Loaded scenario: ${data.scenario_name}`);
-
-            // Run after the blocking alert returns and DOM updates settle
-            queueMicrotask(() => setTimeout(requestSubmitCalculate, 0));
-
+            // Emphasized popup (Bootstrap modal); fallback to alert if Bootstrap missing
+            const title = data.scenario_name || 'Selected scenario';
+            const modalEl = document.getElementById('scenarioLoadedModal');
+            if (modalEl && window.bootstrap?.Modal) {
+              const nameEl = document.getElementById('scenarioLoadedName');
+              if (nameEl) nameEl.innerHTML = `Loaded: <strong>${title}</strong>`;
+              bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            } else {
+              alert(`Loaded scenario: ${title}\n\nNext: CLICK "Calculate" to recompute results.`);
+            }
           } catch (e) {
             console.error(e);
             alert('Failed to load scenario.');
           }
         };
 
-        // ---- Delete scenario -----------------------------------------------
+        // ---- Delete scenario -------------------------------------------------
         window.deleteSelectedScenario = async function () {
           const select = document.getElementById('load_scenario_select');
           const id = (select && select.value) ? select.value.trim() : "";
