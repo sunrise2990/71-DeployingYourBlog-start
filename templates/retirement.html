@@ -120,6 +120,8 @@
       </div>
     </div> <!-- /row g-3 -->
 
+
+
     <!-- Buttons (inside calc form) -->
     <div class="text-center mt-4">
       <button type="submit" name="action" value="calculate" class="btn btn-primary px-4">Calculate</button>
@@ -150,17 +152,16 @@
       </div>
     </div>
 
-    <!-- Init tooltips + load/delete + auto-calc -->
+    <!-- Init tooltips + load/delete + bullet-proof auto-calc -->
     <script>
       (function () {
-        // Bootstrap tooltips
+        // Tooltips
         [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
           .forEach(el => new bootstrap.Tooltip(el));
 
-        // CSRF (if available)
         const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
 
-        // Locate the calculator form
+        // Find your main calculator form
         function getCalcForm() {
           return document.getElementById('retirement_form')
               || document.querySelector('form[action$="/retirement"]')
@@ -168,12 +169,55 @@
               || document.querySelector('form');
         }
 
-        // Write loaded inputs into the form
+        // Submit exactly like a real user click by building a fresh POST form
+        function postLikeHumanCalculate() {
+          const src = getCalcForm();
+          if (!src) return;
+
+          const action = src.getAttribute('action') || '/retirement';
+
+          // Create a temporary form
+          const temp = document.createElement('form');
+          temp.method = 'POST';
+          temp.action = action;
+          temp.style.display = 'none';
+
+          // Copy all current fields (including CSRF)
+          const els = src.elements || [];
+          for (let i = 0; i < els.length; i++) {
+            const el = els[i];
+            if (!el || !el.name || el.disabled) continue;
+            const type = (el.type || '').toLowerCase();
+
+            // Only checked radios/checkboxes
+            if ((type === 'checkbox' || type === 'radio') && !el.checked) continue;
+
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = el.name;
+            hidden.value = el.value;
+            temp.appendChild(hidden);
+          }
+
+          // Force action=calculate
+          const calc = document.createElement('input');
+          calc.type = 'hidden';
+          calc.name = 'action';
+          calc.value = 'calculate';
+          temp.appendChild(calc);
+
+          // Attach + submit (full page POST, same as clicking Calculate)
+          document.body.appendChild(temp);
+          temp.submit();
+        }
+
+        // Fill form fields from loaded scenario
         function applyScenarioInputs(inputs) {
           if (!inputs) return;
           Object.keys(inputs).forEach((name) => {
             const el = document.querySelector('[name="' + name + '"]');
-            if (el) { try { el.value = inputs[name]; } catch (_) {} }
+            if (!el) return;
+            try { el.value = inputs[name]; } catch (_) {}
           });
         }
 
@@ -188,25 +232,12 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
-            // Fill form fields
             const payload = data.inputs_json || data.inputs || {};
             applyScenarioInputs(payload);
 
-            // Inform user, then submit EXACTLY like pressing "Calculate"
+            // Confirm then compute immediately with a fresh POST submit
             alert(`Loaded scenario: ${data.scenario_name}`);
-
-            const form = getCalcForm();
-            if (!form) return;
-
-            // Create a temporary hidden submitter that mimics the Calculate button
-            const tmp = document.createElement('button');
-            tmp.type = 'submit';
-            tmp.name = 'action';
-            tmp.value = 'calculate';
-            tmp.style.display = 'none';
-            form.appendChild(tmp);
-            tmp.click();                 // event.submitter will be this button
-            setTimeout(() => { try { form.removeChild(tmp); } catch(_){} }, 0);
+            setTimeout(postLikeHumanCalculate, 0);
 
           } catch (e) {
             console.error(e);
@@ -246,6 +277,7 @@
     </script>
   </form>
   <!-- ===== END CALCULATE FORM ===== -->
+
 
 
 
