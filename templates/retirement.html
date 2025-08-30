@@ -2372,18 +2372,19 @@ function ensureLayout(layout, seriesForAxis){
 
 
 <!-- === APPEND-ONLY: LITE V1 + TAX-LITE UI ================================== -->
-<div class="d-flex align-items-center justify-content-between">
-  <h5 class="card-title mb-0">🧪 Lite v1 (skeleton) – end-to-end check</h5>
-  <div class="d-flex align-items-center gap-2">
-    <div class="form-check form-switch me-3">
-      <!-- ✅ default ON -->
-      <input class="form-check-input" type="checkbox" id="litev1_mirror_toggle" checked>
-      <label class="form-check-label" for="litev1_mirror_toggle">Mirror top (full engine)</label>
+<div class="card mt-5" id="litev1_card">
+  <div class="card-body">
+    <div class="d-flex align-items-center justify-content-between">
+      <h5 class="card-title mb-0">🧪 Lite v1 (skeleton) – end-to-end check</h5>
+      <div class="d-flex align-items-center gap-2">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="litev1_full_mirror">
+          <label class="form-check-label small" for="litev1_full_mirror">Mirror top (full engine)</label>
+        </div>
+        <button id="litev1_ping" class="btn btn-outline-secondary btn-sm">Ping route</button>
+        <span id="litev1_status" class="small text-muted"></span>
+      </div>
     </div>
-    <button id="litev1_ping" class="btn btn-outline-secondary btn-sm">Ping route</button>
-    <span id="litev1_status" class="small text-muted"></span>
-  </div>
-</div>
 
     <!-- Core inputs (diagnostic) -->
     <div class="row g-3 mt-3">
@@ -2433,30 +2434,27 @@ function ensureLayout(layout, seriesForAxis){
     <hr class="my-3">
 
     <div class="row">
-        <div class="col-md-6">
-          <h6>Deterministic</h6>
-          <!-- ✅ add max-height + overflow -->
-          <div class="table-responsive" style="max-height: 220px; overflow:auto;">
-            <table class="table table-sm mb-0" id="litev1_det_table">
-              <thead><tr><th>Age</th><th>Assets</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <p class="small text-muted mb-0" id="litev1_det_meta"></p>
+      <div class="col-md-6">
+        <h6>Deterministic</h6>
+        <div class="table-responsive">
+          <table class="table table-sm" id="litev1_det_table">
+            <thead><tr><th>Age</th><th>Assets</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
-
-        <!-- Monte Carlo (unchanged) -->
-        <div class="col-md-6">
-          <h6>Monte Carlo (toy)</h6>
-          <p class="mb-1"><strong id="litev1_success">Success: —</strong></p>
-          <div class="table-responsive" style="max-height: 220px; overflow:auto;">
-            <table class="table table-sm" id="litev1_ruin_table">
-              <thead><tr><th>Age</th><th>P(Ruin by age) %</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <p class="small text-muted mb-0">Toy path only—no taxes or account rules yet.</p>
+        <p class="small text-muted mb-0" id="litev1_det_meta"></p>
+      </div>
+      <div class="col-md-6">
+        <h6>Monte Carlo (toy)</h6>
+        <p class="mb-1"><strong id="litev1_success">Success: —</strong></p>
+        <div class="table-responsive" style="max-height: 220px; overflow:auto;">
+          <table class="table table-sm" id="litev1_ruin_table">
+            <thead><tr><th>Age</th><th>P(Ruin by age) %</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
+        <p class="small text-muted mb-0">Toy path only—no taxes or account rules yet.</p>
+      </div>
     </div>
   </div>
 </div>
