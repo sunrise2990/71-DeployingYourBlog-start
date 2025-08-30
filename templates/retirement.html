@@ -2414,6 +2414,7 @@ function ensureLayout(layout, seriesForAxis){
         <input id="litev1_spend" type="number" class="form-control" value="6000">
       </div>
     </div>
+
     <div class="row g-3 mt-2">
       <div class="col-md-2">
         <label class="form-label">Return Rate (ann., decimal)</label>
@@ -2427,7 +2428,18 @@ function ensureLayout(layout, seriesForAxis){
         <label class="form-label">Seed</label>
         <input id="litev1_seed" type="number" class="form-control" value="123" min="0">
       </div>
-      <div class="col-md-6 d-flex align-items-end justify-content-end">
+
+      <!-- 👇 New: mirrored, read-only context from the top form -->
+      <div class="col-md-3">
+        <label class="form-label">Monthly Savings ($) <span class="text-muted">(mirrored)</span></label>
+        <input id="litev1_monthly_saving" type="number" class="form-control" value="0" readonly>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Income Tax Rate (%) <span class="text-muted">(mirrored)</span></label>
+        <input id="litev1_income_tax" type="number" class="form-control" value="0" readonly>
+      </div>
+
+      <div class="col-md-12 d-flex align-items-end justify-content-end">
         <button id="litev1_run" class="btn btn-primary">Run Lite v1</button>
       </div>
     </div>
@@ -2461,7 +2473,7 @@ function ensureLayout(layout, seriesForAxis){
   </div>
 </div>
 
-<!-- Tax-lite demo -->
+<!-- Tax-lite demo (unchanged) -->
 <div class="card mt-4" id="litev1_tax_card">
   <div class="card-body">
     <div class="d-flex align-items-center justify-content-between">
@@ -2473,7 +2485,6 @@ function ensureLayout(layout, seriesForAxis){
       </div>
     </div>
 
-    <!-- Small helpers: asset split + net CPP toggle -->
     <div class="row g-3 mt-2">
       <div class="col-md-3">
         <label class="form-label">Flat Tax Rate (%)</label>
@@ -2521,7 +2532,7 @@ function ensureLayout(layout, seriesForAxis){
 </div>
 
 <script>
-(function(){
+(function () {
   const $ = (id) => document.getElementById(id);
   const urlPing   = "/lite_v1/ping";
   const urlRunToy = "/lite_v1/run";            // toy path (existing)
@@ -2545,26 +2556,56 @@ function ensureLayout(layout, seriesForAxis){
     return Number.isFinite(v) ? v : undefined;
   };
 
+  // Mirror inputs from top calculator into Lite v1 fields (includes 100%→Taxable)
+  function syncLiteFromTop() {
+    const current_age    = numVal(pick("current_age"));
+    const retirement_age = numVal(pick("retirement_age"));
+    const lifespan       = numVal(pick("lifespan"));
+
+    const monthlySavingEl = pick("monthly_saving") || pick("annual_saving");
+    const monthly_saving  = numVal(monthlySavingEl);
+
+    const saving_inc      = (numVal(pick("saving_increase_rate")) ?? 0) / 100;
+    const current_assets  = numVal(pick("current_assets"));
+
+    const pre_ret  = ((numVal(pick("pre_retire_return_rate")) ?? numVal(pick("return_rate")) ?? 0) / 100);
+    const monthly_exp = numVal(pick("monthly_living_expense")) ?? numVal(pick("monthly_living_expenses"));
+    const tax_pct  = numVal(pick("income_tax_rate"));
+
+    if (current_age !== undefined) $("litev1_start_age").value = current_age;
+    if (lifespan     !== undefined) $("litev1_end_age").value   = lifespan;
+    if (monthly_exp  !== undefined) $("litev1_spend").value     = Math.round(monthly_exp);
+    if (pre_ret      !== undefined) $("litev1_return").value    = pre_ret.toFixed(4);
+
+    // Force 100% to Taxable
+    if (current_assets !== undefined) {
+      $("litev1_taxable").value = Math.round(current_assets);
+      $("litev1_rrsp").value    = 0;
+      $("litev1_tfsa").value    = 0;
+    }
+
+    // Mirror context (read-only display)
+    if (monthly_saving !== undefined) $("litev1_monthly_saving").value = Math.round(monthly_saving);
+    if (tax_pct        !== undefined) $("litev1_income_tax").value     = tax_pct; // already % on top
+  }
+
   // Build payload that mirrors the TOP calculator (what your big table uses)
   function buildFullMirrorPayloadFromTop() {
     const current_age    = numVal(pick("current_age"));
     const retirement_age = numVal(pick("retirement_age"));
     const lifespan       = numVal(pick("lifespan"));
 
-    // ⚠️ Monthly Savings field robustness: prefer 'monthly_saving', fall back to 'annual_saving'
+    // prefer 'monthly_saving', fall back to 'annual_saving'
     const monthlySavingEl = pick("monthly_saving") || pick("annual_saving");
     const monthly_saving  = numVal(monthlySavingEl);
 
     const saving_inc     = (numVal(pick("saving_increase_rate")) ?? 0) / 100;
     const current_assets = numVal(pick("current_assets"));
 
-    // ⚠️ Robust pre/post return rate IDs
     const pre_ret  = ((numVal(pick("pre_retire_return_rate")) ?? numVal(pick("return_rate")) ?? 0) / 100);
     const post_ret = ((numVal(pick("post_retire_return_rate")) ?? numVal(pick("return_rate_after")) ?? pre_ret) / 100);
 
-    // ⚠️ Monthly expense robustness
     const monthly_exp    = numVal(pick("monthly_living_expense")) ?? numVal(pick("monthly_living_expenses"));
-
     const infl           = (numVal(pick("inflation_rate")) ?? 0) / 100;
     const tax_rate       = (numVal(pick("income_tax_rate")) ?? 0) / 100;
 
@@ -2585,7 +2626,7 @@ function ensureLayout(layout, seriesForAxis){
     return {
       current_age: current_age,
       retirement_age: retirement_age,
-      annual_saving: (monthly_saving || 0) * 12.0,      // top is monthly; API expects annual
+      annual_saving: (monthly_saving || 0) * 12.0,
       saving_increase_rate: saving_inc,
       current_assets: current_assets,
       return_rate: pre_ret,
@@ -2606,19 +2647,26 @@ function ensureLayout(layout, seriesForAxis){
     try { const r=await fetch(urlPing,{credentials:"same-origin"}); setStatus("litev1_status",`PING ${r.status}`); }
     catch { setStatus("litev1_status","PING network error"); }
   });
-  $("litev1_tax_ping").addEventListener("click", async ()=>{
-    try{ const r=await fetch("/lite_v1/tax_ping",{credentials:"same-origin"}); setStatus("litev1_tax_status",`PING ${r.status}`); }
-    catch{ setStatus("litev1_tax_status","PING network error"); }
+
+  // If user toggles Mirror ON, immediately sync the fields from top
+  $("litev1_full_mirror")?.addEventListener("change", () => {
+    if ($("litev1_full_mirror").checked) syncLiteFromTop();
+  });
+
+  // Initial sync on load if mirror is ON
+  document.addEventListener("DOMContentLoaded", () => {
+    if ($("litev1_full_mirror")?.checked) syncLiteFromTop();
   });
 
   // ---- Run (toy OR full mirror) --------------------------------------------
   $("litev1_run").addEventListener("click", async ()=>{
-    // ✅ default to TRUE if the toggle element is missing for any reason
     const mirror = $("litev1_full_mirror") ? $("litev1_full_mirror").checked : true;
 
     try{
       if (mirror) {
-        // full mirror: send top inputs to tiny route that should call run_retirement_projection
+        // make sure visible inputs match the top before we call the full engine
+        syncLiteFromTop();
+
         const payload = buildFullMirrorPayloadFromTop();
         const res = await fetch(urlRunFull, {
           method:"POST", credentials:"same-origin",
@@ -2684,35 +2732,13 @@ function ensureLayout(layout, seriesForAxis){
     }
   }
 
-  // ---- Sync from top planner (forces 100% to Taxable) ----------------------
+  // ---- “Use top inputs” button keeps forcing 100% → Taxable ----------------
   $("litev1_sync_top").addEventListener("click", ()=>{
-    const curAge = numVal(pick("current_age"));
-    const life   = numVal(pick("lifespan"));
-    const mExp   = numVal(pick("monthly_living_expense")) ?? numVal(pick("monthly_living_expenses"));
-    const retPct = numVal(pick("pre_retire_return_rate")) ?? numVal(pick("return_rate")); // % in UI (pre-ret)
-    const assets = numVal(pick("current_assets"));
-    const cpp    = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly"));
-
-    if (curAge !== undefined) $("litev1_start_age").value = curAge;
-    if (life   !== undefined) $("litev1_end_age").value   = life;
-
-    if (mExp !== undefined) {
-      let spend = mExp;
-      if ($("net_cpp_toggle")?.checked && cpp !== undefined) spend = Math.max(0, spend - cpp);
-      $("litev1_spend").value = Math.round(spend);
-    }
-    if (retPct !== undefined) $("litev1_return").value = (retPct/100).toFixed(4);
-
-    // Force 100% to Taxable (your request)
-    if (assets !== undefined) {
-      $("split_taxable").value = 100;
-      $("split_tfsa").value    = 0;
-      $("split_rrsp").value    = 0;
-
-      $("litev1_taxable").value = Math.round(assets);
-      $("litev1_tfsa").value    = 0;
-      $("litev1_rrsp").value    = 0;
-    }
+    syncLiteFromTop();
+    // also force the split controls, if you’re using them later
+    $("split_taxable").value = 100;
+    $("split_tfsa").value    = 0;
+    $("split_rrsp").value    = 0;
   });
 
   // ---- Tax-lite runners -----------------------------------------------------
@@ -2727,31 +2753,6 @@ function ensureLayout(layout, seriesForAxis){
       return_rate: Number($("litev1_return").value),
       flat_tax_rate: Number($("litev1_tax_rate").value)/100.0
     };
-  }
-
-  // --- Tax table (NO DECIMALS) ---
-  function renderTax(tdet, tag){
-    const tb=$("litev1_tax_table").querySelector("tbody"); tb.innerHTML="";
-    (tdet.rows||[]).forEach(r=>{
-      const tr=document.createElement("tr");
-      tr.innerHTML=`<td>${r.Age}</td>
-        <td>${iFmt(r.From_Taxable)}</td>
-        <td>${iFmt(r.From_TFSA)}</td>
-        <td>${iFmt(r.From_RRSP_Gross)}</td>
-        <td>${iFmt(r.Tax_On_RRSP)}</td>
-        <td>${r.Shortfall?iFmt(r.Shortfall):""}</td>
-        <td>${iFmt(r.End_Taxable)}</td>
-        <td>${iFmt(r.End_TFSA)}</td>
-        <td>${iFmt(r.End_RRSP)}</td>
-        <td>${iFmt(r.End_Total)}</td>`;
-      tb.appendChild(tr);
-    });
-    const t=Number(tdet.flat_tax_rate||0);
-    $("litev1_tax_meta").textContent =
-      `${tag} | Flat tax = ${(t*100).toFixed(0)}% | ` +
-      `Annual spend = ${iFmt(tdet.annual_spend)} | ` +
-      `Total taxes (all years) = ${iFmt(tdet.total_taxes)} | ` +
-      `Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
   }
 
   $("litev1_tax_run").addEventListener("click", async ()=>{
@@ -2775,9 +2776,34 @@ function ensureLayout(layout, seriesForAxis){
       renderTax(out.tax_det_rrif, (out.tax_det_rrif.rrif_min ? "RRIF min: ON" : "RRIF min: OFF"));
     }catch(e){ setStatus("litev1_tax_status","RRIF network error"); console.error(e); }
   });
+
+  function renderTax(tdet, tag){
+    const tb=$("litev1_tax_table").querySelector("tbody"); tb.innerHTML="";
+    (tdet.rows||[]).forEach(r=>{
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td>${r.Age}</td>
+        <td>${iFmt(r.From_Taxable)}</td>
+        <td>${iFmt(r.From_TFSA)}</td>
+        <td>${iFmt(r.From_RRSP_Gross)}</td>
+        <td>${iFmt(r.Tax_On_RRSP)}</td>
+        <td>${r.Shortfall?iFmt(r.Shortfall):""}</td>
+        <td>${iFmt(r.End_Taxable)}</td>
+        <td>${iFmt(r.End_TFSA)}</td>
+        <td>${iFmt(r.End_RRSP)}</td>
+        <td>${iFmt(r.End_Total)}</td>`;
+      tb.appendChild(tr);
+    });
+    const t=Number(tdet.flat_tax_rate||0);
+    $("litev1_tax_meta").textContent =
+      `${tag} | Flat tax = ${(t*100).toFixed(0)}% | ` +
+      `Annual spend = ${iFmt(tdet.annual_spend)} | ` +
+      `Total taxes (all years) = ${iFmt(tdet.total_taxes)} | ` +
+      `Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (first 25 rows)`;
+  }
 })();
 </script>
 <!-- === END APPEND-ONLY UI =================================================== -->
+
 
 
 
