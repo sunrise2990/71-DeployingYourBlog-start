@@ -2642,36 +2642,34 @@ function ensureLayout(layout, seriesForAxis){
     };
   }
 
-    // --- Helpers for yearly cashflows -----------------------------------------
-    const within = (x, a, b) => (x >= a && x <= b);
+  // --- Helpers for yearly cashflows -----------------------------------------
+  const within = (x, a, b) => (x >= a && x <= b);
 
-    function livingExpenseAtAge(cfg, age){
-      const yearsFromStart = Math.max(0, age - cfg.current_age);
-      return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, yearsFromStart);
-    }
-    function cppAtAge(cfg, age){
-      if (!within(age, cfg.cpp_start_age, cfg.cpp_end_age)) return 0;
-      // Inflate CPP annually from its first-pay year, not from current_age
-      const yearsFromCppStart = Math.max(0, age - cfg.cpp_start_age);
-      const baseAnnualCPP = (cfg.cpp_monthly || 0) * 12;
-      return baseAnnualCPP * Math.pow(1 + cfg.inflation_rate, yearsFromCppStart);
-    }
-    // Requested overlay formula (retired only)
-    function incomeTaxPaymentAtAge(cfg, age){
-      if (age < cfg.retirement_age) return 0;
-      const E = livingExpenseAtAge(cfg, age);
-      const C = cppAtAge(cfg, age);
-      const r = cfg.income_tax_rate || 0;
-      if (r <= 0) return 0;
-      return ((E + C) / (1 - r)) * r;
-    }
-    // Required draw from portfolio for the year
-    function requiredWithdrawalAtAge(cfg, age){
-      const E = livingExpenseAtAge(cfg, age);
-      const C = cppAtAge(cfg, age);
-      const T = incomeTaxPaymentAtAge(cfg, age);
-      return Math.max(0, E + T - C);
-    }
+  function livingExpenseAtAge(cfg, age){
+    const yearsFromStart = Math.max(0, age - cfg.current_age);
+    return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, yearsFromStart);
+  }
+  function cppAtAge(cfg, age){
+    if (!within(age, cfg.cpp_start_age, cfg.cpp_end_age)) return 0;
+    // Inflate CPP annually from first-pay year
+    const yearsFromCppStart = Math.max(0, age - cfg.cpp_start_age);
+    const baseAnnualCPP = (cfg.cpp_monthly || 0) * 12;
+    return baseAnnualCPP * Math.pow(1 + cfg.inflation_rate, yearsFromCppStart);
+  }
+  // Requested overlay formula (retired only)
+  function overlayIncomeTaxAtAge(cfg, age){
+    if (age < cfg.retirement_age) return 0;
+    const E = livingExpenseAtAge(cfg, age);
+    const C = cppAtAge(cfg, age);
+    const r = cfg.income_tax_rate || 0;
+    if (r <= 0) return 0;
+    return ((E + C) / (1 - r)) * r;
+  }
+  function baseNeedAtAge(cfg, age){
+    const E = livingExpenseAtAge(cfg, age);
+    const C = cppAtAge(cfg, age);
+    return Math.max(0, E - C);           // no overlay here
+  }
 
   function liqMap(asset_liquidations){
     const m = {};
@@ -2720,7 +2718,7 @@ function ensureLayout(layout, seriesForAxis){
     return { rows, taxable, rrsp, tfsa, lastAge: age - 1 };
   }
 
-  // --- Retirement: year-by-year; guard against over-taxing when no draws ----
+  // --- Retirement: two-pass per year (base need, then add overlay tax if needed)
   async function runTaxYearByYear(cfg, balances, rrif_min) {
     const endAge = cfg.life_expectancy;
     const startRet = cfg.retirement_age;
@@ -2729,80 +2727,83 @@ function ensureLayout(layout, seriesForAxis){
     let taxRows = [];
 
     for (let age = startRet; age <= endAge; age++) {
-      const W = requiredWithdrawalAtAge(cfg, age);  // includes income-tax overlay
+      // Pass A: spend = base need only (no overlay tax yet)
+      const tryOne = async (monthlySpend) => {
+        const payload = {
+          start_age: age,
+          end_age: age,
+          taxable: balances.taxable,
+          rrsp: balances.rrsp,
+          tfsa: balances.tfsa,
 
-      const payload = {
-        start_age: age,
-        end_age: age,
-        taxable: balances.taxable,
-        rrsp: balances.rrsp,
-        tfsa: balances.tfsa,
+          monthly_spend: monthlySpend,
+          return_rate: cfg.return_rate_after,
+          flat_tax_rate: Number($("litev1_tax_rate").value) / 100,  // ← ALWAYS read latest
 
-        monthly_spend: W / 12,
-        return_rate: cfg.return_rate_after,
-        flat_tax_rate: Number($("litev1_tax_rate").value) / 100,
+          retirement_age: startRet,
+          inflation_rate: cfg.inflation_rate,
+          income_tax_rate: cfg.income_tax_rate,
 
-        retirement_age: startRet,
-        inflation_rate: cfg.inflation_rate,
-        income_tax_rate: cfg.income_tax_rate,
+          cpp_monthly: cfg.cpp_monthly,
+          cpp_start_age: cfg.cpp_start_age,
+          cpp_end_age: cfg.cpp_end_age,
 
-        cpp_monthly: cfg.cpp_monthly,
-        cpp_start_age: cfg.cpp_start_age,
-        cpp_end_age: cfg.cpp_end_age,
+          asset_liquidations: (cfg.asset_liquidations || []).filter(l => l.age === age),
 
-        asset_liquidations: (cfg.asset_liquidations || []).filter(l => l.age === age),
+          rrif_min: !!rrif_min
+        };
 
-        rrif_min: !!rrif_min
+        const res = await fetch(rrif_min ? urlRRIF : urlTax, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const out = await res.json();
+        return (rrif_min ? out.tax_det_rrif : out.tax_det) || { rows: [] };
       };
 
-      const res = await fetch(rrif_min ? urlRRIF : urlTax, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const out = await res.json();
-      const det = (rrif_min ? out.tax_det_rrif : out.tax_det) || { rows: [] };
+      // First run with base need
+      const baseNeed = baseNeedAtAge(cfg, age);
+      let det = await tryOne(baseNeed / 12);
 
-      if (det.rows && det.rows.length) {
-        const row = det.rows[0];
+      if (!det.rows || !det.rows.length) break;
+      let row = det.rows[0];
 
-        // apply liquidation for this retirement year as a DEPOSIT to taxable
-        const add = lm[age] || 0;
-        if (add) {
-          row.End_Taxable = Number(row.End_Taxable || 0) + add;
-          row.End_Total   = Number(row.End_Total   || 0) + add;
-        }
+      // Determine if overlay tax applies this year (any taxable or RRSP draw)
+      const drewTaxableOrRRSP = Number(row.From_Taxable||0) > 0 || Number(row.From_RRSP_Gross||0) > 0;
 
-        // ----- GUARDS: no taxes when there are no taxable/RRSP draws ----------
-        const fromTaxable = Number(row.From_Taxable || 0);
-        const fromRRSP    = Number(row.From_RRSP_Gross || 0);
-
-        // backend tax for RRSP can sometimes appear even when no RRSP draw:
-        if (fromRRSP === 0) row.Tax_On_RRSP = 0;
-
-        // Only show Tax_On_Taxable when we actually drew from Taxable OR RRSP.
-        // (If spending is entirely covered by TFSA, taxes should be $0.)
-        if (fromTaxable > 0 || fromRRSP > 0) {
-          row.Tax_On_Taxable = Math.round(incomeTaxPaymentAtAge(cfg, age));
-        } else {
-          row.Tax_On_Taxable = 0;
-        }
-        // ----------------------------------------------------------------------
-
-        taxRows.push(row);
-
-        // advance balances to next year
-        balances = {
-          taxable: Number(row.End_Taxable || 0),
-          rrsp:    Number(row.End_RRSP   || 0),
-          tfsa:    Number(row.End_TFSA   || 0)
-        };
-      } else {
-        break;
+      let overlayTax = 0;
+      if (drewTaxableOrRRSP) {
+        overlayTax = Math.round(overlayIncomeTaxAtAge(cfg, age));
+        // Re-run the year including overlay tax in spend, so balances reflect it
+        det = await tryOne((baseNeed + overlayTax) / 12);
+        if (!det.rows || !det.rows.length) break;
+        row = det.rows[0];
       }
+
+      // apply liquidation as a deposit to taxable at this age
+      const add = lm[age] || 0;
+      if (add) {
+        row.End_Taxable = Number(row.End_Taxable || 0) + add;
+        row.End_Total   = Number(row.End_Total   || 0) + add;
+      }
+
+      // Show overlay as "Tax on Taxable"; guard RRSP tax if no RRSP draw
+      row.Tax_On_Taxable = drewTaxableOrRRSP ? overlayTax : 0;
+      if (Number(row.From_RRSP_Gross||0) === 0) row.Tax_On_RRSP = 0;
+
+      taxRows.push(row);
+
+      // advance balances
+      balances = {
+        taxable: Number(row.End_Taxable || 0),
+        rrsp:    Number(row.End_RRSP   || 0),
+        tfsa:    Number(row.End_TFSA   || 0)
+      };
     }
 
+    // earliest depletion
     let earliest = null;
     for (const r of taxRows) {
       if (Number(r.End_Total) <= 0) { earliest = Number(r.Age); break; }
@@ -2811,7 +2812,7 @@ function ensureLayout(layout, seriesForAxis){
     return {
       rows: taxRows,
       flat_tax_rate: Number($("litev1_tax_rate").value)/100,
-      annual_spend: Math.round(requiredWithdrawalAtAge(cfg, cfg.retirement_age)),
+      annual_spend: Math.round(baseNeedAtAge(cfg, cfg.retirement_age)), // report base need of first year
       earliest_depletion_age: earliest
     };
   }
@@ -2902,7 +2903,7 @@ function ensureLayout(layout, seriesForAxis){
         asset_liquidations: cfg.asset_liquidations
       });
 
-      // 2) Retirement to End Age year-by-year
+      // 2) Retirement to End Age year-by-year (two-pass solver)
       const tax = await runTaxYearByYear(cfg, { taxable: pre.taxable, rrsp: pre.rrsp, tfsa: pre.tfsa }, rrifMin);
 
       // 3) Merge rows and render
@@ -2943,12 +2944,13 @@ function ensureLayout(layout, seriesForAxis){
     const t=Number(tdet.flat_tax_rate||0);
     $("litev1_tax_meta").textContent =
       `${tag} | Flat tax = ${(t*100).toFixed(1)}% | ` +
-      `Required withdrawal (first retirement year) = ${iFmt(tdet.annual_spend)} | ` +
+      `Required withdrawal (first retirement year, before overlay) = ${iFmt(tdet.annual_spend)} | ` +
       `Earliest depletion age = ${tdet.earliest_depletion_age ?? "—"} (rows: ${tdet.rows?.length ?? 0})`;
   }
 })();
 </script>
 <!-- === END APPEND-ONLY UI =================================================== -->
+
 
 
 
