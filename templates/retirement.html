@@ -152,16 +152,17 @@
       </div>
     </div>
 
-    <!-- Init tooltips + load/delete + bullet-proof auto-calc -->
+    <!-- Init tooltips + load/delete + auto-calc -->
     <script>
       (function () {
-        // Tooltips
+        // Bootstrap tooltips
         [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
           .forEach(el => new bootstrap.Tooltip(el));
 
+        // CSRF (if available)
         const CSRF = {% if csrf_token is defined %}"{{ csrf_token() }}"{% else %}""{% endif %};
 
-        // Find your main calculator form
+        // Find the calculator form
         function getCalcForm() {
           return document.getElementById('retirement_form')
               || document.querySelector('form[action$="/retirement"]')
@@ -169,55 +170,64 @@
               || document.querySelector('form');
         }
 
-        // Submit exactly like a real user click by building a fresh POST form
-        function postLikeHumanCalculate() {
-          const src = getCalcForm();
-          if (!src) return;
-
-          const action = src.getAttribute('action') || '/retirement';
-
-          // Create a temporary form
-          const temp = document.createElement('form');
-          temp.method = 'POST';
-          temp.action = action;
-          temp.style.display = 'none';
-
-          // Copy all current fields (including CSRF)
-          const els = src.elements || [];
-          for (let i = 0; i < els.length; i++) {
-            const el = els[i];
-            if (!el || !el.name || el.disabled) continue;
-            const type = (el.type || '').toLowerCase();
-
-            // Only checked radios/checkboxes
-            if ((type === 'checkbox' || type === 'radio') && !el.checked) continue;
-
-            const hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.name = el.name;
-            hidden.value = el.value;
-            temp.appendChild(hidden);
-          }
-
-          // Force action=calculate
-          const calc = document.createElement('input');
-          calc.type = 'hidden';
-          calc.name = 'action';
-          calc.value = 'calculate';
-          temp.appendChild(calc);
-
-          // Attach + submit (full page POST, same as clicking Calculate)
-          document.body.appendChild(temp);
-          temp.submit();
+        // Find the real Calculate submitter inside the form
+        function getCalcSubmitter(form) {
+          return form.querySelector('button[type="submit"][name="action"][value="calculate"]')
+              || form.querySelector('input[type="submit"][name="action"][value="calculate"]');
         }
 
-        // Fill form fields from loaded scenario
+        // Submit EXACTLY like pressing Calculate (sets event.submitter properly)
+        function requestSubmitCalculate() {
+          const form = getCalcForm();
+          if (!form) return;
+
+          const calcBtn = getCalcSubmitter(form);
+
+          // If the calculate button exists but is disabled, enable it just for this submit
+          let reDisable = false;
+          if (calcBtn && calcBtn.disabled) {
+            calcBtn.disabled = false;
+            reDisable = true;
+          }
+
+          try {
+            if (typeof form.requestSubmit === 'function' && calcBtn) {
+              form.requestSubmit(calcBtn);        // Preferred: passes submitter
+            } else if (calcBtn) {
+              calcBtn.click();                    // Fallback: real click on submitter
+            } else {
+              // Last resort: create a temporary submitter so name/value are sent
+              const tmp = document.createElement('button');
+              tmp.type = 'submit';
+              tmp.name = 'action';
+              tmp.value = 'calculate';
+              tmp.style.display = 'none';
+              form.appendChild(tmp);
+              tmp.click();
+              setTimeout(() => { try { form.removeChild(tmp); } catch(_){} }, 0);
+            }
+          } finally {
+            if (reDisable) calcBtn.disabled = true;
+          }
+        }
+
+        // Fill the form with loaded inputs (keys match input names)
         function applyScenarioInputs(inputs) {
           if (!inputs) return;
           Object.keys(inputs).forEach((name) => {
             const el = document.querySelector('[name="' + name + '"]');
             if (!el) return;
-            try { el.value = inputs[name]; } catch (_) {}
+            try {
+              // Handle checkboxes/radios vs others
+              if (el.type === 'checkbox') {
+                el.checked = !!inputs[name];
+              } else if (el.type === 'radio') {
+                const r = document.querySelector('input[type="radio"][name="'+name+'"][value="'+inputs[name]+'"]');
+                if (r) r.checked = true;
+              } else {
+                el.value = inputs[name];
+              }
+            } catch (_) {}
           });
         }
 
@@ -232,12 +242,15 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
+            // The route returns form-ready keys under inputs_json
             const payload = data.inputs_json || data.inputs || {};
             applyScenarioInputs(payload);
 
-            // Confirm then compute immediately with a fresh POST submit
+            // Show confirmation, then submit as if "Calculate" was pressed
             alert(`Loaded scenario: ${data.scenario_name}`);
-            setTimeout(postLikeHumanCalculate, 0);
+
+            // Run after the blocking alert returns and DOM updates settle
+            queueMicrotask(() => setTimeout(requestSubmitCalculate, 0));
 
           } catch (e) {
             console.error(e);
