@@ -2442,7 +2442,7 @@ function ensureLayout(layout, seriesForAxis){
         <input id="litev1_seed" type="number" class="form-control" value="123" min="0">
       </div>
       <div class="col-md-2 d-flex align-items-end justify-content-end">
-        <button id="litev1_run" class="btn btn-primary w-100">Run plan</button>
+        <button id="litev1_run" class="btn btn-primary w-100" type="button">Run plan</button>
       </div>
     </div>
 
@@ -2457,7 +2457,7 @@ function ensureLayout(layout, seriesForAxis){
             <th>Baseline Assets (100% Taxable)</th>
             <th>From Taxable</th>
             <th>From TFSA</th>
-            <th>From RRSP (Gross)</th>
+            <th>From RRSP (Net)</th>
             <th>Tax on Taxable</th>
             <th>Tax on RRSP</th>
             <th>Shortfall</th>
@@ -2735,7 +2735,7 @@ function ensureLayout(layout, seriesForAxis){
 
       rows.push({
         Age: age,
-        From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0,
+        From_Taxable: 0, From_TFSA: 0, From_RRSP_Net: 0,
         Tax_On_Taxable: 0, Tax_On_RRSP: 0, Shortfall: 0,
         End_Taxable: taxable, End_TFSA: tfsa, End_RRSP: rrsp, End_Total: endTotal
       });
@@ -2795,13 +2795,21 @@ function ensureLayout(layout, seriesForAxis){
 
       const endTotal = t + f + r;
 
+      // --- Display draws (BUGFIXES) ---
+      // 1) From Taxable = base pass only (exclude overlay) to match 100% taxable baseline
+      const fromTax_display = r0(passBase.draws.fromTax);
+      const fromTFSA_display = r0(passBase.draws.fromTFSA);
+      // 2) RRSP displayed as NET so TFSA + RRSP(net) (+ Taxable) = base need
+      const rrspNet_display = r0(passBase.draws.fromRRSPGross * (1 - rrspFlat));
+      const rrspTax_display = r0(passBase.taxes.taxRRSP); // tax paired with base RRSP draw
+
       rows.push({
         Age: age,
-        From_Taxable: r0(passFinal.draws.fromTax),
-        From_TFSA: r0(passFinal.draws.fromTFSA),
-        From_RRSP_Gross: r0(passFinal.draws.fromRRSPGross),
+        From_Taxable: fromTax_display,
+        From_TFSA: fromTFSA_display,
+        From_RRSP_Net: rrspNet_display,
         Tax_On_Taxable: r0(overlayToTaxable),
-        Tax_On_RRSP: r0(passFinal.taxes.taxRRSP),
+        Tax_On_RRSP: rrspTax_display,
         Shortfall: r0(passFinal.shortfall) || 0,
         End_Taxable: r0(t),
         End_TFSA: r0(f),
@@ -2868,7 +2876,7 @@ function ensureLayout(layout, seriesForAxis){
         <td>${iFmt(baselineMap[r.Age])}</td>
         <td>${iFmt(r.From_Taxable||0)}</td>
         <td>${iFmt(r.From_TFSA||0)}</td>
-        <td>${iFmt(r.From_RRSP_Gross||0)}</td>
+        <td>${iFmt(r.From_RRSP_Net||0)}</td>
         <td>${iFmt(r.Tax_On_Taxable||0)}</td>
         <td>${iFmt(r.Tax_On_RRSP||0)}</td>
         <td>${r.Shortfall?iFmt(r.Shortfall):""}</td>
@@ -2919,6 +2927,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
+
 
 
 
