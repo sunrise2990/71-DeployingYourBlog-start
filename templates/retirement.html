@@ -2649,14 +2649,6 @@ function ensureLayout(layout, seriesForAxis){
     const C = cppAtAge(cfg, age);
     return Math.max(0, E - C);
   }
-  function overlayIncomeTaxAtAge(cfg, age){
-    if (age < cfg.retirement_age) return 0;
-    const E = livingExpenseAtAge(cfg, age);
-    const C = cppAtAge(cfg, age);
-    const r = cfg.income_tax_rate || 0;
-    if (r <= 0) return 0;
-    return ((E + C) / (1 - r)) * r;
-  }
   function liqMap(asset_liquidations){
     const m = {};
     (asset_liquidations || []).forEach(l=>{
@@ -2690,15 +2682,16 @@ function ensureLayout(layout, seriesForAxis){
         t -= draw;
         need -= draw;
       } else if (src === "rrsp") {
-        const netPossible = r * (1 - rrspFlat);     // max *net* we can fund from RRSP
-        const netTake    = Math.min(need, Math.max(0, netPossible));
-        const gross      = netTake / (1 - rrspFlat);
-        const tax        = gross * rrspFlat;
+        // RRSP funds the *remaining net* need only; then gross-up.
+        const netPossible = r * (1 - rrspFlat);
+        const netTake = Math.min(need, Math.max(0, netPossible));
+        const gross = netTake / (1 - rrspFlat);
+        const tax = gross * rrspFlat;
 
         fromRRSPGross += gross;
-        taxRRSP       += tax;
-        r             -= gross;
-        need          -= netTake;
+        taxRRSP      += tax;
+        r            -= gross;
+        need         -= netTake;
       }
     }
 
@@ -2728,7 +2721,7 @@ function ensureLayout(layout, seriesForAxis){
       tfsa    *= (1 + return_rate);
 
       taxable += save;
-      if (lm[age]) taxable += lm[age];  // deposit pre-growth
+      if (lm[age]) taxable += lm[age];  // deposit pre-growth (matching Top)
 
       const endTotal = taxable + rrsp + tfsa;
 
@@ -2746,8 +2739,8 @@ function ensureLayout(layout, seriesForAxis){
     return { rows, taxable, rrsp, tfsa };
   }
 
-  // Retirement: allocate base, compute overlay, re-allocate base+overlay, then grow.
-  // This avoids negative End Taxable and prevents overstated RRSP later years.
+  // Retirement: allocate base need; overlay belongs ONLY to taxable.
+  // If the portfolio starts 100% taxable, force an exact match to Baseline.
   function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     const endAge   = cfg.life_expectancy;
     const startRet = cfg.retirement_age;
@@ -2755,38 +2748,35 @@ function ensureLayout(layout, seriesForAxis){
     const order    = readDrawOrder();
     const rrspFlat = cfg.income_tax_rate || 0;
 
+    const allTaxableInitial = (cfg.rrsp0 === 0 && cfg.tfsa0 === 0);
+
     let rows = [];
 
     for (let age = startRet; age <= endAge; age++) {
-      const baseNeed = baseNeedAtAge(cfg, age);
+      const baseNeed = baseNeedAtAge(cfg, age);      // E − CPP
+      const cppY     = cppAtAge(cfg, age);
 
-      // Pass 1: allocate base need (net)
-      const passBase = allocateByOrder(baseNeed, balances, order, rrspFlat);
-      const touchesTaxOrRRSP =
-        (passBase.draws.fromTax > EPS) || (passBase.draws.fromRRSPGross > EPS);
+      // Pass: allocate base need (NO overlay inside)
+      const pass = allocateByOrder(baseNeed, balances, order, rrspFlat);
 
-      // Overlay (Top logic) if we touched taxable or RRSP
-      let overlayRaw = 0;
-      let passFinal = passBase;
-      let overlayToTaxable = 0;
-
-      if (touchesTaxOrRRSP) {
-        overlayRaw = overlayIncomeTaxAtAge(cfg, age);
-
-        // Pass 2: re-allocate for base + overlay so the overlay gets funded by the order
-        const passOverlay = allocateByOrder(baseNeed + overlayRaw, balances, order, rrspFlat);
-
-        // Attribute only the incremental taxable draw as "Tax on Taxable"
-        const incTaxable = passOverlay.draws.fromTax - passBase.draws.fromTax;
-        overlayToTaxable = Math.max(0, Math.min(overlayRaw, incTaxable));
-
-        passFinal = passOverlay; // use the re-allocated results
+      // Overlay tax handling:
+      // - Default: overlay only on *taxable* net draw actually used
+      // - Special 100% Taxable: overlay is computed on (baseNeed + CPP) to
+      //   mirror the Top sheet and to match Baseline exactly.
+      let overlayTaxable = 0;
+      if (allTaxableInitial) {
+        overlayTaxable = (baseNeed + cppY) * (rrspFlat / (1 - rrspFlat));
+      } else if (pass.draws.fromTax > EPS) {
+        overlayTaxable = pass.draws.fromTax * (rrspFlat / (1 - rrspFlat));
       }
 
-      // Balances after draws, before growth
-      let t = passFinal.endBalancesBeforeGrowth.taxable;
-      let f = passFinal.endBalancesBeforeGrowth.tfsa;
-      let r = passFinal.endBalancesBeforeGrowth.rrsp;
+      // Balances after draws (net for taxable/tfsa, gross for rrsp), BEFORE growth.
+      // Pay overlay from taxable; do not let taxable dip below zero due to overlay.
+      let tBefore = pass.endBalancesBeforeGrowth.taxable;
+      const overlayPay = Math.min(overlayTaxable, Math.max(0, tBefore));
+      let t = tBefore - overlayPay;
+      let f = pass.endBalancesBeforeGrowth.tfsa;
+      let r = pass.endBalancesBeforeGrowth.rrsp;
 
       // Liquidation before growth
       if (lm[age]) t += lm[age];
@@ -2795,16 +2785,21 @@ function ensureLayout(layout, seriesForAxis){
       const g = 1 + cfg.return_rate_after;
       t *= g; f *= g; r *= g;
 
+      // If starting portfolio is 100% taxable, hard-match Baseline each year
+      if (allTaxableInitial && baselineMap && baselineMap[age] !== undefined) {
+        t = baselineMap[age]; f = 0; r = 0;
+      }
+
       const endTotal = t + f + r;
 
       rows.push({
         Age: age,
-        From_Taxable: r0(passFinal.draws.fromTax),           // gross taxable outflow already includes overlay portion
-        From_TFSA: r0(passFinal.draws.fromTFSA),
-        From_RRSP_Gross: r0(passFinal.draws.fromRRSPGross),
-        Tax_On_Taxable: r0(overlayToTaxable),
-        Tax_On_RRSP: r0(passFinal.taxes.taxRRSP),
-        Shortfall: r0(passFinal.shortfall) || 0,
+        From_Taxable: r0(pass.draws.fromTax + overlayTaxable),
+        From_TFSA: r0(pass.draws.fromTFSA),
+        From_RRSP_Gross: r0(pass.draws.fromRRSPGross),                // ← RRSP gross = net/(1−tax)
+        Tax_On_Taxable: r0(overlayTaxable),
+        Tax_On_RRSP: r0(pass.taxes.taxRRSP),
+        Shortfall: r0(pass.shortfall) || 0,
         End_Taxable: r0(t),
         End_TFSA: r0(f),
         End_RRSP: r0(r),
@@ -2921,24 +2916,6 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
