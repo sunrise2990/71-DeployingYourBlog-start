@@ -1,106 +1,140 @@
 import numpy as np
 from datetime import datetime
 
-# 🔹 Deterministic Retirement Projection
+# 🔹 Deterministic Retirement Projection (spend-first / contribute-first)
 def run_retirement_projection(
-    current_age,
-    retirement_age,
-    annual_saving,
-    saving_increase_rate,
-    current_assets,
-    return_rate,
-    return_rate_after,  # No default needed if required
-    annual_expense,
-    cpp_monthly,
-    cpp_start_age,
-    cpp_end_age,
-    asset_liquidations,
-    inflation_rate,
-    life_expectancy,
-    income_tax_rate=0.15,
+    current_age: int,
+    retirement_age: int,
+    annual_saving: float,
+    saving_increase_rate: float,
+    current_assets: float,
+    return_rate: float,
+    return_rate_after: float,
+    annual_expense: float,
+    cpp_monthly: float,
+    cpp_start_age: int,
+    cpp_end_age: int,
+    asset_liquidations: list[dict],
+    inflation_rate: float,
+    life_expectancy: int,
+    income_tax_rate: float = 0.15,
 ):
-    table = []
-    assets = current_assets
+    """
+    Yearly roll-forward using spend-first timing:
+      • Pre-retirement: (assets + savings [+ liquidation]) * (1 + r_pre)
+      • Retirement: max(0, assets - withdrawal [+ liquidation]) * (1 + r_post)
+    Withdrawal includes an income-tax overlay:
+      tax = ((living_exp + cpp) / (1 - tax_rate)) * tax_rate
+    CPP inflates from its first-pay year.
+    """
+    table: list[dict] = []
+    assets = float(current_assets)
     start_year = datetime.now().year
 
-    for i, age in enumerate(range(current_age, life_expectancy + 1)):
-        row = {
+    # Helper: sum liquidations at a given age
+    def _liq_at(age: int) -> float:
+        return float(sum(x.get("amount", 0.0) for x in asset_liquidations if int(x.get("age", -1)) == age))
+
+    for i, age in enumerate(range(int(current_age), int(life_expectancy) + 1)):
+        row: dict = {
             "Age": age,
             "Year": str(start_year + i),
             "Retire": "retire" if age == retirement_age else "",
         }
 
-        # 🔸 Inflation-adjusted expense
-        inflation_factor = (1 + inflation_rate) ** (age - current_age)
-        living_exp = annual_expense * inflation_factor
+        # --- Inflation-adjusted living expense (from 'current_age')
+        years_from_start = max(0, age - current_age)
+        living_exp = float(annual_expense) * ((1.0 + float(inflation_rate)) ** years_from_start)
         row["Living_Exp"] = round(living_exp)
 
-        # 🔸 CPP Support
-        cpp_support = (
-            cpp_monthly * (1 + inflation_rate) ** (age - cpp_start_age) * 12
-            if cpp_start_age <= age <= cpp_end_age
-            else 0
-        )
+        # --- CPP support (inflated from first-pay year only)
+        if cpp_start_age <= age <= cpp_end_age:
+            years_from_cpp_start = max(0, age - cpp_start_age)
+            cpp_support = float(cpp_monthly) * 12.0 * ((1.0 + float(inflation_rate)) ** years_from_cpp_start)
+        else:
+            cpp_support = 0.0
         row["CPP_Support"] = round(cpp_support) if cpp_support != 0 else None
 
-        # 🔸 Income Tax Payment = (living_exp + cpp_support) * 0.15
+        # --- Income-tax overlay (retired only; gross-up on living+CPP)
         retired = age >= retirement_age
-        income_tax = (living_exp + cpp_support) / (1 - income_tax_rate) * income_tax_rate if retired else 0
-        row["Income_Tax_Payment"] = round(income_tax)
+        if retired and income_tax_rate > 0:
+            income_tax = (living_exp + cpp_support) / (1.0 - float(income_tax_rate)) * float(income_tax_rate)
+        else:
+            income_tax = 0.0
+        row["Income_Tax_Payment"] = round(income_tax) if income_tax != 0 else None
 
-        # 🔸 Net retirement expense = living_exp - cpp_support + income_tax
-        retired = age >= retirement_age
-        net_expense = living_exp - cpp_support + income_tax
+        # --- Net retirement expense shown for convenience
+        net_expense = (living_exp - cpp_support + income_tax) if retired else 0.0
         row["Living_Exp_Retirement"] = round(net_expense) if retired else None
 
-        # 🔸 Asset Liquidation
-        liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
+        # --- Any scheduled liquidation this year (treated as start-of-year inflow)
+        liquidation = _liq_at(age)
         row["Asset_Liquidation"] = round(liquidation) if liquidation != 0 else None
 
-        # 🔸 Determine return rate based on retirement status
-        applied_return_rate = return_rate if age < retirement_age else return_rate_after
+        # --- Pick correct return rate
+        applied_return_rate = float(return_rate if age < retirement_age else return_rate_after)
+        row["Return_Rate"] = applied_return_rate * 100.0
 
-        # 🔸 Asset updates
         if not retired:
-            saving_factor = (1 + saving_increase_rate) ** (age - current_age)
-            savings = annual_saving * saving_factor
-            inv_return = assets * applied_return_rate
-            assets += savings + inv_return
+            # ===== Accumulation year =====
+            # Savings applied at the BEGINNING of the year
+            saving_factor = (1.0 + float(saving_increase_rate)) ** (age - current_age)
+            savings = float(annual_saving) * saving_factor
 
-            row["Savings"] = round(savings)
+            # Spend-first analogue for accumulation is "contribute-first":
+            # grow (assets + savings + liquidation)
+            base_before_return = assets + savings + liquidation
+            base_before_return = max(0.0, base_before_return)
+
+            inv_return = base_before_return * applied_return_rate
+            assets = base_before_return + inv_return
+
+            row["Savings"] = round(savings) if savings != 0 else None
+            row["Investment_Return"] = round(inv_return)
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
-            row["Investment_Return"] = round(inv_return)
-            row["Return_Rate"] = applied_return_rate * 100  # Add return rate per row
             row["Withdrawal_Rate"] = None
+
         else:
-            inv_return = assets * applied_return_rate
-            withdrawal = net_expense
-            assets += inv_return - withdrawal + liquidation
+            # ===== Retirement year =====
+            # Withdraw at the BEGINNING of the year, then grow remaining
+            withdrawal = max(0.0, net_expense)
+            base_before_return = assets - withdrawal + liquidation
+            if base_before_return < 0:
+                base_before_return = 0.0  # cannot go below zero before return
+
+            inv_return = base_before_return * applied_return_rate
+            assets = base_before_return + inv_return
 
             row["Savings"] = None
+            row["Investment_Return"] = round(inv_return)
             row["Asset"] = round(assets)
             row["Asset_Retirement"] = round(assets)
-            row["Investment_Return"] = round(inv_return)
-            row["Return_Rate"] = applied_return_rate * 100  # Add return rate per row
-            row["Withdrawal_Rate"] = round((withdrawal / assets * 100), 1) if assets > 0 else None
+            # Withdrawal rate relative to start-of-year balance if positive
+            start_of_year_assets = assets / (1.0 + applied_return_rate) if applied_return_rate > -1.0 else assets
+            row["Withdrawal_Rate"] = (
+                round((withdrawal / start_of_year_assets) * 100.0, 1) if start_of_year_assets > 0 else None
+            )
 
         table.append(row)
 
     return {
         "final_assets": round(assets),
-        "table": table
+        "table": table,
     }
 
 
-# 🔹 Sensitivity Analysis Function
-# helper: consistent way to get final assets
+# ========================== Sensitivity Analysis ==============================
+
 def _final_assets_from_params(params: dict) -> float:
     out = run_retirement_projection(**params)
     return float(out.get("final_assets", 0.0))
 
-# 🔹 Sensitivity Analysis (with 1% retirement_age handling)
-def sensitivity_analysis(baseline_params: dict, variables: list[str], delta: float = 0.01) -> dict[str, dict[str, float]]:
+def sensitivity_analysis(
+    baseline_params: dict,
+    variables: list[str],
+    delta: float = 0.01
+) -> dict[str, dict[str, float]]:
     base_assets = _final_assets_from_params(baseline_params)
     sensitivities: dict[str, dict[str, float]] = {}
 
@@ -120,7 +154,7 @@ def sensitivity_analysis(baseline_params: dict, variables: list[str], delta: flo
             up_params = dict(baseline_params)
             dn_params = dict(baseline_params)
             up_params["retirement_age"] = int(min(max_age, round(ra + 1)))
-            dn_params["retirement_age"] = int(max(cur_age,  round(ra - 1)))
+            dn_params["retirement_age"] = int(max(cur_age, round(ra - 1)))
 
             up_assets = _final_assets_from_params(up_params)
             dn_assets = _final_assets_from_params(dn_params)
@@ -133,10 +167,10 @@ def sensitivity_analysis(baseline_params: dict, variables: list[str], delta: flo
             sensitivities[var] = {"sensitivity_pct": sensitivity_pct, "dollar_impact": dollar_impact}
             continue
 
-        # default 1% bump
-        orig = baseline_params[var]
+        # default 1% bump for other scalar variables
+        orig = float(baseline_params[var])
         perturbed = dict(baseline_params)
-        perturbed[var] = orig * (1 + delta)
+        perturbed[var] = orig * (1.0 + delta)
 
         new_assets = _final_assets_from_params(perturbed)
         dollar_impact = new_assets - base_assets
@@ -147,9 +181,8 @@ def sensitivity_analysis(baseline_params: dict, variables: list[str], delta: flo
     return sensitivities
 
 
+# ====================== Monte Carlo (spend-first timing) ======================
 
-
-# 🔹 Monte Carlo Simulation (unchanged)
 def run_monte_carlo_simulation_locked_inputs(
     *,
     current_age: int,
@@ -169,45 +202,71 @@ def run_monte_carlo_simulation_locked_inputs(
     asset_liquidations: list,
     life_expectancy: int,
     num_simulations: int = 300,
-    income_tax_rate=0.15,
+    income_tax_rate: float = 0.15,
 ):
+    """
+    MC version mirroring deterministic timing:
+      • Pre-retirement: (assets + savings [+ liquidation]) * (1 + r)
+      • Retirement: max(0, assets - withdrawal [+ liquidation]) * (1 + r)
+    CPP inflates stochastically from its first-pay year using the same
+    per-year inflation draws as living expenses (post start age only).
+    """
     years = life_expectancy - current_age + 1
-    ages = np.arange(current_age, life_expectancy + 1)
+    ages = np.arange(current_age, life_expectancy + 1, dtype=int)
     sim_paths = np.zeros((num_simulations, years), dtype=float)
 
+    # Convenience: gather liquidations per age
+    liq_map = {}
+    for x in asset_liquidations or []:
+        try:
+            liq_map[int(x.get("age", -1))] = liq_map.get(int(x.get("age", -1)), 0.0) + float(x.get("amount", 0.0))
+        except Exception:
+            pass
+
     for s in range(num_simulations):
-        assets = current_assets
+        assets = float(current_assets)
         cum_infl = 1.0
+        cpp_factor = 1.0  # inflates once CPP starts; remains 1.0 before that
 
         for idx, age in enumerate(ages):
             retired = age >= retirement_age
-            # Choose return mean based on pre/post retirement
-            applicable_return_mean = return_mean if not retired else return_mean_after
-            rand_return = np.random.normal(applicable_return_mean, return_std)
-            rand_infl = np.random.normal(inflation_mean, inflation_std)
-            cum_infl *= (1 + rand_infl)
 
-            living_exp = annual_expense * cum_infl
-            cpp_support = (
-                cpp_monthly * (cum_infl / (1 + inflation_mean)) * 12
-                if cpp_start_age <= age <= cpp_end_age
-                else 0.0
-            )
-            liquidation = sum(x["amount"] for x in asset_liquidations if x["age"] == age)
+            # Per-year random draws
+            r_mean = float(return_mean_after if retired else return_mean)
+            rand_return = np.random.normal(r_mean, float(return_std))
+            rand_infl = np.random.normal(float(inflation_mean), float(inflation_std))
 
-            # Income tax payment applies only after retirement
-            income_tax = (living_exp + cpp_support) / (1 - income_tax_rate) * income_tax_rate if retired else 0.0
+            # Update inflation state for living expense
+            cum_infl *= (1.0 + rand_infl)
+            living_exp = float(annual_expense) * cum_infl
+
+            # CPP support (inflated from start year only using the same inflation draws)
+            if cpp_start_age <= age <= cpp_end_age:
+                if age > cpp_start_age:
+                    cpp_factor *= (1.0 + rand_infl)  # advance only after start year
+                cpp_support = float(cpp_monthly) * 12.0 * cpp_factor
+            else:
+                cpp_support = 0.0
+
+            # Liquidation applied at the start of the year
+            liquidation = float(liq_map.get(int(age), 0.0))
+
+            # Income-tax overlay (retired only)
+            income_tax = ((living_exp + cpp_support) / (1.0 - income_tax_rate) * income_tax_rate) if retired else 0.0
 
             if not retired:
-                saving_factor = (1 + saving_increase_rate) ** (age - current_age)
-                savings = annual_saving * saving_factor
-                inv_return = assets * rand_return
-                assets = max(0.0, assets + savings + inv_return)
+                # Contribute-first
+                saving_factor = (1.0 + float(saving_increase_rate)) ** (age - current_age)
+                savings = float(annual_saving) * saving_factor
+                base_before_return = assets + savings + liquidation
+                base_before_return = max(0.0, base_before_return)
+                assets = base_before_return * (1.0 + rand_return)
             else:
-                # Withdrawal includes income tax payment
+                # Spend-first
                 withdrawal = max(0.0, living_exp - cpp_support + income_tax)
-                inv_return = assets * rand_return
-                assets = max(0.0, assets + inv_return - withdrawal + liquidation)
+                base_before_return = assets - withdrawal + liquidation
+                base_before_return = max(0.0, base_before_return)
+                assets = base_before_return * (1.0 + rand_return)
 
             sim_paths[s, idx] = assets
 
@@ -220,18 +279,15 @@ def run_monte_carlo_simulation_locked_inputs(
     return {
         "ages": ages.tolist(),
         "sim_paths": sim_paths,
-        "percentiles": {
-            "p10": p10.tolist(),
-            "p50": p50.tolist(),
-            "p90": p90.tolist(),
-        },
+        "percentiles": {"p10": p10.tolist(), "p50": p50.tolist(), "p90": p90.tolist()},
         "depletion_probs": probs,
     }
+
 
 # 🔸 Track % of simulations depleted before checkpoints
 def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, checkpoints: list[int]):
     n_sims, n_years = sim_paths.shape
-    probs = {}
+    probs: dict[int, float] = {}
     ever_zero = (sim_paths == 0).any(axis=1).mean()
 
     for cp_age in checkpoints:
@@ -242,16 +298,13 @@ def _compute_depletion_probabilities(sim_paths: np.ndarray, start_age: int, chec
         if idx >= n_years:
             idx = n_years - 1
         depleted = (sim_paths[:, : idx + 1] == 0).any(axis=1).mean()
-        probs[cp_age] = depleted
+        probs[cp_age] = float(depleted)
 
-    probs["ever"] = ever_zero
+    probs["ever"] = float(ever_zero)
     return probs
 
 
-
 # ==== Live-WhatIf: RNG seeding utilities (non-invasive) ====
-# Safe drop-in: lets us seed around your existing MC function without editing it.
-
 import random as _py_random
 import numpy as _np
 from contextlib import contextmanager as _ctxmgr
@@ -259,18 +312,14 @@ from contextlib import contextmanager as _ctxmgr
 @_ctxmgr
 def _mc_seeded(seed: int):
     """Seed python & numpy RNGs, run code, then restore previous state."""
-    # Save RNG states
     _py_state = _py_random.getstate()
     _np_state = _np.random.get_state()
 
-    # Seed
     _py_random.seed(seed)
     _np.random.seed(seed)
-
     try:
         yield
     finally:
-        # Restore
         _py_random.setstate(_py_state)
         _np.random.set_state(_np_state)
 
@@ -278,8 +327,6 @@ def run_mc_with_seed(seed: int, runner, *args, **kwargs):
     """Run existing MC function 'runner' reproducibly without modifying it."""
     with _mc_seeded(seed):
         return runner(*args, **kwargs)
-
-
 
 
 # === APPEND-ONLY: Lite v1 tax-lite + RRIF helpers ============================
@@ -296,9 +343,45 @@ class LiteV1TaxParams:
     monthly_spend: float = 6000.0
     return_rate: float = 0.05       # annual deterministic growth (toy)
     flat_tax_rate: float = 0.25     # tax only on RRSP withdrawals (toy)
+    # Optional: honor a draw order if the route supplies one
+    draw_order: Optional[List[str]] = None  # e.g. ["tfsa","taxable","rrsp"]
+
+def _withdraw_in_order(
+    need: float,
+    taxable: float,
+    tfsa: float,
+    rrsp: float,
+    t: float,
+    order: List[str]
+):
+    """Withdraw according to 'order'. RRSP step grosses-up by flat tax t."""
+    use_tax = use_tfsa = use_rrsp_g = tax_rrsp = 0.0
+    for bucket in order:
+        if need <= 0:
+            break
+        if bucket == "taxable" and taxable > 0:
+            take = min(taxable, need)
+            taxable -= take
+            use_tax += take
+            need -= take
+        elif bucket == "tfsa" and tfsa > 0:
+            take = min(tfsa, need)
+            tfsa -= take
+            use_tfsa += take
+            need -= take
+        elif bucket == "rrsp" and rrsp > 0:
+            gross = (need / (1.0 - t)) if t < 0.999 else need
+            take_g = min(rrsp, gross)
+            rrsp -= take_g
+            net = take_g * (1.0 - t)
+            tax = take_g - net
+            use_rrsp_g += take_g
+            tax_rrsp += tax
+            need -= net
+    return need, taxable, tfsa, rrsp, use_tax, use_tfsa, use_rrsp_g, tax_rrsp
 
 def run_lite_tax_det_v1(p: LiteV1TaxParams) -> Dict[str, Any]:
-    """Toy deterministic engine with simple account order and flat tax on RRSP."""
+    """Toy deterministic engine with configurable account order & flat RRSP tax."""
     years = list(range(int(p.start_age), int(p.end_age) + 1))
     annual_spend = float(p.monthly_spend) * 12.0
     t = max(0.0, min(0.90, float(p.flat_tax_rate)))
@@ -307,32 +390,25 @@ def run_lite_tax_det_v1(p: LiteV1TaxParams) -> Dict[str, Any]:
     rrsp    = float(p.rrsp)
     tfsa    = float(p.tfsa)
 
+    # Default order if none supplied
+    order = [b.lower() for b in (p.draw_order or ["taxable", "tfsa", "rrsp"])]
+
     rows: List[Dict[str, Any]] = []
     earliest_depletion_age: Optional[int] = None
     total_taxes = 0.0
 
     for age in years:
-        # grow accounts
+        # grow accounts first in this toy engine
         g = 1.0 + float(p.return_rate)
         taxable *= g; rrsp *= g; tfsa *= g
 
         need = annual_spend
 
-        # spend from taxable, then TFSA
-        use_tax = min(taxable, need); taxable -= use_tax; need -= use_tax
-        use_tfsa = min(tfsa, need);   tfsa    -= use_tfsa; need -= use_tfsa
-
-        # RRSP gross-up if still short
-        use_rrsp_g = 0.0
-        tax_rrsp   = 0.0
-        if need > 0.0 and rrsp > 0.0:
-            gross = (need / (1.0 - t)) if t < 0.999 else need
-            use_rrsp_g = min(rrsp, gross)
-            rrsp -= use_rrsp_g
-            net = use_rrsp_g * (1.0 - t)
-            tax_rrsp = use_rrsp_g - net
-            need -= net
-            total_taxes += tax_rrsp
+        # withdraw according to order
+        need, taxable, tfsa, rrsp, use_tax, use_tfsa, use_rrsp_g, tax_rrsp = _withdraw_in_order(
+            need, taxable, tfsa, rrsp, t, order
+        )
+        total_taxes += tax_rrsp
 
         shortfall = need if need > 0 else None
         if shortfall and earliest_depletion_age is None:
@@ -382,6 +458,8 @@ def run_lite_tax_det_rrif_v1(p: LiteV1TaxRrifParams) -> Dict[str, Any]:
     rrsp    = float(p.rrsp)
     tfsa    = float(p.tfsa)
 
+    order = [b.lower() for b in (p.draw_order or ["taxable", "tfsa", "rrsp"])]
+
     rows: List[Dict[str, Any]] = []
     earliest: Optional[int] = None
     total_taxes = 0.0
@@ -399,23 +477,14 @@ def run_lite_tax_det_rrif_v1(p: LiteV1TaxRrifParams) -> Dict[str, Any]:
                 rrsp -= forced_g
                 forced_net = forced_g * (1.0 - t)
                 forced_tax = forced_g - forced_net
-                taxable += forced_net     # net deposits into taxable
+                taxable += forced_net     # net deposits into taxable (toy)
                 total_taxes += forced_tax
 
         need = annual_spend
-        use_tax = min(taxable, need); taxable -= use_tax; need -= use_tax
-        use_tfsa = min(tfsa, need);   tfsa    -= use_tfsa; need -= use_tfsa
-
-        use_rrsp_g = 0.0
-        tax_rrsp   = 0.0
-        if need > 0.0 and rrsp > 0.0:
-            gross = (need / (1.0 - t)) if t < 0.999 else need
-            use_rrsp_g = min(rrsp, gross)
-            rrsp -= use_rrsp_g
-            net = use_rrsp_g * (1.0 - t)
-            tax_rrsp = use_rrsp_g - net
-            need -= net
-            total_taxes += tax_rrsp
+        need, taxable, tfsa, rrsp, use_tax, use_tfsa, use_rrsp_g, tax_rrsp = _withdraw_in_order(
+            need, taxable, tfsa, rrsp, t, order
+        )
+        total_taxes += tax_rrsp
 
         if need > 0 and earliest is None:
             earliest = age
@@ -444,4 +513,5 @@ def run_lite_tax_det_rrif_v1(p: LiteV1TaxRrifParams) -> Dict[str, Any]:
         "rows": rows[:25],
     }
 # === END APPEND-ONLY =========================================================
+
 

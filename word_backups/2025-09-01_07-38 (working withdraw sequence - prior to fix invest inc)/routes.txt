@@ -1684,45 +1684,10 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
             current_app.logger.exception("lite_v1 det_from_top failed: %s", e)
             return jsonify({"ok": False, "error": str(e)}), 400
 
-
     # Tax-lite diagnostics
     @projects_bp.route("/lite_v1/tax_ping", methods=["GET"])
     def lite_v1_tax_ping():
         return jsonify({"ok": True})
-
-
-    # --- helper: normalize & validate withdrawal order coming from UI -------------
-    def _sanitize_draw_order(val):
-        """
-        Accepts list/tuple like ["tfsa","rrsp","taxable"] or a string
-        like 'tfsa_rrsp_taxable' or 'tfsa, rrsp, taxable'. Returns a
-        normalized list or None to fall back to engine default.
-        """
-        if val is None:
-            return None
-
-        allowed = {"taxable", "tfsa", "rrsp"}
-
-        if isinstance(val, (list, tuple)):
-            seq = [str(x).strip().lower() for x in val]
-        elif isinstance(val, str):
-            s = val.strip().lower()
-            # support a few cheap encodings
-            if any(sep in s for sep in [",", " ", ">", "–", "-"]):
-                import re
-                parts = [p for p in re.split(r"[,\s>–-]+", s) if p]
-            else:
-                parts = s.split("_")
-            seq = [p for p in parts if p in allowed]
-        else:
-            return None
-
-        if len(seq) == 3 and set(seq) == allowed:
-            return seq
-        return None
-
-
-    # -----------------------------------------------------------------------------
 
     @projects_bp.route("/lite_v1/tax_det", methods=["POST"])
     @_csrf_exempt
@@ -1744,12 +1709,9 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
             monthly_spend=N(data.get("monthly_spend"), 6000.0),
             return_rate=N(data.get("return_rate"), 0.05),
             flat_tax_rate=N(data.get("flat_tax_rate"), 0.25),
-            # NEW: honor withdrawal order from UI
-            draw_order=_sanitize_draw_order(data.get("draw_order")),
         )
         out = run_lite_tax_det_v1(p)
         return jsonify({"ok": True, "tax_det": out})
-
 
     @projects_bp.route("/lite_v1/tax_det_rrif", methods=["POST"])
     @_csrf_exempt
@@ -1772,12 +1734,9 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
             return_rate=N(data.get("return_rate"), 0.05),
             flat_tax_rate=N(data.get("flat_tax_rate"), 0.25),
             rrif_min=bool(data.get("rrif_min", True)),
-            # NEW: honor withdrawal order from UI
-            draw_order=_sanitize_draw_order(data.get("draw_order")),
         )
         out = run_lite_tax_det_rrif_v1(p)
         return jsonify({"ok": True, "tax_det_rrif": out})
-
 
     # mark attached
     projects_bp._litev1_routes_attached = True
