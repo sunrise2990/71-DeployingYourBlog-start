@@ -2745,7 +2745,7 @@ function ensureLayout(layout, seriesForAxis){
       // Overlay
       let overlayTax = 0;
       if (touchedTaxOrRRSP) {
-        overlayTax = Math.round(overlayIncomeTaxAtAge(cfg, age));
+        overlayTaxRaw = overlayIncomeTaxAtAge(cfg, age);
         pass1 = allocateByOrder(baseNeed + overlayTax, balances, order, rrspFlat);
       }
 
@@ -2770,7 +2770,7 @@ function ensureLayout(layout, seriesForAxis){
         From_Taxable: Math.round(pass1.draws.fromTax),
         From_TFSA: Math.round(pass1.draws.fromTFSA),
         From_RRSP_Gross: Math.round(pass1.draws.fromRRSPGross),
-        Tax_On_Taxable: Math.round(touchedTaxOrRRSP ? overlayTax : 0),
+        Tax_On_Taxable: touchedTaxOrRRSP ? Math.round(overlayTaxRaw) : 0,
         Tax_On_RRSP: Math.round(pass1.taxes.taxRRSP),
         Shortfall: Math.round(pass1.shortfall) || 0,
         End_Taxable: Math.round(t),
