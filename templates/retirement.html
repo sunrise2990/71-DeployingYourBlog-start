@@ -2742,12 +2742,11 @@ function ensureLayout(layout, seriesForAxis){
       const touchedTaxOrRRSP =
         pass1.draws.fromTax > 0 || pass1.draws.fromRRSPGross > 0;
 
-      // Overlay
-      let overlayTax = 0;
-      if (touchedTaxOrRRSP) {
-        overlayTaxRaw = overlayIncomeTaxAtAge(cfg, age);
-        pass1 = allocateByOrder(baseNeed + overlayTax, balances, order, rrspFlat);
-      }
+    let overlayTaxRaw = 0;
+    if (touchedTaxOrRRSP) {
+      overlayTaxRaw = overlayIncomeTaxAtAge(cfg, age); // no rounding here
+      pass1 = allocateByOrder(baseNeed + overlayTaxRaw, balances, order, rrspFlat);
+    }
 
     // Balances after draws, before growth
     let t = pass1.endBalancesBeforeGrowth.taxable;
