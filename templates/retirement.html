@@ -2614,8 +2614,7 @@ function ensureLayout(layout, seriesForAxis){
     const baseAnnualCPP = (cfg.cpp_monthly || 0) * 12;
     return baseAnnualCPP * Math.pow(1 + cfg.inflation_rate, yearsFromCppStart);
   }
-  // Overlay income tax (retired years only). We only *apply* it if we drew
-  // from taxable or RRSP that year.
+  // Overlay income tax (legacy helper; kept for reference, not used in calc now)
   function overlayIncomeTaxAtAge(cfg, age){
     if (age < cfg.retirement_age) return 0;
     const E = livingExpenseAtAge(cfg, age);
@@ -2664,7 +2663,7 @@ function ensureLayout(layout, seriesForAxis){
         need -= draw;
       } else if (src === "rrsp") {
         // Need "net" amount -> gross up by (1 - rrspFlat)
-        const netPossible = r * (1 - rrspFlat);               // max net we can fund from RRSP
+        const netPossible = r * (1 - rrspFlat);
         const netTake = Math.min(need, Math.max(0, netPossible));
         const gross = netTake / (1 - rrspFlat);
         const tax = gross * rrspFlat;
@@ -2697,7 +2696,7 @@ function ensureLayout(layout, seriesForAxis){
     const lm = liqMap(asset_liquidations);
 
     while (age < retirement_age) {
-      // grow first (same style as your earlier pre-roll)
+      // grow first
       taxable = taxable * (1 + return_rate);
       rrsp    = rrsp    * (1 + return_rate);
       tfsa    = tfsa    * (1 + return_rate);
@@ -2705,7 +2704,7 @@ function ensureLayout(layout, seriesForAxis){
       // add that year's savings to taxable
       taxable += save;
 
-      // any liquidation -> deposit to taxable (no growth this year, matches prior UI)
+      // any liquidation -> deposit to taxable (no growth this year)
       if (lm[age]) taxable += lm[age];
 
       const endTotal = taxable + rrsp + tfsa;
@@ -2730,60 +2729,59 @@ function ensureLayout(layout, seriesForAxis){
     const startRet = cfg.retirement_age;
     const lm       = liqMap(cfg.asset_liquidations);
     const order    = readDrawOrder();
-    const rrspFlat = cfg.income_tax_rate || 0;        // use one rate for now
+    const rrspFlat = cfg.income_tax_rate || 0; // single flat rate in this lite model
 
     let rows = [];
 
     for (let age = startRet; age <= endAge; age++) {
       const baseNeed = baseNeedAtAge(cfg, age);
 
-      // Pass 1: determine if taxable or RRSP is touched for base need
+      // Pass for base need only
       const passBase = allocateByOrder(baseNeed, balances, order, rrspFlat);
-      const touchesTax   = passBase.draws.fromTax > 0;
-      const touchesRRSP  = passBase.draws.fromRRSPGross > 0;
-      const needsOverlay = touchesTax || touchesRRSP;
 
-      // If overlay needed, add it and re-allocate; otherwise keep base pass
-      let overlayTaxRaw = 0;
-      let passFinal = passBase;
-      if (needsOverlay) {
-        overlayTaxRaw = overlayIncomeTaxAtAge(cfg, age); // unrounded
-        passFinal = allocateByOrder(baseNeed + overlayTaxRaw, balances, order, rrspFlat);
-      }
+      // Overlay should ONLY apply to the taxable-funded portion of base need.
+      // That avoids double-taxing RRSP (which already has gross-up taxes)
+      // and keeps TFSA tax-free.
+      const r = rrspFlat;
+      const taxableFundedNet = passBase.draws.fromTax;           // net from taxable used for base need
+      const overlayForTaxable = (r > 0 && taxableFundedNet > 0)
+        ? (taxableFundedNet * (r / (1 - r)))                     // gross-up tax on taxable share only
+        : 0;
+
+      // Final pass funds base need + overlayForTaxable
+      const needFinal = baseNeed + overlayForTaxable;
+      const passFinal = allocateByOrder(needFinal, balances, order, rrspFlat);
 
       // Balances after draws, before growth
       let t = passFinal.endBalancesBeforeGrowth.taxable;
       let f = passFinal.endBalancesBeforeGrowth.tfsa;
-      let r = passFinal.endBalancesBeforeGrowth.rrsp;
+      let rBal = passFinal.endBalancesBeforeGrowth.rrsp;
 
       // Liquidation BEFORE growth so it earns this year's return
       if (lm[age]) t += lm[age];
 
       // Apply growth for the year
       const g = 1 + cfg.return_rate_after;
-      t *= g; f *= g; r *= g;
+      t *= g; f *= g; rBal *= g;
 
-      const endTotal = t + f + r;
-
-      // Show overlay tax only if TAXABLE is used in the final allocation
-      const overlayToTaxable = (passFinal.draws.fromTax > 0) ? overlayTaxRaw : 0;
+      const endTotal = t + f + rBal;
 
       rows.push({
         Age: age,
         From_Taxable: Math.round(passFinal.draws.fromTax),
         From_TFSA: Math.round(passFinal.draws.fromTFSA),
         From_RRSP_Gross: Math.round(passFinal.draws.fromRRSPGross),
-        Tax_On_Taxable: Math.round(overlayToTaxable),
+        Tax_On_Taxable: Math.round(overlayForTaxable),
         Tax_On_RRSP: Math.round(passFinal.taxes.taxRRSP),
         Shortfall: Math.round(passFinal.shortfall) || 0,
         End_Taxable: Math.round(t),
         End_TFSA: Math.round(f),
-        End_RRSP: Math.round(r),
+        End_RRSP: Math.round(rBal),
         End_Total: Math.round(endTotal)
       });
 
       // Advance balances to next year
-      balances = { taxable: t, tfsa: f, rrsp: r };
+      balances = { taxable: t, tfsa: f, rrsp: rBal };
     }
 
     // earliest depletion
@@ -2899,6 +2897,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
+
 
 
 
