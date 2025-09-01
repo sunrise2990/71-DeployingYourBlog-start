@@ -2749,20 +2749,21 @@ function ensureLayout(layout, seriesForAxis){
         pass1 = allocateByOrder(baseNeed + overlayTax, balances, order, rrspFlat);
       }
 
-      // Balances after draws, before growth
-      let t = pass1.endBalancesBeforeGrowth.taxable;
-      let f = pass1.endBalancesBeforeGrowth.tfsa;
-      let r = pass1.endBalancesBeforeGrowth.rrsp;
+    // Balances after draws, before growth
+    let t = pass1.endBalancesBeforeGrowth.taxable;
+    let f = pass1.endBalancesBeforeGrowth.tfsa;
+    let r = pass1.endBalancesBeforeGrowth.rrsp;
 
-      // Apply growth for the year
-      t *= (1 + cfg.return_rate_after);
-      f *= (1 + cfg.return_rate_after);
-      r *= (1 + cfg.return_rate_after);
+    // Add liquidation BEFORE growth so it earns this year's return
+    if (lm[age]) t += lm[age];
 
-      // Apply one-off liquidation as a deposit after growth (to match prior display)
-      if (lm[age]) t += lm[age];
+    // Apply growth for the year
+    const g = 1 + cfg.return_rate_after;
+    t *= g;
+    f *= g;
+    r *= g;
 
-      const endTotal = t + f + r;
+    const endTotal = t + f + r;
 
       rows.push({
         Age: age,
