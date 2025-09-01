@@ -2478,14 +2478,15 @@ function ensureLayout(layout, seriesForAxis){
 (function () {
   const $ = (id) => document.getElementById(id);
   const urlRunFull = "/lite_v1/det_from_top";   // full deterministic engine (baseline only)
-
   const setStatus = (msg) => { const n=$("litev1_status"); if(n) n.textContent=msg; };
 
   const iFmt = (n) =>
     (n===null || n===undefined || isNaN(n)) ? "" :
     Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
 
-  const pick = (name) => document.getElementById(name) || document.querySelector(`[name="${name}"]`);
+  const pick = (name) =>
+    document.getElementById(name) || document.querySelector(`[name="${name}"]`);
+
   const numVal = (el) => {
     if (!el) return undefined;
     const s = (el.value ?? "").toString().replace(/,/g,"").trim();
@@ -2494,21 +2495,36 @@ function ensureLayout(layout, seriesForAxis){
     return Number.isFinite(v) ? v : undefined;
   };
 
-  // Withdrawal order --> array of keys
-  function readDrawOrder() {
-    const v = ($("wd_order")?.value) || "taxable_tfsa_rrsp";
-    const map = {
-      taxable_tfsa_rrsp: ["taxable","tfsa","rrsp"],
-      tfsa_taxable_rrsp: ["tfsa","taxable","rrsp"],
-      rrsp_taxable_tfsa: ["rrsp","taxable","tfsa"],
-      tfsa_rrsp_taxable: ["tfsa","rrsp","taxable"],
-      taxable_rrsp_tfsa: ["taxable","rrsp","tfsa"],
-      rrsp_tfsa_taxable: ["rrsp","tfsa","taxable"],
-    };
-    return map[v] || map.taxable_tfsa_rrsp;
+  // NEW: resilient getters ----------------------------------------------------
+  function numValAny() {
+    for (const key of arguments) {
+      const el = pick(key);
+      const v = numVal(el);
+      if (Number.isFinite(v)) return v;
+    }
+    return undefined;
   }
+  function monthlyCPPFromTop() {
+    // prefer monthly; if only annual is present, convert to monthly
+    const monthly = numValAny(
+      "cpp_monthly","cpp_support","cpp","cpp_extra_income","monthly_cpp","cpp_income_monthly"
+    );
+    if (Number.isFinite(monthly)) return monthly;
 
-  // --- Prefill from top ------------------------------------------------------
+    const annual = numValAny("cpp_annual","cpp_support_annual","cpp_income_annual");
+    if (Number.isFinite(annual)) return annual / 12.0;
+
+    return 0;
+  }
+  function cppStartFromTop(defaultAge) {
+    return numValAny("cpp_from_age","cpp_start_age") ?? defaultAge;
+  }
+  function cppEndFromTop(defaultAge) {
+    return numValAny("cpp_to_age","cpp_end_age") ?? defaultAge;
+  }
+  // --------------------------------------------------------------------------
+
+  // Prefill from top (kept)
   function prefillFromTop() {
     const current_age    = numVal(pick("current_age"));
     const lifespan       = numVal(pick("lifespan"));
@@ -2546,7 +2562,21 @@ function ensureLayout(layout, seriesForAxis){
   }
   document.addEventListener("DOMContentLoaded", ()=>{ prefillFromTop(); wireTopAssetsLiveSync(); });
 
-  // ---- Build config from UI -------------------------------------------------
+  // Withdrawal order --> array of keys
+  function readDrawOrder() {
+    const v = ($("wd_order")?.value) || "taxable_tfsa_rrsp";
+    const map = {
+      taxable_tfsa_rrsp: ["taxable","tfsa","rrsp"],
+      tfsa_taxable_rrsp: ["tfsa","taxable","rrsp"],
+      rrsp_taxable_tfsa: ["rrsp","taxable","tfsa"],
+      tfsa_rrsp_taxable: ["tfsa","rrsp","taxable"],
+      taxable_rrsp_tfsa: ["taxable","rrsp","tfsa"],
+      rrsp_tfsa_taxable: ["rrsp","tfsa","taxable"],
+    };
+    return map[v] || map.taxable_tfsa_rrsp;
+  }
+
+  // Build config from UI/top
   function buildCfg() {
     const current_age    = Number($("litev1_start_age").value);
     const end_age        = Number($("litev1_end_age").value);
@@ -2559,13 +2589,16 @@ function ensureLayout(layout, seriesForAxis){
     const pre_ret_pct    = Number($("litev1_return").value);
     const tax_pct        = Number($("litev1_income_tax").value);
 
-    const post_ret_pct   = numVal(pick("post_retire_return_rate")) ?? numVal(pick("return_rate_after")) ?? pre_ret_pct;
-    const infl_pct       = numVal(pick("inflation_rate")) ?? 2;
-    const retirement_age = numVal(pick("retirement_age")) ?? current_age;
-    const cpp_mo         = numVal(pick("cpp_support")) ?? numVal(pick("cpp_monthly")) ?? 0;
-    const cpp_from       = numVal(pick("cpp_from_age")) ?? retirement_age;
-    const cpp_to         = numVal(pick("cpp_to_age"))   ?? end_age;
-    const saving_inc_pct = numVal(pick("saving_increase_rate")) ?? 0;
+    const post_ret_pct   = numValAny("post_retire_return_rate","return_rate_after") ?? pre_ret_pct;
+    const infl_pct       = numValAny("inflation_rate") ?? 2;
+    const retirement_age = numValAny("retirement_age") ?? current_age;
+
+    // >>> FIX: robust CPP import (monthly preferred; supports alt field names)
+    const cpp_mo         = monthlyCPPFromTop();
+    const cpp_from       = cppStartFromTop(retirement_age);
+    const cpp_to         = cppEndFromTop(end_age);
+
+    const saving_inc_pct = numValAny("saving_increase_rate") ?? 0;
 
     // Liquidations (up to 3)
     const liqs = [];
@@ -2591,7 +2624,7 @@ function ensureLayout(layout, seriesForAxis){
       return_rate: (pre_ret_pct || 0) / 100,
       return_rate_after: (post_ret_pct || 0) / 100,
       inflation_rate: (infl_pct || 0) / 100,
-      income_tax_rate: (tax_pct || 0) / 100,   // used both as overlay and RRSP flat tax
+      income_tax_rate: (tax_pct || 0) / 100,   // overlay + RRSP flat tax
 
       cpp_monthly: cpp_mo || 0,
       cpp_start_age: cpp_from || retirement_age,
@@ -2601,7 +2634,7 @@ function ensureLayout(layout, seriesForAxis){
     };
   }
 
-  // ---- Helpers --------------------------------------------------------------
+  // Helpers
   const within = (x, a, b) => (x >= a && x <= b);
 
   function livingExpenseAtAge(cfg, age){
@@ -2614,7 +2647,7 @@ function ensureLayout(layout, seriesForAxis){
     const baseAnnualCPP = (cfg.cpp_monthly || 0) * 12;
     return baseAnnualCPP * Math.pow(1 + cfg.inflation_rate, yearsFromCppStart);
   }
-  // Overlay income tax (legacy helper; kept for reference, not used in calc now)
+  // Overlay tax applied only in retirement
   function overlayIncomeTaxAtAge(cfg, age){
     if (age < cfg.retirement_age) return 0;
     const E = livingExpenseAtAge(cfg, age);
@@ -2637,8 +2670,7 @@ function ensureLayout(layout, seriesForAxis){
     return m;
   }
 
-  // Allocate withdrawals per chosen order (one pass, no overlay here).
-  // Returns: { draws, taxes, shortfall, endBalancesBeforeGrowth }
+  // Allocate by order (no overlay inside)
   function allocateByOrder(netNeed, balances, order, rrspFlat) {
     let need = Math.max(0, netNeed);
 
@@ -2662,8 +2694,7 @@ function ensureLayout(layout, seriesForAxis){
         t -= draw;
         need -= draw;
       } else if (src === "rrsp") {
-        // Need "net" amount -> gross up by (1 - rrspFlat)
-        const netPossible = r * (1 - rrspFlat);
+        const netPossible = r * (1 - rrspFlat);   // max *net* we can fund from RRSP
         const netTake = Math.min(need, Math.max(0, netPossible));
         const gross = netTake / (1 - rrspFlat);
         const tax = gross * rrspFlat;
@@ -2683,7 +2714,7 @@ function ensureLayout(layout, seriesForAxis){
     };
   }
 
-  // --- Pre-retirement roll-forward (local) -----------------------------------
+  // Pre-retirement (grow, then deposit savings & liquidations)
   function prerollToRetirement(cfg) {
     let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
           taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
@@ -2696,16 +2727,12 @@ function ensureLayout(layout, seriesForAxis){
     const lm = liqMap(asset_liquidations);
 
     while (age < retirement_age) {
-      // grow first
-      taxable = taxable * (1 + return_rate);
-      rrsp    = rrsp    * (1 + return_rate);
-      tfsa    = tfsa    * (1 + return_rate);
+      taxable *= (1 + return_rate);
+      rrsp    *= (1 + return_rate);
+      tfsa    *= (1 + return_rate);
 
-      // add that year's savings to taxable
       taxable += save;
-
-      // any liquidation -> deposit to taxable (no growth this year)
-      if (lm[age]) taxable += lm[age];
+      if (lm[age]) taxable += lm[age];  // no growth this year, as before
 
       const endTotal = taxable + rrsp + tfsa;
 
@@ -2716,72 +2743,69 @@ function ensureLayout(layout, seriesForAxis){
         End_Taxable: taxable, End_TFSA: tfsa, End_RRSP: rrsp, End_Total: endTotal
       });
 
-      save = save * (1 + saving_increase_rate);
+      save *= (1 + saving_increase_rate);
       age += 1;
     }
 
     return { rows, taxable, rrsp, tfsa };
   }
 
-  // ---- Retirement (client-side, honors order; no backend) -------------------
+  // Retirement roll-forward
   function runTaxYearByYearLocal(cfg, balances) {
     const endAge   = cfg.life_expectancy;
     const startRet = cfg.retirement_age;
     const lm       = liqMap(cfg.asset_liquidations);
     const order    = readDrawOrder();
-    const rrspFlat = cfg.income_tax_rate || 0; // single flat rate in this lite model
+    const rrspFlat = cfg.income_tax_rate || 0;
 
     let rows = [];
 
     for (let age = startRet; age <= endAge; age++) {
       const baseNeed = baseNeedAtAge(cfg, age);
 
-      // Pass for base need only
+      // Pass for base need
       const passBase = allocateByOrder(baseNeed, balances, order, rrspFlat);
+      const needsOverlay = (passBase.draws.fromTax > 0) || (passBase.draws.fromRRSPGross > 0);
 
-      // Overlay should ONLY apply to the taxable-funded portion of base need.
-      // That avoids double-taxing RRSP (which already has gross-up taxes)
-      // and keeps TFSA tax-free.
-      const r = rrspFlat;
-      const taxableFundedNet = passBase.draws.fromTax;           // net from taxable used for base need
-      const overlayForTaxable = (r > 0 && taxableFundedNet > 0)
-        ? (taxableFundedNet * (r / (1 - r)))                     // gross-up tax on taxable share only
-        : 0;
-
-      // Final pass funds base need + overlayForTaxable
-      const needFinal = baseNeed + overlayForTaxable;
-      const passFinal = allocateByOrder(needFinal, balances, order, rrspFlat);
+      // If we touch taxable or RRSP, add overlay and re-allocate
+      let overlayTaxRaw = 0;
+      let passFinal = passBase;
+      if (needsOverlay) {
+        overlayTaxRaw = overlayIncomeTaxAtAge(cfg, age); // unrounded
+        passFinal = allocateByOrder(baseNeed + overlayTaxRaw, balances, order, rrspFlat);
+      }
 
       // Balances after draws, before growth
       let t = passFinal.endBalancesBeforeGrowth.taxable;
       let f = passFinal.endBalancesBeforeGrowth.tfsa;
-      let rBal = passFinal.endBalancesBeforeGrowth.rrsp;
+      let r = passFinal.endBalancesBeforeGrowth.rrsp;
 
       // Liquidation BEFORE growth so it earns this year's return
       if (lm[age]) t += lm[age];
 
-      // Apply growth for the year
       const g = 1 + cfg.return_rate_after;
-      t *= g; f *= g; rBal *= g;
+      t *= g; f *= g; r *= g;
 
-      const endTotal = t + f + rBal;
+      const endTotal = t + f + r;
+
+      // Show overlay tax on "Taxable" only if taxable actually funded part of the final allocation
+      const overlayToTaxable = (passFinal.draws.fromTax > 0) ? overlayTaxRaw : 0;
 
       rows.push({
         Age: age,
         From_Taxable: Math.round(passFinal.draws.fromTax),
         From_TFSA: Math.round(passFinal.draws.fromTFSA),
         From_RRSP_Gross: Math.round(passFinal.draws.fromRRSPGross),
-        Tax_On_Taxable: Math.round(overlayForTaxable),
+        Tax_On_Taxable: Math.round(overlayToTaxable),
         Tax_On_RRSP: Math.round(passFinal.taxes.taxRRSP),
         Shortfall: Math.round(passFinal.shortfall) || 0,
         End_Taxable: Math.round(t),
         End_TFSA: Math.round(f),
-        End_RRSP: Math.round(rBal),
+        End_RRSP: Math.round(r),
         End_Total: Math.round(endTotal)
       });
 
-      // Advance balances to next year
-      balances = { taxable: t, tfsa: f, rrsp: rBal };
+      balances = { taxable: t, tfsa: f, rrsp: r };
     }
 
     // earliest depletion
@@ -2798,7 +2822,7 @@ function ensureLayout(layout, seriesForAxis){
     };
   }
 
-  // ---- Baseline (100% taxable) via full engine ------------------------------
+  // Baseline (100% taxable) via backend
   async function runBaselineMap(cfg) {
     const res = await fetch(urlRunFull, {
       method:"POST", credentials:"same-origin",
@@ -2807,13 +2831,13 @@ function ensureLayout(layout, seriesForAxis){
         current_age: cfg.current_age,
         retirement_age: cfg.retirement_age,
         life_expectancy: cfg.life_expectancy,
-        current_assets: cfg.taxable0 + cfg.rrsp0 + cfg.tfsa0,  // 100% taxable baseline
+        current_assets: cfg.taxable0 + cfg.rrsp0 + cfg.tfsa0,
         annual_saving: cfg.annual_saving,
         saving_increase_rate: cfg.saving_increase_rate,
         return_rate: cfg.return_rate,
         return_rate_after: cfg.return_rate_after,
         annual_expense: cfg.annual_expense,
-        cpp_monthly: cfg.cpp_monthly,
+        cpp_monthly: cfg.cpp_monthly,           // <-- CPP now correctly passed
         cpp_start_age: cfg.cpp_start_age,
         cpp_end_age: cfg.cpp_end_age,
         asset_liquidations: cfg.asset_liquidations,
@@ -2831,7 +2855,7 @@ function ensureLayout(layout, seriesForAxis){
     return map;
   }
 
-  // ---- Render table ---------------------------------------------------------
+  // Render
   function renderTable(rows, baselineMap, meta){
     const tb=$("litev1_tax_table").querySelector("tbody"); tb.innerHTML="";
     (rows||[]).forEach(r=>{
@@ -2858,21 +2882,15 @@ function ensureLayout(layout, seriesForAxis){
       `Rows: ${rows?.length ?? 0} | Order: ${orderText}`;
   }
 
-  // ---- Run end-to-end -------------------------------------------------------
+  // Run end-to-end
   async function runAll(){
     try{
       const cfg = buildCfg();
 
-      // 0) Baseline assets by age (100% taxable)
       const baselineMap = await runBaselineMap(cfg);
-
-      // 1) Pre-retirement balances (local)
       const pre = prerollToRetirement(cfg);
-
-      // 2) Retirement path with tax (client-side, honors order)
       const tax = runTaxYearByYearLocal(cfg, { taxable: pre.taxable, rrsp: pre.rrsp, tfsa: pre.tfsa });
 
-      // 3) Merge and render
       const mergedRows = [...pre.rows, ...tax.rows];
       renderTable(mergedRows, baselineMap, {
         flat_tax: tax.flat_tax_rate,
@@ -2897,6 +2915,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
+
 
 
 
