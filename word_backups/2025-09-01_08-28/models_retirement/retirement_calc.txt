@@ -1,7 +1,7 @@
 import numpy as np
 from datetime import datetime
 
-# 🔹 Deterministic Retirement Projection (spend-first / deposit-end-of-year)
+# 🔹 Deterministic Retirement Projection (spend-first / contribute-first)
 def run_retirement_projection(
     current_age: int,
     retirement_age: int,
@@ -21,8 +21,8 @@ def run_retirement_projection(
 ):
     """
     Yearly roll-forward using spend-first timing:
-      • Pre-retirement: (assets [+ liquidation]) * (1 + r_pre) + savings   ← deposits at END of year
-      • Retirement:     max(0, assets - withdrawal [+ liquidation]) * (1 + r_post)
+      • Pre-retirement: (assets + savings [+ liquidation]) * (1 + r_pre)
+      • Retirement: max(0, assets - withdrawal [+ liquidation]) * (1 + r_post)
     Withdrawal includes an income-tax overlay:
       tax = ((living_exp + cpp) / (1 - tax_rate)) * tax_rate
     CPP inflates from its first-pay year.
@@ -77,16 +77,17 @@ def run_retirement_projection(
 
         if not retired:
             # ===== Accumulation year =====
-            # Savings applied at the END of the year (deposit timing change)
+            # Savings applied at the BEGINNING of the year
             saving_factor = (1.0 + float(saving_increase_rate)) ** (age - current_age)
             savings = float(annual_saving) * saving_factor
 
-            # Grow opening balance + start-of-year liquidations (no savings yet)
-            base_before_return = assets + liquidation
+            # Spend-first analogue for accumulation is "contribute-first":
+            # grow (assets + savings + liquidation)
+            base_before_return = assets + savings + liquidation
             base_before_return = max(0.0, base_before_return)
 
             inv_return = base_before_return * applied_return_rate
-            assets = base_before_return + inv_return + savings  # add savings at year-end
+            assets = base_before_return + inv_return
 
             row["Savings"] = round(savings) if savings != 0 else None
             row["Investment_Return"] = round(inv_return)
@@ -205,8 +206,8 @@ def run_monte_carlo_simulation_locked_inputs(
 ):
     """
     MC version mirroring deterministic timing:
-      • Pre-retirement: (assets [+ liquidation]) * (1 + r) + savings        ← deposits at END of year
-      • Retirement:     max(0, assets - withdrawal [+ liquidation]) * (1 + r)
+      • Pre-retirement: (assets + savings [+ liquidation]) * (1 + r)
+      • Retirement: max(0, assets - withdrawal [+ liquidation]) * (1 + r)
     CPP inflates stochastically from its first-pay year using the same
     per-year inflation draws as living expenses (post start age only).
     """
@@ -254,14 +255,12 @@ def run_monte_carlo_simulation_locked_inputs(
             income_tax = ((living_exp + cpp_support) / (1.0 - income_tax_rate) * income_tax_rate) if retired else 0.0
 
             if not retired:
-                # Deposit savings at END of year
+                # Contribute-first
                 saving_factor = (1.0 + float(saving_increase_rate)) ** (age - current_age)
                 savings = float(annual_saving) * saving_factor
-
-                # Grow opening balance + start-of-year liquidations (no savings yet)
-                base_before_return = assets + liquidation
+                base_before_return = assets + savings + liquidation
                 base_before_return = max(0.0, base_before_return)
-                assets = base_before_return * (1.0 + rand_return) + savings
+                assets = base_before_return * (1.0 + rand_return)
             else:
                 # Spend-first
                 withdrawal = max(0.0, living_exp - cpp_support + income_tax)
@@ -399,7 +398,7 @@ def run_lite_tax_det_v1(p: LiteV1TaxParams) -> Dict[str, Any]:
     total_taxes = 0.0
 
     for age in years:
-        # grow accounts
+        # grow accounts first in this toy engine
         g = 1.0 + float(p.return_rate)
         taxable *= g; rrsp *= g; tfsa *= g
 
@@ -514,6 +513,5 @@ def run_lite_tax_det_rrif_v1(p: LiteV1TaxRrifParams) -> Dict[str, Any]:
         "rows": rows[:25],
     }
 # === END APPEND-ONLY =========================================================
-
 
 

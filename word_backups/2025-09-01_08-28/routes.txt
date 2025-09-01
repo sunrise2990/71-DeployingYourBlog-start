@@ -1695,8 +1695,8 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
     def _sanitize_draw_order(val):
         """
         Accepts list/tuple like ["tfsa","rrsp","taxable"] or a string
-        like 'tfsa_rrsp_taxable' or 'tfsa, rrsp, taxable' or 'TFSA → RRSP → TAXABLE'.
-        Returns a normalized list or None to fall back to engine default.
+        like 'tfsa_rrsp_taxable' or 'tfsa, rrsp, taxable'. Returns a
+        normalized list or None to fall back to engine default.
         """
         if val is None:
             return None
@@ -1707,12 +1707,11 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
             seq = [str(x).strip().lower() for x in val]
         elif isinstance(val, str):
             s = val.strip().lower()
-            # support common separators: commas, whitespace, arrows, dashes
-            if any(sep in s for sep in [",", " ", ">", "→", "–", "—", "-"]):
+            # support a few cheap encodings
+            if any(sep in s for sep in [",", " ", ">", "–", "-"]):
                 import re
-                parts = [p for p in re.split(r"[,\s>→–—-]+", s) if p]
+                parts = [p for p in re.split(r"[,\s>–-]+", s) if p]
             else:
-                # fallback to underscore-delimited
                 parts = s.split("_")
             seq = [p for p in parts if p in allowed]
         else:
@@ -1745,7 +1744,7 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
             monthly_spend=N(data.get("monthly_spend"), 6000.0),
             return_rate=N(data.get("return_rate"), 0.05),
             flat_tax_rate=N(data.get("flat_tax_rate"), 0.25),
-            # honor withdrawal order from UI
+            # NEW: honor withdrawal order from UI
             draw_order=_sanitize_draw_order(data.get("draw_order")),
         )
         out = run_lite_tax_det_v1(p)
@@ -1773,7 +1772,7 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
             return_rate=N(data.get("return_rate"), 0.05),
             flat_tax_rate=N(data.get("flat_tax_rate"), 0.25),
             rrif_min=bool(data.get("rrif_min", True)),
-            # honor withdrawal order from UI
+            # NEW: honor withdrawal order from UI
             draw_order=_sanitize_draw_order(data.get("draw_order")),
         )
         out = run_lite_tax_det_rrif_v1(p)
