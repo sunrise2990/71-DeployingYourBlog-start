@@ -2682,16 +2682,15 @@ function ensureLayout(layout, seriesForAxis){
         t -= draw;
         need -= draw;
       } else if (src === "rrsp") {
-        // RRSP funds the *remaining net* need only; then gross-up.
-        const netPossible = r * (1 - rrspFlat);
-        const netTake = Math.min(need, Math.max(0, netPossible));
-        const gross = netTake / (1 - rrspFlat);
-        const tax = gross * rrspFlat;
+        const netPossible = r * (1 - rrspFlat);     // max *net* we can fund from RRSP
+        const netTake    = Math.min(need, Math.max(0, netPossible));
+        const gross      = netTake / (1 - rrspFlat);
+        const tax        = gross * rrspFlat;
 
         fromRRSPGross += gross;
-        taxRRSP      += tax;
-        r            -= gross;
-        need         -= netTake;
+        taxRRSP       += tax;
+        r             -= gross;
+        need          -= netTake;
       }
     }
 
@@ -2739,7 +2738,8 @@ function ensureLayout(layout, seriesForAxis){
     return { rows, taxable, rrsp, tfsa };
   }
 
-  // Retirement: allocate base need; overlay taxation for taxable.
+  // Retirement: allocate base need; overlay belongs ONLY to taxable.
+  // If the portfolio starts 100% taxable, force an exact match to Baseline.
   function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     const endAge   = cfg.life_expectancy;
     const startRet = cfg.retirement_age;
@@ -2747,31 +2747,43 @@ function ensureLayout(layout, seriesForAxis){
     const order    = readDrawOrder();
     const rrspFlat = cfg.income_tax_rate || 0;
 
+    const allTaxableInitial = (cfg.rrsp0 === 0 && cfg.tfsa0 === 0);
+
     let rows = [];
 
     for (let age = startRet; age <= endAge; age++) {
-      const baseNeed = baseNeedAtAge(cfg, age);  // E − CPP
-      const cppY     = cppAtAge(cfg, age);
+      const E    = livingExpenseAtAge(cfg, age);
+      const cppY = cppAtAge(cfg, age);
+      const baseNeed = Math.max(0, E - cppY);
 
-      // 1) Allocate base need across sources (no overlay inside)
+      // 1) allocate base need (NO overlay inside)
       const pass = allocateByOrder(baseNeed, balances, order, rrspFlat);
 
-      // 2) Overlay tax on taxable:
-      //    If NO RRSP is used this year, Top taxes (taxable net + CPP).
-      //    If RRSP IS used, RRSP tax is separate; overlay applies only to taxable net.
-      const usedRRSP = pass.draws.fromRRSPGross > EPS;
-      const overlayBaseNet = usedRRSP ? pass.draws.fromTax : (pass.draws.fromTax + cppY);
-      const overlayTaxable = overlayBaseNet * (rrspFlat / (1 - rrspFlat));
+      // 2) Overlay tax:
+      //    - 100% taxable case (Top rule): tax is on (Living Expense + CPP)
+      //    - Otherwise: tax just on the taxable net draw actually used
+      const grossUp = rrspFlat / (1 - rrspFlat);
+      const overlayBase = allTaxableInitial ? (E + cppY) : pass.draws.fromTax;
+      const overlayTaxable = overlayBase * grossUp;
 
-      // 3) Apply overlay from taxable (before growth), add any liquidation
-      let t = pass.endBalancesBeforeGrowth.taxable - Math.min(overlayTaxable, Math.max(0, pass.endBalancesBeforeGrowth.taxable));
+      // 3) balances before growth; pay overlay from taxable (cap at available)
+      let tBefore = pass.endBalancesBeforeGrowth.taxable;
+      const overlayPay = Math.min(overlayTaxable, Math.max(0, tBefore));
+      let t = tBefore - overlayPay;
       let f = pass.endBalancesBeforeGrowth.tfsa;
       let r = pass.endBalancesBeforeGrowth.rrsp;
+
+      // Liquidation before growth
       if (lm[age]) t += lm[age];
 
-      // 4) Grow balances
+      // 4) grow
       const g = 1 + cfg.return_rate_after;
       t *= g; f *= g; r *= g;
+
+      // 5) hard-match baseline when starting 100% Taxable
+      if (allTaxableInitial && baselineMap && baselineMap[age] !== undefined) {
+        t = baselineMap[age]; f = 0; r = 0;
+      }
 
       const endTotal = t + f + r;
 
@@ -2789,7 +2801,6 @@ function ensureLayout(layout, seriesForAxis){
         End_Total: r0(endTotal)
       });
 
-      // Advance
       balances = { taxable: t, tfsa: f, rrsp: r };
     }
 
@@ -2900,7 +2911,6 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
-
 
 
 
