@@ -24,7 +24,7 @@ def run_retirement_projection(
       • Pre-retirement: (assets [+ liquidation]) * (1 + r_pre) + savings   ← deposits at END of year
       • Retirement:     max(0, assets - withdrawal [+ liquidation]) * (1 + r_post)
     Withdrawal includes an income-tax overlay:
-      tax = ((living_exp + cpp) / (1 - tax_rate)) * tax_rate
+      tax = ((living_exp - cpp) / (1 - tax_rate)) * tax_rate
     CPP inflates from its first-pay year.
     """
     table: list[dict] = []
@@ -58,7 +58,8 @@ def run_retirement_projection(
         # --- Income-tax overlay (retired only; gross-up on living+CPP)
         retired = age >= retirement_age
         if retired and income_tax_rate > 0:
-            income_tax = (living_exp + cpp_support) / (1.0 - float(income_tax_rate)) * float(income_tax_rate)
+            net_need_for_tax = max(0.0, living_exp - cpp_support)
+            income_tax = net_need_for_tax / (1.0 - float(income_tax_rate)) * float(income_tax_rate)
         else:
             income_tax = 0.0
         row["Income_Tax_Payment"] = round(income_tax) if income_tax != 0 else None
@@ -251,7 +252,8 @@ def run_monte_carlo_simulation_locked_inputs(
             liquidation = float(liq_map.get(int(age), 0.0))
 
             # Income-tax overlay (retired only)
-            income_tax = ((living_exp + cpp_support) / (1.0 - income_tax_rate) * income_tax_rate) if retired else 0.0
+            net_need_for_tax = max(0.0, living_exp - cpp_support)
+            income_tax = (net_need_for_tax / (1.0 - income_tax_rate) * income_tax_rate) if retired else 0.0
 
             if not retired:
                 # Deposit savings at END of year
