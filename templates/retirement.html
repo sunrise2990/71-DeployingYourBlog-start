@@ -2599,6 +2599,10 @@ function ensureLayout(layout, seriesForAxis){
     const cpp_from       = cppStartFromTop(retirement_age);
     const cpp_to         = cppEndFromTop(end_age);
 
+    const taxable_drag_pct =
+    Number($("litev1_taxable_drag")?.value) ||
+    (numValAny("taxable_drag","taxable_tax_drag") || 0);   // optional fallback from Top
+
     const saving_inc_pct = numValAny("saving_increase_rate") ?? 0;
 
     // Liquidations (up to 3)
@@ -2630,6 +2634,8 @@ function ensureLayout(layout, seriesForAxis){
       cpp_monthly: cpp_mo || 0,
       cpp_start_age: cpp_from || retirement_age,
       cpp_end_age: cpp_to || end_age,
+
+      taxable_drag: taxable_drag_pct / 100,
 
       asset_liquidations: liqs
     };
@@ -2707,41 +2713,48 @@ function ensureLayout(layout, seriesForAxis){
     };
   }
 
-  // Pre-retirement (grow, then deposit savings & liquidations)
-  function prerollToRetirement(cfg) {
-    let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
-          taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
+// Pre-retirement (grow, then deposit savings & liquidations)
+// Taxable grows with drag; RRSP/TFSA grow normally.
+function prerollToRetirement(cfg) {
+  let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
+        taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
 
-    let age = current_age;
-    let rows = [];
-    let taxable = taxable0, rrsp = rrsp0, tfsa = tfsa0;
-    let save = annual_saving;
+  let age = current_age;
+  let rows = [];
+  let taxable = taxable0, rrsp = rrsp0, tfsa = tfsa0;
+  let save = annual_saving;
 
-    const lm = liqMap(asset_liquidations);
+  const lm = liqMap(asset_liquidations);
+  const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0)); // clamp [0,1]
+  const gN = 1 + return_rate;                    // normal growth
+  const gT = 1 + return_rate * (1 - d);          // dragged growth for Taxable
 
-    while (age < retirement_age) {
-      taxable *= (1 + return_rate);
-      rrsp    *= (1 + return_rate);
-      tfsa    *= (1 + return_rate);
+  while (age < retirement_age) {
+    // grow
+    taxable *= gT;
+    rrsp    *= gN;
+    tfsa    *= gN;
 
-      taxable += save;
-      if (lm[age]) taxable += lm[age];  // deposit pre-growth
+    // deposits (savings + any liquidation this year)
+    taxable += save;
+    if (lm[age]) taxable += lm[age];
 
-      const endTotal = taxable + rrsp + tfsa;
+    const endTotal = taxable + rrsp + tfsa;
 
-      rows.push({
-        Age: age,
-        From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0,
-        Tax_On_Taxable: 0, Tax_On_RRSP: 0, Shortfall: 0,
-        End_Taxable: taxable, End_TFSA: tfsa, End_RRSP: rrsp, End_Total: endTotal
-      });
+    rows.push({
+      Age: age,
+      From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0,
+      Tax_On_Taxable: 0, Tax_On_RRSP: 0, Shortfall: 0,
+      End_Taxable: taxable, End_TFSA: tfsa, End_RRSP: rrsp, End_Total: endTotal
+    });
 
-      save *= (1 + saving_increase_rate);
-      age += 1;
-    }
-
-    return { rows, taxable, rrsp, tfsa };
+    save *= (1 + saving_increase_rate);
+    age += 1;
   }
+
+  return { rows, taxable, rrsp, tfsa };
+}
+
 
 // Retirement: allocate base need; overlay tax belongs ONLY to taxable.
 // Baseline column is for reference only—no balance overriding.
@@ -2757,7 +2770,7 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
   for (let age = startRet; age <= endAge; age++) {
     const E       = livingExpenseAtAge(cfg, age);
     const cppY    = cppAtAge(cfg, age);
-    const netNeed = Math.max(0, E - cppY);     // NET need (Living − CPP), already clamped
+    const netNeed = Math.max(0, E - cppY);     // NET need (Living − CPP)
 
     // 1) Allocate the net need according to selected order (no hidden forcing)
     const pass = allocateByOrder(
@@ -2768,9 +2781,9 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     );
 
     // 2) Overlay tax is computed ONLY on the actual taxable net draw
-    const grossUp = rrspFlat > 0 ? (rrspFlat / (1 - rrspFlat)) : 0;
-    const overlayBase   = pass.draws.fromTax;           // actual taxable net draw
-    const overlayTaxable= overlayBase * grossUp;        // tax paid from taxable
+    const grossUp        = rrspFlat > 0 ? (rrspFlat / (1 - rrspFlat)) : 0;
+    const overlayBase    = pass.draws.fromTax;
+    const overlayTaxable = overlayBase * grossUp;
 
     // 3) Pay overlay from taxable (pre-growth), then apply any liquidations
     let t = pass.endBalancesBeforeGrowth.taxable;
@@ -2780,11 +2793,16 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     const overlayPay = Math.min(overlayTaxable, Math.max(0, t));
     t -= overlayPay;
 
-    if (lm[age]) t += lm[age];                          // start-of-year inflow
+    if (lm[age]) t += lm[age];  // start-of-year inflow
 
-    // 4) Grow post-cashflow balances
-    const g = 1 + cfg.return_rate_after;
-    t *= g; f *= g; r *= g;
+    // 4) Grow post-cashflow balances (apply drag to Taxable only)
+    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0)); // clamp [0,1]
+    const gN = 1 + cfg.return_rate_after;                        // normal growth
+    const gT = 1 + cfg.return_rate_after * (1 - d);              // dragged Taxable
+
+    t *= gT;
+    f *= gN;
+    r *= gN;
 
     const endTotal = t + f + r;
 
@@ -2802,7 +2820,7 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
       End_Total: r0(endTotal)
     });
 
-    // 5) Carry balances forward
+    // carry balances forward
     balances = { taxable: t, tfsa: f, rrsp: r };
   }
 
@@ -2819,6 +2837,7 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     earliest_depletion_age: earliest
   };
 }
+
 
 
   // Baseline (100% taxable) via backend
@@ -2908,7 +2927,7 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
   // Live re-run when key inputs change (incl. wd_order)
   [
     "litev1_start_age","litev1_end_age","litev1_taxable","litev1_rrsp","litev1_tfsa",
-    "litev1_spend","litev1_return","litev1_monthly_saving","litev1_income_tax","wd_order"
+    "litev1_spend","litev1_return","litev1_monthly_saving","litev1_income_tax","wd_order","litev1_taxable_drag"
   ].forEach(id => $(id)?.addEventListener("input", runAll));
   $("wd_order")?.addEventListener("change", runAll);
 })();
