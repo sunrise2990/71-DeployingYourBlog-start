@@ -2424,8 +2424,10 @@ function ensureLayout(layout, seriesForAxis){
       </div>
       <div class="col-md-2">
         <label class="form-label">Taxable Drag (%)</label>
-        <input id="litev1_taxable_drag" type="number" class="form-control" value="0" step="0.1" min="0" max="10">
-        <div class="form-text small">Annual drag applied to Taxable growth only.</div>
+        <input id="litev1_taxable_drag" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
+        <div class="form-text small">
+          Annual drag on <em>Taxable growth only</em>. If &gt; 0, taxable-overlay is disabled to avoid double tax.
+        </div>
       </div>
 
       <!-- Withdrawal order selector -->
@@ -2596,7 +2598,7 @@ function ensureLayout(layout, seriesForAxis){
 
     const taxable_drag_pct =
       Number($("litev1_taxable_drag")?.value) ||
-      (numValAny("taxable_drag","taxable_tax_drag") || 0);   // optional fallback from Top
+      (numValAny("taxable_drag","taxable_tax_drag") || 0);
 
     const saving_inc_pct = numValAny("saving_increase_rate") ?? 0;
 
@@ -2688,7 +2690,7 @@ function ensureLayout(layout, seriesForAxis){
         t -= draw;
         need -= draw;
       } else if (src === "rrsp") {
-        const netPossible = r * (1 - rrspFlat);     // max *net* we can fund from RRSP
+        const netPossible = r * (1 - rrspFlat); // max *net* we can fund from RRSP
         const netTake    = Math.min(need, Math.max(0, netPossible));
         const gross      = netTake / (1 - rrspFlat);
         const tax        = gross * rrspFlat;
@@ -2737,7 +2739,6 @@ function ensureLayout(layout, seriesForAxis){
       if (lm[age]) taxable += lm[age];
 
       const endTotal = taxable + rrsp + tfsa;
-
       const dragAmt = (d > 0) ? (t0 * return_rate * d) : 0;
 
       rows.push({
@@ -2755,7 +2756,7 @@ function ensureLayout(layout, seriesForAxis){
     return { rows, taxable, rrsp, tfsa };
   }
 
-  // Retirement: allocate base need; overlay tax belongs ONLY to taxable.
+  // Retirement: allocate base need; overlay tax belongs ONLY to taxable (if drag==0).
   // Baseline column is for reference only—no balance overriding.
   function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     const endAge   = cfg.life_expectancy;
@@ -2827,7 +2828,7 @@ function ensureLayout(layout, seriesForAxis){
       balances = { taxable: t, tfsa: f, rrsp: r };
     }
 
-    // Earliest depletion (unchanged; not shown in table anymore)
+    // Earliest depletion (kept for meta)
     let earliest = null;
     for (const r of rows) {
       if (Number(r.End_Total) <= 0) { earliest = Number(r.Age); break; }
@@ -2934,6 +2935,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
+
 
 
 
