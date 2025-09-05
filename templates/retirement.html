@@ -2463,8 +2463,9 @@ function ensureLayout(layout, seriesForAxis){
         <table class="table table-sm align-middle">
           <thead>
             <tr>
-              <th style="min-width:180px;">Stream</th>
-              <th>Yield (% of taxable)</th>
+              <th style="min-width:200px;">Stream</th>
+              <th>Allocation (% of taxable)</th>
+              <th>Yield (% on that slice)</th>
               <th>Effective Tax Rate (%)</th>
               <th>Contribution to Absolute Drag (%)</th>
             </tr>
@@ -2472,39 +2473,43 @@ function ensureLayout(layout, seriesForAxis){
           <tbody>
             <tr>
               <td>Eligible dividends</td>
+              <td><input id="td_a_div" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
               <td><input id="td_y_div" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
               <td><input id="td_t_div" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
-              <td id="td_c_div" class="text-end">0.00</td>
+              <td id="td_c_div" class="text-end">0.000</td>
             </tr>
             <tr>
               <td>Interest (incl. foreign withholding)</td>
+              <td><input id="td_a_int" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
               <td><input id="td_y_int" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
               <td><input id="td_t_int" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
-              <td id="td_c_int" class="text-end">0.00</td>
+              <td id="td_c_int" class="text-end">0.000</td>
             </tr>
             <tr>
-              <td>Realized capital gains<br><span class="text-muted small">Use effective rate (after inclusion), e.g. 50%×30% = 15%</span></td>
+              <td>Realized capital gains<br><span class="text-muted small">Use <em>effective</em> rate (after inclusion), e.g. 50%×30% = 15%.</span></td>
+              <td><input id="td_a_cg" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
               <td><input id="td_y_cg" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
               <td><input id="td_t_cg" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
-              <td id="td_c_cg" class="text-end">0.00</td>
+              <td id="td_c_cg" class="text-end">0.000</td>
             </tr>
           </tbody>
           <tfoot>
             <tr>
-              <th colspan="3" class="text-end">Absolute Drag (Σ contributions)</th>
-              <th id="td_abs" class="text-end">0.00%</th>
+              <th colspan="4" class="text-end">Absolute Drag (Σ contributions)</th>
+              <th id="td_abs" class="text-end">0.000%</th>
             </tr>
             <tr>
-              <th colspan="3" class="text-end">Implied Taxable Drag d = Absolute Drag ÷ Return Rate</th>
+              <th colspan="4" class="text-end">Implied Taxable Drag d = Absolute Drag ÷ Return Rate</th>
               <th id="td_implied" class="text-end">0.00%</th>
             </tr>
           </tfoot>
         </table>
       </div>
       <div class="small text-muted">
-        Enter the expected yields and effective tax rates for the year. We add their products to get the
-        <em>Absolute Drag</em> (% of the taxable balance). We then divide by your Return Rate to get the model’s
-        <em>Taxable Drag (%)</em> used to reduce taxable growth. If Return Rate ≤ 0, implied d is set to 0.
+        <strong>Allocation</strong> is the share of your Taxable balance in that stream (must not exceed 100% in total, but it’s fine if it’s less).
+        <strong>Yield</strong> is the annual % paid/realized on that slice (e.g., 5% dividend yield; for realized gains, enter the % of that slice you expect to realize this year; e.g., realizing $50k on a $200k growth slice ⇒ 25%).
+        We sum each row’s <code>Allocation × Yield × Effective Rate</code> to get <em>Absolute Drag</em> (% of the taxable balance).
+        Then we divide by your Return Rate to get the model’s <em>Taxable Drag (%)</em>, which is applied to Taxable growth only.
       </div>
     </div>
 
@@ -2539,16 +2544,14 @@ function ensureLayout(layout, seriesForAxis){
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const urlRunFull = "/lite_v1/det_from_top";   // full deterministic engine (baseline only)
+  const urlRunFull = "/lite_v1/det_from_top";
   const setStatus = (msg) => { const n=$("litev1_status"); if(n) n.textContent=msg; };
 
   const iFmt = (n) =>
     (n===null || n===undefined || isNaN(n)) ? "" :
     Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
 
-  const pick = (name) =>
-    document.getElementById(name) || document.querySelector(`[name="${name}"]`);
-
+  const pick = (name) => document.getElementById(name) || document.querySelector(`[name="${name}"]`);
   const numVal = (el) => {
     if (!el) return undefined;
     const s = (el.value ?? "").toString().replace(/,/g,"").trim();
@@ -2557,7 +2560,7 @@ function ensureLayout(layout, seriesForAxis){
     return Number.isFinite(v) ? v : undefined;
   };
 
-  // --- helpers for robust top-field reads -----------------------------------
+  // --- helpers to read "top" fields if present elsewhere --------------------
   function numValAny() {
     for (const key of arguments) {
       const el = pick(key);
@@ -2567,22 +2570,16 @@ function ensureLayout(layout, seriesForAxis){
     return undefined;
   }
   function monthlyCPPFromTop() {
-    const monthly = numValAny(
-      "cpp_monthly","cpp_support","cpp","cpp_extra_income","monthly_cpp","cpp_income_monthly"
-    );
+    const monthly = numValAny("cpp_monthly","cpp_support","cpp","cpp_extra_income","monthly_cpp","cpp_income_monthly");
     if (Number.isFinite(monthly)) return monthly;
     const annual = numValAny("cpp_annual","cpp_support_annual","cpp_income_annual");
     if (Number.isFinite(annual)) return annual / 12.0;
     return 0;
   }
-  function cppStartFromTop(defaultAge) {
-    return numValAny("cpp_from_age","cpp_start_age") ?? defaultAge;
-  }
-  function cppEndFromTop(defaultAge) {
-    return numValAny("cpp_to_age","cpp_end_age") ?? defaultAge;
-  }
+  function cppStartFromTop(dflt) { return numValAny("cpp_from_age","cpp_start_age") ?? dflt; }
+  function cppEndFromTop(dflt)   { return numValAny("cpp_to_age","cpp_end_age")   ?? dflt; }
 
-  // Prefill from top
+  // Prefill from top (baseline mirrors: all taxable by default)
   function prefillFromTop() {
     const current_age    = numVal(pick("current_age"));
     const lifespan       = numVal(pick("lifespan"));
@@ -2599,7 +2596,6 @@ function ensureLayout(layout, seriesForAxis){
     if (monthly_saving !== undefined) $("litev1_monthly_saving").value = Math.round(monthly_saving);
     if (tax_pct !== undefined) $("litev1_income_tax").value = tax_pct;
 
-    // Mirror Top's "baseline" by default: total assets as 100% taxable.
     const current_assets = numVal(pick("current_assets"));
     const tTaxable = numVal(pick("taxable"));
     const tRRSP    = numVal(pick("rrsp"));
@@ -2638,42 +2634,33 @@ function ensureLayout(layout, seriesForAxis){
   function _pctSafe(x){ return Number.isFinite(x) ? Math.max(0, x) : 0; }
 
   function readHelperDrag() {
-    // yields & rates in % -> decimals
-    const yDiv = _pctSafe(numVal($("td_y_div"))) / 100;
-    const tDiv = _pctSafe(numVal($("td_t_div"))) / 100;
-    const yInt = _pctSafe(numVal($("td_y_int"))) / 100;
-    const tInt = _pctSafe(numVal($("td_t_int"))) / 100;
-    const yCg  = _pctSafe(numVal($("td_y_cg")))  / 100;
-    const tCg  = _pctSafe(numVal($("td_t_cg")))  / 100;
+    // Read Allocation (% of taxable), Yield (% on that slice), Effective Tax Rate (%)
+    const aDiv = _pctSafe(numVal($("td_a_div"))) / 100, yDiv = _pctSafe(numVal($("td_y_div"))) / 100, tDiv = _pctSafe(numVal($("td_t_div"))) / 100;
+    const aInt = _pctSafe(numVal($("td_a_int"))) / 100, yInt = _pctSafe(numVal($("td_y_int"))) / 100, tInt = _pctSafe(numVal($("td_t_int"))) / 100;
+    const aCg  = _pctSafe(numVal($("td_a_cg")))  / 100, yCg  = _pctSafe(numVal($("td_y_cg")))  / 100, tCg  = _pctSafe(numVal($("td_t_cg")))  / 100;
 
-    // contributions (as %)
-    const cDiv = yDiv * tDiv * 100;
-    const cInt = yInt * tInt * 100;
-    const cCg  = yCg  * tCg  * 100;
+    // Contribution to Absolute Drag (% of taxable balance)
+    const cDiv = aDiv * yDiv * tDiv * 100;
+    const cInt = aInt * yInt * tInt * 100;
+    const cCg  = aCg  * yCg  * tCg  * 100;
 
-    // absolute drag (% of taxable balance)
-    const absPct = cDiv + cInt + cCg;
+    const absPct = cDiv + cInt + cCg;            // Absolute Drag (% of taxable)
+    const rPct   = _pctSafe(numVal($("litev1_return")));  // Return rate input (%)
+    const impliedPct = (rPct > 0) ? (absPct / rPct * 100) : 0; // model's drag (%)
 
-    // implied d (%): abs / return rate
-    const rPct = _pctSafe(numVal($("litev1_return"))); // % input
-    const impliedPct = (rPct > 0) ? (absPct / rPct * 100) : 0;
-
-    // write UI
     $("td_c_div").textContent = cDiv.toFixed(3);
     $("td_c_int").textContent = cInt.toFixed(3);
     $("td_c_cg").textContent  = cCg.toFixed(3);
     $("td_abs").textContent   = absPct.toFixed(3) + "%";
     $("td_implied").textContent = impliedPct.toFixed(2) + "%";
 
-    // optionally push to the main drag input
     if ($("td_auto_apply")?.checked) {
       $("litev1_taxable_drag").value = impliedPct.toFixed(2);
     }
-
     return { absPct, impliedPct };
   }
 
-  ["td_y_div","td_t_div","td_y_int","td_t_int","td_y_cg","td_t_cg","litev1_return","td_auto_apply"]
+  ["td_a_div","td_y_div","td_t_div","td_a_int","td_y_int","td_t_int","td_a_cg","td_y_cg","td_t_cg","litev1_return","td_auto_apply"]
     .forEach(id => $(id)?.addEventListener("input", ()=>{ readHelperDrag(); runAll(); }));
 
   // Build config from UI/top
@@ -2697,14 +2684,13 @@ function ensureLayout(layout, seriesForAxis){
     const cpp_from       = cppStartFromTop(retirement_age);
     const cpp_to         = cppEndFromTop(end_age);
 
-    // Tax drag: manual field OR auto-applied from helper
-    const helper = readHelperDrag(); // updates UI too
+    // drag: manual box or auto from helper
+    const helper = readHelperDrag();
     const manual_drag_pct = numVal($("litev1_taxable_drag"));
     const effective_drag_pct = Number.isFinite(manual_drag_pct) ? manual_drag_pct : (helper?.impliedPct ?? 0);
 
     const saving_inc_pct = numValAny("saving_increase_rate") ?? 0;
 
-    // Liquidations (up to 3)
     const liqs = [];
     for (let i = 1; i <= 3; i++) {
       const amt = numVal(pick(`asset_liquidation_${i}`));
@@ -2745,19 +2731,16 @@ function ensureLayout(layout, seriesForAxis){
   const r0 = (x) => Math.round(x||0);
 
   function livingExpenseAtAge(cfg, age){
-    const yearsFromStart = Math.max(0, age - cfg.current_age);
-    return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, yearsFromStart);
+    const n = Math.max(0, age - cfg.current_age);
+    return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, n);
   }
   function cppAtAge(cfg, age){
     if (!within(age, cfg.cpp_start_age, cfg.cpp_end_age)) return 0;
-    const yearsFromCppStart = Math.max(0, age - cfg.cpp_start_age);
-    const baseAnnualCPP = (cfg.cpp_monthly || 0) * 12;
-    return baseAnnualCPP * Math.pow(1 + cfg.inflation_rate, yearsFromCppStart);
+    const n = Math.max(0, age - cfg.cpp_start_age);
+    return (cfg.cpp_monthly || 0) * 12 * Math.pow(1 + cfg.inflation_rate, n);
   }
   function baseNeedAtAge(cfg, age){
-    const E = livingExpenseAtAge(cfg, age);
-    const C = cppAtAge(cfg, age);
-    return Math.max(0, E - C);
+    return Math.max(0, livingExpenseAtAge(cfg, age) - cppAtAge(cfg, age));
   }
   function liqMap(asset_liquidations){
     const m = {};
@@ -2783,27 +2766,21 @@ function ensureLayout(layout, seriesForAxis){
 
       if (src === "tfsa") {
         const draw = Math.min(need, f);
-        fromTFSA += draw;
-        f -= draw;
-        need -= draw;
+        fromTFSA += draw; f -= draw; need -= draw;
       } else if (src === "taxable") {
         const draw = Math.min(need, t);
-        fromTax += draw;
-        t -= draw;
-        need -= draw;
+        fromTax   += draw; t -= draw; need -= draw;
       } else if (src === "rrsp") {
-        const netPossible = r * (1 - rrspFlat);     // max *net* we can fund from RRSP
-        const netTake    = Math.min(need, Math.max(0, netPossible));
-        const gross      = netTake / (1 - rrspFlat);
-        const tax        = gross * rrspFlat;
-
-        fromRRSPGross += gross;
-        taxRRSP       += tax;
-        r             -= gross;
-        need          -= netTake;
+        const netPossible = r * (1 - rrspFlat);
+        const netTake     = Math.min(need, Math.max(0, netPossible));
+        const gross       = netTake / (1 - rrspFlat);
+        const tax         = gross * rrspFlat;
+        fromRRSPGross    += gross;
+        taxRRSP          += tax;
+        r                -= gross;
+        need             -= netTake;
       }
     }
-
     return {
       draws: { fromTax, fromTFSA, fromRRSPGross },
       taxes: { taxRRSP },
@@ -2824,9 +2801,9 @@ function ensureLayout(layout, seriesForAxis){
     let save = annual_saving;
 
     const lm = liqMap(asset_liquidations);
-    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0)); // clamp [0,1]
-    const gN = 1 + return_rate;                    // normal growth
-    const gT = 1 + return_rate * (1 - d);          // dragged growth for Taxable
+    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+    const gN = 1 + return_rate;               // normal growth
+    const gT = 1 + return_rate * (1 - d);     // dragged growth for Taxable
 
     while (age < retirement_age) {
       const t0 = taxable;
@@ -2841,8 +2818,7 @@ function ensureLayout(layout, seriesForAxis){
       if (lm[age]) taxable += lm[age];
 
       const endTotal = taxable + rrsp + tfsa;
-
-      const dragAmt = (d > 0) ? (t0 * return_rate * d) : 0;
+      const dragAmt  = (d > 0) ? (t0 * return_rate * d) : 0;
 
       rows.push({
         Age: age,
@@ -2855,7 +2831,6 @@ function ensureLayout(layout, seriesForAxis){
       save *= (1 + saving_increase_rate);
       age += 1;
     }
-
     return { rows, taxable, rrsp, tfsa };
   }
 
@@ -2866,16 +2841,14 @@ function ensureLayout(layout, seriesForAxis){
     const startRet = cfg.retirement_age;
     const lm       = liqMap(cfg.asset_liquidations);
     const order    = readDrawOrder();
-    const rrspFlat = cfg.income_tax_rate || 0;   // flat rate on RRSP gross
+    const rrspFlat = cfg.income_tax_rate || 0;
 
     let rows = [];
 
     for (let age = startRet; age <= endAge; age++) {
-      const E       = livingExpenseAtAge(cfg, age);
-      const cppY    = cppAtAge(cfg, age);
-      const netNeed = Math.max(0, E - cppY);     // NET need (Living − CPP)
+      const netNeed = baseNeedAtAge(cfg, age);
 
-      // 1) Allocate the net need according to selected order
+      // 1) Allocate net need per order
       const pass = allocateByOrder(
         netNeed,
         { taxable: balances.taxable, tfsa: balances.tfsa, rrsp: balances.rrsp },
@@ -2887,10 +2860,9 @@ function ensureLayout(layout, seriesForAxis){
       const d          = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
       const useOverlay = (d === 0);
       const grossUp    = rrspFlat > 0 ? (rrspFlat / (1 - rrspFlat)) : 0;
-      const overlayBase    = pass.draws.fromTax;
-      const overlayTaxable = useOverlay ? (overlayBase * grossUp) : 0;
+      const overlayTaxable = useOverlay ? (pass.draws.fromTax * grossUp) : 0;
 
-      // 3) Pay overlay from taxable (pre-growth), then apply any liquidations
+      // 3) Pay overlay from taxable (pre-growth), then liquidations
       let t = pass.endBalancesBeforeGrowth.taxable;
       let f = pass.endBalancesBeforeGrowth.tfsa;
       let r = pass.endBalancesBeforeGrowth.rrsp;
@@ -2898,13 +2870,12 @@ function ensureLayout(layout, seriesForAxis){
       const overlayPay = Math.min(overlayTaxable, Math.max(0, t));
       t -= overlayPay;
 
-      if (lm[age]) t += lm[age];  // start-of-year inflow
+      if (lm[age]) t += lm[age];
 
-      // 4) Grow post-cashflow balances (apply drag to Taxable only)
+      // 4) Grow (drag only on taxable)
       const gN = 1 + cfg.return_rate_after;
       const gT = 1 + cfg.return_rate_after * (1 - d);
-
-      const t0 = t;                         // base for drag computation
+      const t0 = t;
       const dragAmt = (d > 0) ? (t0 * cfg.return_rate_after * d) : 0;
 
       t = t0 * gT;
@@ -2915,7 +2886,7 @@ function ensureLayout(layout, seriesForAxis){
 
       rows.push({
         Age: age,
-        From_Taxable: r0(pass.draws.fromTax + overlayTaxable),   // net draw + overlay (overlay may be 0 if drag > 0)
+        From_Taxable: r0(pass.draws.fromTax + overlayTaxable),
         From_TFSA: r0(pass.draws.fromTFSA),
         From_RRSP_Gross: r0(pass.draws.fromRRSPGross),
         Tax_On_Taxable: r0(overlayTaxable),
@@ -2927,11 +2898,10 @@ function ensureLayout(layout, seriesForAxis){
         End_Total: r0(endTotal)
       });
 
-      // carry balances forward
       balances = { taxable: t, tfsa: f, rrsp: r };
     }
 
-    // Earliest depletion (not displayed but kept for meta)
+    // earliest depletion (meta)
     let earliest = null;
     for (const r of rows) {
       if (Number(r.End_Total) <= 0) { earliest = Number(r.Age); break; }
@@ -3029,7 +2999,7 @@ function ensureLayout(layout, seriesForAxis){
 
   $("litev1_run").addEventListener("click", runAll);
 
-  // Live re-run when key inputs change (incl. wd_order & drag & helper)
+  // Live re-run when inputs change (order, drag, helper)
   [
     "litev1_start_age","litev1_end_age","litev1_taxable","litev1_rrsp","litev1_tfsa",
     "litev1_spend","litev1_return","litev1_monthly_saving","litev1_income_tax","wd_order",
@@ -3042,6 +3012,7 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
+
 
 
 
