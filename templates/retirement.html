@@ -2425,9 +2425,7 @@ function ensureLayout(layout, seriesForAxis){
       <div class="col-md-2">
         <label class="form-label">Taxable Drag (%)</label>
         <input id="litev1_taxable_drag" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
-        <div class="form-text small">
-          Annual drag on <em>Taxable growth only</em>. If &gt; 0, taxable-overlay is disabled to avoid double tax.
-        </div>
+        <div class="form-text small">Annual drag applied to Taxable growth only (set manually or auto from helper below).</div>
       </div>
 
       <!-- Withdrawal order selector -->
@@ -2449,9 +2447,70 @@ function ensureLayout(layout, seriesForAxis){
       </div>
     </div>
 
+    <!-- === Taxable Drag Helper (sub-table) ================================= -->
+    <div class="mt-4" id="taxdrag_helper">
+      <div class="d-flex align-items-center justify-content-between">
+        <h6 class="mb-2">Taxable Drag Helper</h6>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="td_auto_apply" checked>
+          <label class="form-check-label small" for="td_auto_apply">
+            Auto-apply implied “Taxable Drag (%)” above
+          </label>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th style="min-width:180px;">Stream</th>
+              <th>Yield (% of taxable)</th>
+              <th>Effective Tax Rate (%)</th>
+              <th>Contribution to Absolute Drag (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Eligible dividends</td>
+              <td><input id="td_y_div" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
+              <td><input id="td_t_div" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
+              <td id="td_c_div" class="text-end">0.00</td>
+            </tr>
+            <tr>
+              <td>Interest (incl. foreign withholding)</td>
+              <td><input id="td_y_int" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
+              <td><input id="td_t_int" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
+              <td id="td_c_int" class="text-end">0.00</td>
+            </tr>
+            <tr>
+              <td>Realized capital gains<br><span class="text-muted small">Use effective rate (after inclusion), e.g. 50%×30% = 15%</span></td>
+              <td><input id="td_y_cg" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
+              <td><input id="td_t_cg" type="number" class="form-control form-control-sm" value="0" step="0.1" min="0" max="100"></td>
+              <td id="td_c_cg" class="text-end">0.00</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th colspan="3" class="text-end">Absolute Drag (Σ contributions)</th>
+              <th id="td_abs" class="text-end">0.00%</th>
+            </tr>
+            <tr>
+              <th colspan="3" class="text-end">Implied Taxable Drag d = Absolute Drag ÷ Return Rate</th>
+              <th id="td_implied" class="text-end">0.00%</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="small text-muted">
+        Enter the expected yields and effective tax rates for the year. We add their products to get the
+        <em>Absolute Drag</em> (% of the taxable balance). We then divide by your Return Rate to get the model’s
+        <em>Taxable Drag (%)</em> used to reduce taxable growth. If Return Rate ≤ 0, implied d is set to 0.
+      </div>
+    </div>
+
     <hr class="my-3">
 
-    <!-- One table: includes baseline (100% taxable) assets column -->
+    <!-- Results table -->
     <div class="table-responsive">
       <table class="table table-sm" id="litev1_tax_table">
         <thead>
@@ -2540,7 +2599,7 @@ function ensureLayout(layout, seriesForAxis){
     if (monthly_saving !== undefined) $("litev1_monthly_saving").value = Math.round(monthly_saving);
     if (tax_pct !== undefined) $("litev1_income_tax").value = tax_pct;
 
-    // By default mirror Top's "baseline" by treating total assets as 100% taxable.
+    // Mirror Top's "baseline" by default: total assets as 100% taxable.
     const current_assets = numVal(pick("current_assets"));
     const tTaxable = numVal(pick("taxable"));
     const tRRSP    = numVal(pick("rrsp"));
@@ -2575,6 +2634,48 @@ function ensureLayout(layout, seriesForAxis){
     return map[v] || map.taxable_tfsa_rrsp;
   }
 
+  // ------- Taxable Drag Helper logic ----------------------------------------
+  function _pctSafe(x){ return Number.isFinite(x) ? Math.max(0, x) : 0; }
+
+  function readHelperDrag() {
+    // yields & rates in % -> decimals
+    const yDiv = _pctSafe(numVal($("td_y_div"))) / 100;
+    const tDiv = _pctSafe(numVal($("td_t_div"))) / 100;
+    const yInt = _pctSafe(numVal($("td_y_int"))) / 100;
+    const tInt = _pctSafe(numVal($("td_t_int"))) / 100;
+    const yCg  = _pctSafe(numVal($("td_y_cg")))  / 100;
+    const tCg  = _pctSafe(numVal($("td_t_cg")))  / 100;
+
+    // contributions (as %)
+    const cDiv = yDiv * tDiv * 100;
+    const cInt = yInt * tInt * 100;
+    const cCg  = yCg  * tCg  * 100;
+
+    // absolute drag (% of taxable balance)
+    const absPct = cDiv + cInt + cCg;
+
+    // implied d (%): abs / return rate
+    const rPct = _pctSafe(numVal($("litev1_return"))); // % input
+    const impliedPct = (rPct > 0) ? (absPct / rPct * 100) : 0;
+
+    // write UI
+    $("td_c_div").textContent = cDiv.toFixed(3);
+    $("td_c_int").textContent = cInt.toFixed(3);
+    $("td_c_cg").textContent  = cCg.toFixed(3);
+    $("td_abs").textContent   = absPct.toFixed(3) + "%";
+    $("td_implied").textContent = impliedPct.toFixed(2) + "%";
+
+    // optionally push to the main drag input
+    if ($("td_auto_apply")?.checked) {
+      $("litev1_taxable_drag").value = impliedPct.toFixed(2);
+    }
+
+    return { absPct, impliedPct };
+  }
+
+  ["td_y_div","td_t_div","td_y_int","td_t_int","td_y_cg","td_t_cg","litev1_return","td_auto_apply"]
+    .forEach(id => $(id)?.addEventListener("input", ()=>{ readHelperDrag(); runAll(); }));
+
   // Build config from UI/top
   function buildCfg() {
     const current_age    = Number($("litev1_start_age").value);
@@ -2596,9 +2697,10 @@ function ensureLayout(layout, seriesForAxis){
     const cpp_from       = cppStartFromTop(retirement_age);
     const cpp_to         = cppEndFromTop(end_age);
 
-    const taxable_drag_pct =
-      Number($("litev1_taxable_drag")?.value) ||
-      (numValAny("taxable_drag","taxable_tax_drag") || 0);
+    // Tax drag: manual field OR auto-applied from helper
+    const helper = readHelperDrag(); // updates UI too
+    const manual_drag_pct = numVal($("litev1_taxable_drag"));
+    const effective_drag_pct = Number.isFinite(manual_drag_pct) ? manual_drag_pct : (helper?.impliedPct ?? 0);
 
     const saving_inc_pct = numValAny("saving_increase_rate") ?? 0;
 
@@ -2632,7 +2734,7 @@ function ensureLayout(layout, seriesForAxis){
       cpp_start_age: cpp_from || retirement_age,
       cpp_end_age: cpp_to || end_age,
 
-      taxable_drag: (taxable_drag_pct || 0) / 100,
+      taxable_drag: (effective_drag_pct || 0) / 100,
 
       asset_liquidations: liqs
     };
@@ -2690,7 +2792,7 @@ function ensureLayout(layout, seriesForAxis){
         t -= draw;
         need -= draw;
       } else if (src === "rrsp") {
-        const netPossible = r * (1 - rrspFlat); // max *net* we can fund from RRSP
+        const netPossible = r * (1 - rrspFlat);     // max *net* we can fund from RRSP
         const netTake    = Math.min(need, Math.max(0, netPossible));
         const gross      = netTake / (1 - rrspFlat);
         const tax        = gross * rrspFlat;
@@ -2739,6 +2841,7 @@ function ensureLayout(layout, seriesForAxis){
       if (lm[age]) taxable += lm[age];
 
       const endTotal = taxable + rrsp + tfsa;
+
       const dragAmt = (d > 0) ? (t0 * return_rate * d) : 0;
 
       rows.push({
@@ -2756,7 +2859,7 @@ function ensureLayout(layout, seriesForAxis){
     return { rows, taxable, rrsp, tfsa };
   }
 
-  // Retirement: allocate base need; overlay tax belongs ONLY to taxable (if drag==0).
+  // Retirement: allocate base need; overlay tax belongs ONLY to taxable.
   // Baseline column is for reference only—no balance overriding.
   function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     const endAge   = cfg.life_expectancy;
@@ -2812,7 +2915,7 @@ function ensureLayout(layout, seriesForAxis){
 
       rows.push({
         Age: age,
-        From_Taxable: r0(pass.draws.fromTax + overlayTaxable),   // net draw + overlay
+        From_Taxable: r0(pass.draws.fromTax + overlayTaxable),   // net draw + overlay (overlay may be 0 if drag > 0)
         From_TFSA: r0(pass.draws.fromTFSA),
         From_RRSP_Gross: r0(pass.draws.fromRRSPGross),
         Tax_On_Taxable: r0(overlayTaxable),
@@ -2828,7 +2931,7 @@ function ensureLayout(layout, seriesForAxis){
       balances = { taxable: t, tfsa: f, rrsp: r };
     }
 
-    // Earliest depletion (kept for meta)
+    // Earliest depletion (not displayed but kept for meta)
     let earliest = null;
     for (const r of rows) {
       if (Number(r.End_Total) <= 0) { earliest = Number(r.Age); break; }
@@ -2926,12 +3029,16 @@ function ensureLayout(layout, seriesForAxis){
 
   $("litev1_run").addEventListener("click", runAll);
 
-  // Live re-run when key inputs change (incl. wd_order & drag)
+  // Live re-run when key inputs change (incl. wd_order & drag & helper)
   [
     "litev1_start_age","litev1_end_age","litev1_taxable","litev1_rrsp","litev1_tfsa",
-    "litev1_spend","litev1_return","litev1_monthly_saving","litev1_income_tax","wd_order","litev1_taxable_drag"
+    "litev1_spend","litev1_return","litev1_monthly_saving","litev1_income_tax","wd_order",
+    "litev1_taxable_drag"
   ].forEach(id => $(id)?.addEventListener("input", runAll));
   $("wd_order")?.addEventListener("change", runAll);
+
+  // Initial helper compute
+  readHelperDrag();
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
