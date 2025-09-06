@@ -2447,7 +2447,7 @@ function ensureLayout(layout, seriesForAxis){
       </div>
     </div>
 
-    <!-- OAS / RRIF controls (default 0/off to match old base case) -->
+    <!-- OAS / RRIF controls (all start as zeros/off so base case matches old behavior) -->
     <div class="row g-3 mt-3">
       <div class="col-md-2">
         <label class="form-label">OAS Monthly ($)</label>
@@ -2536,10 +2536,10 @@ function ensureLayout(layout, seriesForAxis){
         </table>
       </div>
       <div class="small text-muted">
-        <strong>Allocation</strong> is the share of your Taxable balance in that stream (can be &lt;=100% total).
+        <strong>Allocation</strong> is the share of your Taxable balance in that stream (must not exceed 100% in total, but it’s fine if it’s less).
         <strong>Yield</strong> is the annual % paid/realized on that slice.
         We sum each row’s <code>Allocation × Yield × Effective Rate</code> to get <em>Absolute Drag</em> (% of the taxable balance).
-        Then we divide by your Return Rate to get the model’s <em>Taxable Drag (%)</em>, applied to Taxable growth only.
+        Then we divide by your Return Rate to get the model’s <em>Taxable Drag (%)</em>, which is applied to Taxable growth only.
       </div>
     </div>
 
@@ -2751,7 +2751,8 @@ function ensureLayout(layout, seriesForAxis){
       }
     }
 
-    return {
+    // OAS/RRIF (all default to 0/off)
+    const cfg = {
       current_age,
       retirement_age,
       life_expectancy: end_age,
@@ -2773,7 +2774,7 @@ function ensureLayout(layout, seriesForAxis){
 
       taxable_drag: (effective_drag_pct || 0) / 100,
 
-      // OAS/RRIF
+      // new
       oas_monthly: Number($("oas_mo").value) || 0,
       oas_start_age: Number($("oas_start_age").value) || 0,
       oas_threshold: Number($("oas_threshold").value) || 0,
@@ -2784,6 +2785,7 @@ function ensureLayout(layout, seriesForAxis){
 
       asset_liquidations: liqs
     };
+    return cfg;
   }
 
   // Helpers
@@ -2840,13 +2842,14 @@ function ensureLayout(layout, seriesForAxis){
     }
     return {
       draws: { fromTax, fromTFSA, fromRRSPGross },
-      taxes: { taxRRSP }, // tax on RRSP used to fund spending/top-ups only
+      taxes: { taxRRSP },
       shortfall: Math.max(0, need),
       endBalancesBeforeGrowth: { taxable: t, tfsa: f, rrsp: r }
     };
   }
 
   // Pre-retirement (grow, then deposit savings & liquidations)
+  // Taxable grows with drag; RRSP/TFSA grow normally.
   function prerollToRetirement(cfg) {
     let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
           taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
@@ -2879,7 +2882,7 @@ function ensureLayout(layout, seriesForAxis){
       rows.push({
         Age: age,
         From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0,
-        RRIF_Min_Pct: "0.00%", OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
+        RRIF_Min_Pct: 0, OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
         Tax_On_Taxable: 0, Tax_On_RRSP: 0,
         Taxable_Drag: dragAmt,
         End_Taxable: taxable, End_TFSA: tfsa, End_RRSP: rrsp, End_Total: endTotal
@@ -2891,7 +2894,7 @@ function ensureLayout(layout, seriesForAxis){
     return { rows, taxable, rrsp, tfsa };
   }
 
-  // Retirement: allocate base need; OAS/RRIF gated; RRIF tax paid from Taxable
+  // Retirement: allocate base need; OAS/RRIF gated; overlay tax on taxable only if drag=0
   function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     const endAge   = cfg.life_expectancy;
     const startRet = cfg.retirement_age;
@@ -2905,29 +2908,27 @@ function ensureLayout(layout, seriesForAxis){
       const expense = livingExpenseAtAge(cfg, age);
       const cpp     = cppAtAge(cfg, age);
       const oasGross= oasGrossAtAge(cfg, age);
+      const netNeedInitial = Math.max(0, expense - cpp - oasGross); // assume no clawback first pass
 
-      // First pass: use OAS gross; clawback will be topped up
-      let netNeed = Math.max(0, expense - cpp - oasGross);
-
+      // 1) Allocate net need per order (first pass, using OAS gross)
       let pass = allocateByOrder(
-        netNeed,
+        netNeedInitial,
         { taxable: balances.taxable, tfsa: balances.tfsa, rrsp: balances.rrsp },
         order,
         taxRate
       );
 
-      // OAS clawback base: RRSP gross + CPP + OAS gross (Taxable draws are NOT income)
+      // 2) Compute OAS clawback (gated)
+      let incomeForClawback = pass.draws.fromRRSPGross + pass.draws.fromTax + oasGross + cpp;
       let oasClawback = 0, oasNet = oasGross;
       if (cfg.oas_monthly > 0 && cfg.oas_start_age > 0 && age >= cfg.oas_start_age &&
           cfg.oas_threshold > 0 && cfg.oas_clawback_rate > 0) {
-
-        const incomeForClawback = pass.draws.fromRRSPGross + cpp + oasGross;
         oasClawback = Math.max(0, incomeForClawback - cfg.oas_threshold) * cfg.oas_clawback_rate;
         oasClawback = Math.min(oasClawback, oasGross);
         oasNet = Math.max(0, oasGross - oasClawback);
       }
 
-      // If clawback > 0, we need extra cash equal to the clawback (top-up)
+      // If there is clawback, we need extra cash equal to the clawback (because we used OAS gross in pass)
       if (oasClawback > 0) {
         const topUp = allocateByOrder(
           oasClawback,
@@ -2935,7 +2936,8 @@ function ensureLayout(layout, seriesForAxis){
           order,
           taxRate
         );
-        // Merge
+
+        // Merge the top-up into the main pass
         pass.draws.fromTax       += topUp.draws.fromTax;
         pass.draws.fromTFSA      += topUp.draws.fromTFSA;
         pass.draws.fromRRSPGross += topUp.draws.fromRRSPGross;
@@ -2943,9 +2945,8 @@ function ensureLayout(layout, seriesForAxis){
         pass.endBalancesBeforeGrowth = topUp.endBalancesBeforeGrowth;
       }
 
-      // RRIF minimum enforcement (if enabled)
+      // 3) RRIF minimum (gated by start age)
       let rrifMinPctApplied = 0;
-      let rrifTaxPaidFromTaxable = 0; // show this in "Tax on Taxable"
       if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age) {
         rrifMinPctApplied = rrifMinPct(age);
         const mustGross = pass.endBalancesBeforeGrowth.rrsp * rrifMinPctApplied;
@@ -2954,33 +2955,31 @@ function ensureLayout(layout, seriesForAxis){
           const extraTax   = extraGross * taxRate;
           const extraNet   = extraGross - extraTax;
 
-          // This tax is paid from Taxable (overlay), NOT counted in "Tax on RRSP"
-          rrifTaxPaidFromTaxable += extraTax;
-
-          // Move net cash to Taxable and remove gross from RRSP
+          pass.draws.fromRRSPGross += extraGross;
+          pass.taxes.taxRRSP       += extraTax;
+          // RRIF min above what was needed moves into Taxable as cash
           pass.endBalancesBeforeGrowth.taxable += extraNet;
           pass.endBalancesBeforeGrowth.rrsp    -= extraGross;
-
-          // Do NOT add extraTax to pass.taxes.taxRRSP
-          // Do NOT add extraGross to "From RRSP (Gross)" (that column only shows amounts used to fund spending/top-ups)
         }
       }
 
-      // No taxable gross-up overlay (we keep taxable draw as net; RRIF tax overlay only)
-      const taxOnTaxableOverlay = rrifTaxPaidFromTaxable;
+      // 4) Overlay on Taxable withdrawals (only if drag==0 to avoid double count)
+      const d          = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+      const useOverlay = (d === 0) && (taxRate > 0);
+      const grossUp    = useOverlay ? (taxRate / (1 - taxRate)) : 0;
+      const overlayTaxable = useOverlay ? (pass.draws.fromTax * grossUp) : 0;
 
-      // Pay RRIF tax overlay from taxable before growth; then apply any liquidations
+      // 5) Pay overlay from taxable pre-growth, then liquidations hit taxable
       let t = pass.endBalancesBeforeGrowth.taxable;
       let f = pass.endBalancesBeforeGrowth.tfsa;
       let r = pass.endBalancesBeforeGrowth.rrsp;
 
-      const overlayPay = Math.min(taxOnTaxableOverlay, Math.max(0, t));
+      const overlayPay = Math.min(overlayTaxable, Math.max(0, t));
       t -= overlayPay;
 
       if (lm[age]) t += lm[age];
 
-      // Grow (drag only on taxable)
-      const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+      // 6) Grow (drag only on taxable)
       const gN = 1 + cfg.return_rate_after;
       const gT = 1 + cfg.return_rate_after * (1 - d);
       const t0 = t;
@@ -2994,15 +2993,15 @@ function ensureLayout(layout, seriesForAxis){
 
       rows.push({
         Age: age,
-        From_Taxable: r0(pass.draws.fromTax),              // spending-only
+        From_Taxable: r0(pass.draws.fromTax + overlayTaxable),
         From_TFSA: r0(pass.draws.fromTFSA),
-        From_RRSP_Gross: r0(pass.draws.fromRRSPGross),     // spending/top-ups only
+        From_RRSP_Gross: r0(pass.draws.fromRRSPGross),
         RRIF_Min_Pct: (rrifMinPctApplied*100).toFixed(2) + "%",
         OAS_Gross: r0(oasGross),
         OAS_Clawback: r0(oasClawback),
         OAS_Net: r0(oasNet),
-        Tax_On_Taxable: r0(taxOnTaxableOverlay),           // RRIF-min tax overlay only
-        Tax_On_RRSP: r0(pass.taxes.taxRRSP),               // tax on RRSP used for spending/top-ups
+        Tax_On_Taxable: r0(overlayTaxable),
+        Tax_On_RRSP: r0(pass.taxes.taxRRSP),
         Taxable_Drag: r0(dragAmt),
         End_Taxable: r0(t),
         End_TFSA: r0(f),
@@ -3022,7 +3021,6 @@ function ensureLayout(layout, seriesForAxis){
     return {
       rows,
       flat_tax_rate: taxRate,
-      // meta shows need excluding OAS at first retirement year (before RRIF mechanics)
       annual_spend: r0(Math.max(0, livingExpenseAtAge(cfg, cfg.retirement_age) - cppAtAge(cfg, cfg.retirement_age))),
       earliest_depletion_age: earliest
     };
@@ -3130,7 +3128,6 @@ function ensureLayout(layout, seriesForAxis){
 })();
 </script>
 <!-- === END COMBINED ======================================================== -->
-
 
 
 
