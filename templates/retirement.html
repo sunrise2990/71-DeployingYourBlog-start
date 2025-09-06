@@ -3207,10 +3207,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const rrspNet = rows.map((r,i) => num(r.From_RRSP_Gross) * (1 - flatT));
       const netSpend = rows.map((_,i)=> num(fromTax[i]) + num(fromTFSA[i]) + rrspNet[i]);
 
-      // ---- Find or create canvases (by id) ----
-      const c1 = document.getElementById("taxviz_wd");
-      const c2 = document.getElementById("taxviz_bal");
-      const c3 = document.getElementById("taxviz_tax");
+    // ---- Find canvases (by id) ----
+    const c1 = document.getElementById("taxviz_withdrawals");
+    const c2 = document.getElementById("taxviz_balances");
+    const c3 = document.getElementById("taxviz_taxes");
 
       if (!c1 || !c2 || !c3) return; // container not present
 
