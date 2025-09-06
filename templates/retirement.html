@@ -2565,17 +2565,17 @@ function ensureLayout(layout, seriesForAxis){
     <div class="row g-3">
       <div class="col-md-6">
         <!-- Fixed pixel canvas; no shrinking on browser zoom -->
-        <canvas id="taxviz_orders" width="560" height="240"></canvas>
+        <canvas id="taxviz_orders" width="560" height="275"></canvas>
       </div>
       <div class="col-md-6">
-        <canvas id="taxviz_taxes" width="560" height="240"></canvas>
+        <canvas id="taxviz_taxes" width="560" height="275"></canvas>
       </div>
     </div>
 
     <!-- Row 2: FULL width = balances over time -->
     <div class="row g-3 mt-2">
       <div class="col-12">
-        <canvas id="taxviz_balances" width="1160" height="280"></canvas>
+        <canvas id="taxviz_balances" width="1160" height="300"></canvas>
       </div>
     </div>
   </div>
@@ -3485,7 +3485,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           title:  { display: true, text: `${bestTxt}   vs   ${worstTxt}` },
           subtitle: {
             display: true,
-            text: "Tip: bars are clickable — click a bar to switch the withdrawal order",
+            text: "🌟Tip: bars are clickable — click a bar to switch the withdrawal order",
             color: "#6c757d",
             font: { size: 11 }
           }

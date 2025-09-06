@@ -11130,9 +11130,13 @@ header.masthead.post-banner .post-heading .subheading {
 
 
 <style>
-  /* shrink the combined table text a touch */
-  #litev1_tax_table { font-size: 12px; }
-  #litev1_tax_table th, #litev1_tax_table td { padding: .25rem .40rem; }
+  /* stronger rules so Bootstrap can't override */
+  #litev1_tax_table { font-size: 12px !important; }
+  #litev1_tax_table thead th { font-size: 11px !important; }
+  #litev1_tax_table th, #litev1_tax_table td {
+    padding: .25rem .40rem !important;
+    line-height: 1.2 !important;
+  }
 </style>
 
 
