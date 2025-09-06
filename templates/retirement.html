@@ -3438,8 +3438,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const eoLife = orderKeys.map(k => endTotalForOrder(cfg, k));
       const bestIdx = eoLife.indexOf(Math.max.apply(null, eoLife));
       const worstIdx= eoLife.indexOf(Math.min.apply(null, eoLife));
-      const bestTxt = mFmt(eoLife[bestIdx]) + " (best)";
-      const worstTxt= mFmt(eoLife[worstIdx]) + " (worst)";
+      const bestName = ORDER_LABEL[orderKeys[bestIdx]];
+      const worstName= ORDER_LABEL[orderKeys[worstIdx]];
+      const bestTxt  = `${mFmt(eoLife[bestIdx])} (best: ${bestName})`;
+      const worstTxt = `${mFmt(eoLife[worstIdx])} (worst: ${worstName})`;
+
 
       window.__taxC1 = new Chart(cOrders.getContext("2d"), {
         type: "bar",
@@ -3476,11 +3479,18 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
               ticks: { callback: kFmt }
             }
           },
-          plugins: {
-            legend: { position: "top" },
-            title:  { display: true, text: bestTxt + "  vs  " + worstTxt }
+
+        plugins: {
+          legend: { position: "top" },
+          title:  { display: true, text: `${bestTxt}   vs   ${worstTxt}` },
+          subtitle: {
+            display: true,
+            text: "Tip: bars are clickable — click a bar to switch the withdrawal order",
+            color: "#6c757d",
+            font: { size: 11 }
           }
         }
+       }
       });
 
       // (2) TAXES: overlay tax & OAS clawback + effective tax on spending
@@ -3497,9 +3507,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         options: {
           responsive: false, maintainAspectRatio: false, devicePixelRatio: 1, animation: false,
           scales: {
-            y:  { beginAtZero:true, title:{display:true, text:"$ / year"} },
-            y1: { position:"right", grid:{drawOnChartArea:false}, title:{display:true, text:"%"} }
+          y:  { beginAtZero:true, title:{display:true, text:"$ / year"}, ticks:{ callback: (v)=> kFmt(v) } },
+          y1: { position:"right", grid:{drawOnChartArea:false}, title:{display:true, text:"%"} }
           },
+
           plugins:{
             legend:{position:"top"},
             // vertical markers

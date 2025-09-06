@@ -11127,3 +11127,12 @@ header.masthead.post-banner .post-heading .subheading {
   margin-left:.35rem; cursor:help; user-select:none;
 }
 .help-tip::before{ content:"?"; transform:translateY(-.5px); }
+
+
+<style>
+  /* shrink the combined table text a touch */
+  #litev1_tax_table { font-size: 12px; }
+  #litev1_tax_table th, #litev1_tax_table td { padding: .25rem .40rem; }
+</style>
+
+
