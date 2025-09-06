@@ -2439,7 +2439,7 @@ function ensureLayout(layout, seriesForAxis){
           <option value="taxable_rrsp_tfsa">Taxable → RRSP → TFSA</option>
           <option value="rrsp_tfsa_taxable">RRSP → TFSA → Taxable</option>
         </select>
-        <div class="form-text small">Applied each retirement year.</div>
+        <div class="form-text small">Applied each retirement year (unless RRIF minimum is explicitly enabled).</div>
       </div>
 
       <div class="col-md-1 d-flex align-items-end justify-content-end">
@@ -2447,31 +2447,31 @@ function ensureLayout(layout, seriesForAxis){
       </div>
     </div>
 
-    <!-- NEW: OAS & RRIF knobs (local to this card only) -->
+    <!-- OAS / RRIF controls (all start as zeros/off so base case matches old behavior) -->
     <div class="row g-3 mt-3">
       <div class="col-md-2">
         <label class="form-label">OAS Monthly ($)</label>
-        <input id="oas_monthly" type="number" class="form-control" value="0" step="1" min="0">
+        <input id="oas_mo" type="number" class="form-control" value="0" step="1" min="0">
       </div>
       <div class="col-md-2">
         <label class="form-label">OAS Start Age</label>
-        <input id="oas_start_age" type="number" class="form-control" value="65" step="1" min="60" max="75">
+        <input id="oas_start_age" type="number" class="form-control" value="0" min="0">
       </div>
       <div class="col-md-3">
         <label class="form-label">OAS Clawback Threshold ($/yr)</label>
-        <input id="oas_threshold" type="number" class="form-control" value="90000" step="1000" min="0">
+        <input id="oas_threshold" type="number" class="form-control" value="0" step="1000" min="0">
       </div>
       <div class="col-md-2">
         <label class="form-label">Clawback Rate (%)</label>
-        <input id="oas_rate" type="number" class="form-control" value="15" step="0.1" min="0" max="100">
+        <input id="oas_rate" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
       </div>
       <div class="col-md-2">
         <label class="form-label">RRIF Start Age</label>
-        <input id="rrif_start_age" type="number" class="form-control" value="72" step="1" min="50" max="95">
+        <input id="rrif_start_age" type="number" class="form-control" value="0" min="0">
       </div>
       <div class="col-md-1 d-flex align-items-end">
         <div class="form-check">
-          <input id="oas_index" class="form-check-input" type="checkbox" checked>
+          <input id="oas_index" class="form-check-input" type="checkbox">
           <label class="form-check-label small" for="oas_index">Index OAS</label>
         </div>
       </div>
@@ -2537,7 +2537,7 @@ function ensureLayout(layout, seriesForAxis){
       </div>
       <div class="small text-muted">
         <strong>Allocation</strong> is the share of your Taxable balance in that stream (must not exceed 100% in total, but it’s fine if it’s less).
-        <strong>Yield</strong> is the annual % paid/realized on that slice (e.g., 5% dividend yield; for realized gains, enter the % of that slice you expect to realize this year; e.g., realizing $50k on a $200k growth slice ⇒ 25%).
+        <strong>Yield</strong> is the annual % paid/realized on that slice.
         We sum each row’s <code>Allocation × Yield × Effective Rate</code> to get <em>Absolute Drag</em> (% of the taxable balance).
         Then we divide by your Return Rate to get the model’s <em>Taxable Drag (%)</em>, which is applied to Taxable growth only.
       </div>
@@ -2556,7 +2556,6 @@ function ensureLayout(layout, seriesForAxis){
             <th>From TFSA</th>
             <th>From RRSP (Gross)</th>
             <th>RRIF Min %</th>
-            <th>RRIF Min (Gross)</th>
             <th>OAS (Gross)</th>
             <th>OAS Clawback</th>
             <th>OAS (Net)</th>
@@ -2585,7 +2584,6 @@ function ensureLayout(layout, seriesForAxis){
   const iFmt = (n) =>
     (n===null || n===undefined || isNaN(n)) ? "" :
     Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
-  const pFmt = (f) => (f ? (Number(f)*100).toFixed(2) + "%" : "0.00%");
 
   const pick = (name) => document.getElementById(name) || document.querySelector(`[name="${name}"]`);
   const numVal = (el) => {
@@ -2697,19 +2695,24 @@ function ensureLayout(layout, seriesForAxis){
   ["td_a_div","td_y_div","td_t_div","td_a_int","td_y_int","td_t_int","td_a_cg","td_y_cg","td_t_cg","litev1_return","td_auto_apply"]
     .forEach(id => $(id)?.addEventListener("input", ()=>{ readHelperDrag(); runAll(); }));
 
-  // ---- RRIF minimum factors (CRA) ------------------------------------------
+  // --- OAS / RRIF helpers ----------------------------------------------------
   function rrifMinPct(age){
-    const a = Math.floor(age);
-    if (a <= 70) return 1 / (90 - a); // standard formula if RRIF is earlier
-    const tbl = {
-      71:0.0528,72:0.0540,73:0.0553,74:0.0567,75:0.0582,
-      76:0.0598,77:0.0617,78:0.0636,79:0.0658,80:0.0682,
-      81:0.0708,82:0.0738,83:0.0771,84:0.0808,85:0.0851,
-      86:0.0899,87:0.0955,88:0.1021,89:0.1099,90:0.1192,
-      91:0.1306,92:0.1449,93:0.1634,94:0.1879
+    // CRA schedule; below 71 use 1/(90-age); 95+ fixed at 20%
+    const t = {
+      71: 0.0528, 72: 0.0540, 73: 0.0553, 74: 0.0567, 75: 0.0582, 76: 0.0598, 77: 0.0617, 78: 0.0636, 79: 0.0658,
+      80: 0.0682, 81: 0.0708, 82: 0.0738, 83: 0.0771, 84: 0.0808, 85: 0.0851, 86: 0.0899, 87: 0.0955, 88: 0.1021,
+      89: 0.1099, 90: 0.1192, 91: 0.1306, 92: 0.1449, 93: 0.1634, 94: 0.1879
     };
-    if (a >= 95) return 0.20;
-    return tbl[a] ?? 0;
+    if (age >= 95) return 0.20;
+    if (age >= 71) return t[age] || 0;
+    return 1 / (90 - age); // CRA formula for <71
+  }
+
+  function oasGrossAtAge(cfg, age){
+    if (!cfg.oas_monthly || !cfg.oas_start_age || age < cfg.oas_start_age) return 0;
+    const years = Math.max(0, age - cfg.oas_start_age);
+    const factor = cfg.oas_index ? Math.pow(1 + cfg.inflation_rate, years) : 1;
+    return cfg.oas_monthly * 12 * factor;
   }
 
   // Build config from UI/top
@@ -2733,7 +2736,6 @@ function ensureLayout(layout, seriesForAxis){
     const cpp_from       = cppStartFromTop(retirement_age);
     const cpp_to         = cppEndFromTop(end_age);
 
-    // drag: manual box or auto from helper
     const helper = readHelperDrag();
     const manual_drag_pct = numVal($("litev1_taxable_drag"));
     const effective_drag_pct = Number.isFinite(manual_drag_pct) ? manual_drag_pct : (helper?.impliedPct ?? 0);
@@ -2749,15 +2751,8 @@ function ensureLayout(layout, seriesForAxis){
       }
     }
 
-    // OAS & RRIF (local)
-    const oas_monthly   = Number($("oas_monthly").value) || 0;
-    const oas_start_age = Number($("oas_start_age").value) || 65;
-    const oas_threshold = Number($("oas_threshold").value) || 0;
-    const oas_rate      = (Number($("oas_rate").value) || 0) / 100;
-    const rrif_start_age= Number($("rrif_start_age").value) || 72;
-    const oas_index     = !!$("oas_index")?.checked;
-
-    return {
+    // OAS/RRIF (all default to 0/off)
+    const cfg = {
       current_age,
       retirement_age,
       life_expectancy: end_age,
@@ -2779,12 +2774,18 @@ function ensureLayout(layout, seriesForAxis){
 
       taxable_drag: (effective_drag_pct || 0) / 100,
 
-      // NEW
-      oas_monthly, oas_start_age, oas_threshold, oas_rate, oas_index,
-      rrif_start_age,
+      // new
+      oas_monthly: Number($("oas_mo").value) || 0,
+      oas_start_age: Number($("oas_start_age").value) || 0,
+      oas_threshold: Number($("oas_threshold").value) || 0,
+      oas_clawback_rate: (Number($("oas_rate").value) || 0) / 100,
+      oas_index: !!$("oas_index")?.checked,
+
+      rrif_start_age: Number($("rrif_start_age").value) || 0,
 
       asset_liquidations: liqs
     };
+    return cfg;
   }
 
   // Helpers
@@ -2799,15 +2800,6 @@ function ensureLayout(layout, seriesForAxis){
     if (!within(age, cfg.cpp_start_age, cfg.cpp_end_age)) return 0;
     const n = Math.max(0, age - cfg.cpp_start_age);
     return (cfg.cpp_monthly || 0) * 12 * Math.pow(1 + cfg.inflation_rate, n);
-  }
-  function oasGrossAtAge(cfg, age){
-    if (age < cfg.oas_start_age || cfg.oas_monthly <= 0) return 0;
-    const years = Math.max(0, age - cfg.oas_start_age);
-    const idx = cfg.oas_index ? Math.pow(1 + cfg.inflation_rate, years) : 1;
-    return cfg.oas_monthly * 12 * idx;
-  }
-  function baseNeedAtAge(cfg, age){
-    return Math.max(0, livingExpenseAtAge(cfg, age) - cppAtAge(cfg, age));
   }
   function liqMap(asset_liquidations){
     const m = {};
@@ -2857,6 +2849,7 @@ function ensureLayout(layout, seriesForAxis){
   }
 
   // Pre-retirement (grow, then deposit savings & liquidations)
+  // Taxable grows with drag; RRSP/TFSA grow normally.
   function prerollToRetirement(cfg) {
     let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
           taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
@@ -2879,7 +2872,7 @@ function ensureLayout(layout, seriesForAxis){
       rrsp    *= gN;
       tfsa    *= gN;
 
-      // deposits
+      // deposits (savings + any liquidation this year)
       taxable += save;
       if (lm[age]) taxable += lm[age];
 
@@ -2889,8 +2882,7 @@ function ensureLayout(layout, seriesForAxis){
       rows.push({
         Age: age,
         From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0,
-        RRIF_Min_Pct: 0, RRIF_Min_Gross: 0,
-        OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
+        RRIF_Min_Pct: 0, OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
         Tax_On_Taxable: 0, Tax_On_RRSP: 0,
         Taxable_Drag: dragAmt,
         End_Taxable: taxable, End_TFSA: tfsa, End_RRSP: rrsp, End_Total: endTotal
@@ -2902,78 +2894,92 @@ function ensureLayout(layout, seriesForAxis){
     return { rows, taxable, rrsp, tfsa };
   }
 
-  // Retirement loop with OAS/RRIF overlays
+  // Retirement: allocate base need; OAS/RRIF gated; overlay tax on taxable only if drag=0
   function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     const endAge   = cfg.life_expectancy;
     const startRet = cfg.retirement_age;
     const lm       = liqMap(cfg.asset_liquidations);
     const order    = readDrawOrder();
-    const rrspFlat = cfg.income_tax_rate || 0;
+    const taxRate  = cfg.income_tax_rate || 0;
 
     let rows = [];
 
     for (let age = startRet; age <= endAge; age++) {
-      const rrspJan1 = balances.rrsp;
-      const rrifPct  = (age >= cfg.rrif_start_age) ? rrifMinPct(age) : 0;
-      const rrifMinGross = rrspJan1 * rrifPct;
+      const expense = livingExpenseAtAge(cfg, age);
+      const cpp     = cppAtAge(cfg, age);
+      const oasGross= oasGrossAtAge(cfg, age);
+      const netNeedInitial = Math.max(0, expense - cpp - oasGross); // assume no clawback first pass
 
-      // OAS gross (indexed optional)
-      const oasGross = oasGrossAtAge(cfg, age);
-
-      // Base need net of CPP and OAS gross (clawback applied separately as overlay)
-      const need0 = Math.max(0, baseNeedAtAge(cfg, age) - oasGross);
-
-      // 1) allocate
-      const pass = allocateByOrder(
-        need0,
+      // 1) Allocate net need per order (first pass, using OAS gross)
+      let pass = allocateByOrder(
+        netNeedInitial,
         { taxable: balances.taxable, tfsa: balances.tfsa, rrsp: balances.rrsp },
         order,
-        rrspFlat
+        taxRate
       );
 
-      // 2) Enforce RRIF minimums (top-up if needed)
-      let fromRRSPGross = pass.draws.fromRRSPGross;
-      let taxRRSP       = pass.taxes.taxRRSP;
+      // 2) Compute OAS clawback (gated)
+      let incomeForClawback = pass.draws.fromRRSPGross + pass.draws.fromTax + oasGross + cpp;
+      let oasClawback = 0, oasNet = oasGross;
+      if (cfg.oas_monthly > 0 && cfg.oas_start_age > 0 && age >= cfg.oas_start_age &&
+          cfg.oas_threshold > 0 && cfg.oas_clawback_rate > 0) {
+        oasClawback = Math.max(0, incomeForClawback - cfg.oas_threshold) * cfg.oas_clawback_rate;
+        oasClawback = Math.min(oasClawback, oasGross);
+        oasNet = Math.max(0, oasGross - oasClawback);
+      }
+
+      // If there is clawback, we need extra cash equal to the clawback (because we used OAS gross in pass)
+      if (oasClawback > 0) {
+        const topUp = allocateByOrder(
+          oasClawback,
+          pass.endBalancesBeforeGrowth,
+          order,
+          taxRate
+        );
+
+        // Merge the top-up into the main pass
+        pass.draws.fromTax       += topUp.draws.fromTax;
+        pass.draws.fromTFSA      += topUp.draws.fromTFSA;
+        pass.draws.fromRRSPGross += topUp.draws.fromRRSPGross;
+        pass.taxes.taxRRSP       += topUp.taxes.taxRRSP;
+        pass.endBalancesBeforeGrowth = topUp.endBalancesBeforeGrowth;
+      }
+
+      // 3) RRIF minimum (gated by start age)
+      let rrifMinPctApplied = 0;
+      if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age) {
+        rrifMinPctApplied = rrifMinPct(age);
+        const mustGross = pass.endBalancesBeforeGrowth.rrsp * rrifMinPctApplied;
+        if (pass.draws.fromRRSPGross < mustGross) {
+          const extraGross = mustGross - pass.draws.fromRRSPGross;
+          const extraTax   = extraGross * taxRate;
+          const extraNet   = extraGross - extraTax;
+
+          pass.draws.fromRRSPGross += extraGross;
+          pass.taxes.taxRRSP       += extraTax;
+          // RRIF min above what was needed moves into Taxable as cash
+          pass.endBalancesBeforeGrowth.taxable += extraNet;
+          pass.endBalancesBeforeGrowth.rrsp    -= extraGross;
+        }
+      }
+
+      // 4) Overlay on Taxable withdrawals (only if drag==0 to avoid double count)
+      const d          = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+      const useOverlay = (d === 0) && (taxRate > 0);
+      const grossUp    = useOverlay ? (taxRate / (1 - taxRate)) : 0;
+      const overlayTaxable = useOverlay ? (pass.draws.fromTax * grossUp) : 0;
+
+      // 5) Pay overlay from taxable pre-growth, then liquidations hit taxable
       let t = pass.endBalancesBeforeGrowth.taxable;
       let f = pass.endBalancesBeforeGrowth.tfsa;
       let r = pass.endBalancesBeforeGrowth.rrsp;
 
-      if (rrifMinGross > fromRRSPGross) {
-        const extraGross = rrifMinGross - fromRRSPGross;
-        const extraTax   = extraGross * rrspFlat;
-        const extraNet   = extraGross - extraTax;
+      const overlayPay = Math.min(overlayTaxable, Math.max(0, t));
+      t -= overlayPay;
 
-        // forced withdrawal: reduce RRSP, deposit net to taxable (surplus)
-        r -= extraGross;
-        t += extraNet;
-
-        fromRRSPGross += extraGross;
-        taxRRSP       += extraTax;
-      }
-
-      // 3) Overlay on Taxable for "tax on taxable" (if no drag)
-      const d          = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-      const useOverlay = (d === 0);
-      const grossUp    = rrspFlat > 0 ? (rrspFlat / (1 - rrspFlat)) : 0;
-      const overlayTaxable = useOverlay ? (pass.draws.fromTax * grossUp) : 0;
-
-      // 4) OAS clawback (paid from Taxable as separate overlay)
-      const incomeForClawback = fromRRSPGross + pass.draws.fromTax; // lite proxy
-      const rawClaw = Math.max(0, (incomeForClawback - (cfg.oas_threshold||0)) * (cfg.oas_rate||0));
-      const oasClaw = Math.min(oasGross, rawClaw);
-      const oasNet  = Math.max(0, oasGross - oasClaw);
-
-      // 5) Pay overlays from taxable before growth
-      const overlayPayTax  = Math.min(overlayTaxable, Math.max(0, t));
-      t -= overlayPayTax;
-
-      const overlayPayClaw = Math.min(oasClaw, Math.max(0, t));
-      t -= overlayPayClaw;
-
-      // 6) Liquidations hit before growth
       if (lm[age]) t += lm[age];
 
-      // 7) Grow (drag only on taxable)
+      // 6) Grow (drag only on taxable)
       const gN = 1 + cfg.return_rate_after;
       const gT = 1 + cfg.return_rate_after * (1 - d);
       const t0 = t;
@@ -2987,21 +2993,16 @@ function ensureLayout(layout, seriesForAxis){
 
       rows.push({
         Age: age,
-        From_Taxable: r0(pass.draws.fromTax + overlayTaxable + oasClaw),
+        From_Taxable: r0(pass.draws.fromTax + overlayTaxable),
         From_TFSA: r0(pass.draws.fromTFSA),
-        From_RRSP_Gross: r0(fromRRSPGross),
-
-        RRIF_Min_Pct: rrifPct,
-        RRIF_Min_Gross: r0(rrifMinGross),
-
+        From_RRSP_Gross: r0(pass.draws.fromRRSPGross),
+        RRIF_Min_Pct: (rrifMinPctApplied*100).toFixed(2) + "%",
         OAS_Gross: r0(oasGross),
-        OAS_Clawback: r0(oasClaw),
+        OAS_Clawback: r0(oasClawback),
         OAS_Net: r0(oasNet),
-
         Tax_On_Taxable: r0(overlayTaxable),
-        Tax_On_RRSP: r0(taxRRSP),
+        Tax_On_RRSP: r0(pass.taxes.taxRRSP),
         Taxable_Drag: r0(dragAmt),
-
         End_Taxable: r0(t),
         End_TFSA: r0(f),
         End_RRSP: r0(r),
@@ -3019,8 +3020,8 @@ function ensureLayout(layout, seriesForAxis){
 
     return {
       rows,
-      flat_tax_rate: rrspFlat,
-      annual_spend: r0(baseNeedAtAge(cfg, cfg.retirement_age)),
+      flat_tax_rate: taxRate,
+      annual_spend: r0(Math.max(0, livingExpenseAtAge(cfg, cfg.retirement_age) - cppAtAge(cfg, cfg.retirement_age))),
       earliest_depletion_age: earliest
     };
   }
@@ -3068,8 +3069,7 @@ function ensureLayout(layout, seriesForAxis){
         <td>${iFmt(r.From_Taxable||0)}</td>
         <td>${iFmt(r.From_TFSA||0)}</td>
         <td>${iFmt(r.From_RRSP_Gross||0)}</td>
-        <td>${pFmt(r.RRIF_Min_Pct||0)}</td>
-        <td>${iFmt(r.RRIF_Min_Gross||0)}</td>
+        <td>${r.RRIF_Min_Pct||"0.00%"}</td>
         <td>${iFmt(r.OAS_Gross||0)}</td>
         <td>${iFmt(r.OAS_Clawback||0)}</td>
         <td>${iFmt(r.OAS_Net||0)}</td>
@@ -3084,8 +3084,8 @@ function ensureLayout(layout, seriesForAxis){
     });
     const orderText = readDrawOrder().join(" → ").toUpperCase();
     $("litev1_tax_meta").textContent =
-      `Flat RRSP tax = ${(meta.flat_tax*100).toFixed(1)}% | ` +
-      `Required withdrawal (first retirement year, net before tax) = ${iFmt(meta.annual_spend)} | ` +
+      `Flat tax = ${(meta.flat_tax*100).toFixed(1)}% | ` +
+      `Required withdrawal (first retirement year, net before tax, excl. OAS) = ${iFmt(meta.annual_spend)} | ` +
       `Earliest depletion age = ${meta.earliest_depletion_age ?? "—"} | ` +
       `Rows: ${rows?.length ?? 0} | Order: ${orderText}`;
   }
@@ -3114,12 +3114,12 @@ function ensureLayout(layout, seriesForAxis){
 
   $("litev1_run").addEventListener("click", runAll);
 
-  // Live re-run when inputs change (order, drag, helper, OAS/RRIF)
+  // Live re-run when inputs change
   [
     "litev1_start_age","litev1_end_age","litev1_taxable","litev1_rrsp","litev1_tfsa",
     "litev1_spend","litev1_return","litev1_monthly_saving","litev1_income_tax","wd_order",
     "litev1_taxable_drag",
-    "oas_monthly","oas_start_age","oas_threshold","oas_rate","rrif_start_age","oas_index"
+    "oas_mo","oas_start_age","oas_threshold","oas_rate","rrif_start_age","oas_index"
   ].forEach(id => $(id)?.addEventListener("input", runAll));
   $("wd_order")?.addEventListener("change", runAll);
 
