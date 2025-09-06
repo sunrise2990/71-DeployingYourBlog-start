@@ -2561,23 +2561,27 @@ function ensureLayout(layout, seriesForAxis){
       <span class="text-muted small">Parity mode — charts never block the table</span>
     </div>
 
+    <!-- Row 1: LEFT = order comparison (bars), RIGHT = taxes + clawback -->
     <div class="row g-3">
       <div class="col-md-6">
-        <canvas id="taxviz_withdrawals" height="160"></canvas>
+        <!-- Fixed pixel canvas; no shrinking on browser zoom -->
+        <canvas id="taxviz_orders" width="560" height="240"></canvas>
       </div>
       <div class="col-md-6">
-        <canvas id="taxviz_balances" height="160"></canvas>
+        <canvas id="taxviz_taxes" width="560" height="240"></canvas>
       </div>
     </div>
 
+    <!-- Row 2: FULL width = balances over time -->
     <div class="row g-3 mt-2">
       <div class="col-12">
-        <canvas id="taxviz_taxes" height="160"></canvas>
+        <canvas id="taxviz_balances" width="1160" height="280"></canvas>
       </div>
     </div>
   </div>
 </div>
 <!-- === /Tax-aware visuals ============================================== -->
+
 
 
 
@@ -3175,75 +3179,265 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
+
+
+
+
+
 <!-- 2) Chart.js CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <!-- 3) Charts code (exposes window.renderTaxCharts) -->
 <script>
 (function () {
-  // Guard so we don't re-register if you paste twice
   if (window.__taxChartsLoaded) return;
   window.__taxChartsLoaded = true;
 
-  function num(n){ return (typeof n==="number" && isFinite(n)) ? n : 0; }
+  // ---------- small utils ----------
+  const num = n => (typeof n === "number" && isFinite(n)) ? n : 0;
+  const clone = (o)=> JSON.parse(JSON.stringify(o));
 
-  // rows = mergedRows from your table run; cfg = buildCfg()
+  // Map UI select -> array order
+  const ORDER_MAP = {
+    "taxable_tfsa_rrsp": ["taxable","tfsa","rrsp"],
+    "tfsa_taxable_rrsp": ["tfsa","taxable","rrsp"],
+    "rrsp_taxable_tfsa": ["rrsp","taxable","tfsa"],
+    "tfsa_rrsp_taxable": ["tfsa","rrsp","taxable"],
+    "taxable_rrsp_tfsa": ["taxable","rrsp","tfsa"],
+    "rrsp_tfsa_taxable": ["rrsp","tfsa","taxable"]
+  };
+  const ORDER_LABEL = {
+    "taxable_tfsa_rrsp": "Taxable → TFSA → RRSP",
+    "tfsa_taxable_rrsp": "TFSA → Taxable → RRSP",
+    "rrsp_taxable_tfsa": "RRSP → Taxable → TFSA",
+    "tfsa_rrsp_taxable": "TFSA → RRSP → Taxable",
+    "taxable_rrsp_tfsa": "Taxable → RRSP → TFSA",
+    "rrsp_tfsa_taxable": "RRSP → TFSA → Taxable"
+  };
+
+  // ---------- lite physics (duplicated from your engine to simulate 6 orders) ----------
+  const within = (x,a,b)=> x>=a && x<=b;
+  function rrifMinPct(age){
+    const t = {71:0.0528,72:0.0540,73:0.0553,74:0.0567,75:0.0582,76:0.0598,77:0.0617,78:0.0636,79:0.0658,
+               80:0.0682,81:0.0708,82:0.0738,83:0.0771,84:0.0808,85:0.0851,86:0.0899,87:0.0955,88:0.1021,
+               89:0.1099,90:0.1192,91:0.1306,92:0.1449,93:0.1634,94:0.1879};
+    if (age>=95) return 0.20;
+    if (age>=71) return t[age]||0;
+    return 1/(90-age);
+  }
+  function oasGrossAtAge(cfg, age){
+    if (!cfg.oas_monthly || !cfg.oas_start_age || age < cfg.oas_start_age) return 0;
+    const yrs = Math.max(0, age - cfg.oas_start_age);
+    const f = cfg.oas_index ? Math.pow(1 + cfg.inflation_rate, yrs) : 1;
+    return cfg.oas_monthly * 12 * f;
+  }
+  function livingExpenseAtAge(cfg, age){
+    const n = Math.max(0, age - cfg.current_age);
+    return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, n);
+  }
+  function cppAtAge(cfg, age){
+    if (!within(age, cfg.cpp_start_age, cfg.cpp_end_age)) return 0;
+    const n = Math.max(0, age - cfg.cpp_start_age);
+    return (cfg.cpp_monthly || 0) * 12 * Math.pow(1 + cfg.inflation_rate, n);
+  }
+  function liqMap(liqs){
+    const m={}; (liqs||[]).forEach(l=>{
+      const a=Number(l.age)||0, amt=Number(l.amount)||0;
+      m[a]=(m[a]||0)+amt;
+    }); return m;
+  }
+  function allocateByOrder(netNeed, balances, order, rrspFlat){
+    let need = Math.max(0, netNeed);
+    let {taxable:t, tfsa:f, rrsp:r} = balances;
+    let fromTax=0, fromTFSA=0, fromRRSPGross=0;
+
+    for (const src of order) {
+      if (need <= 0) break;
+
+      if (src === "taxable") {
+        const draw = Math.min(need, t);
+        fromTax += draw; t -= draw; need -= draw;
+      } else if (src === "tfsa") {
+        const draw = Math.min(need, f);
+        fromTFSA += draw; f -= draw; need -= draw;
+      } else if (src === "rrsp") {
+        const netPossible = r * (1 - rrspFlat);
+        const netTake     = Math.min(need, Math.max(0, netPossible));
+        const gross       = netTake / (1 - rrspFlat);
+        fromRRSPGross    += gross;
+        r                -= gross;
+        need             -= netTake;
+      }
+    }
+    return {
+      draws: { fromTax, fromTFSA, fromRRSPGross },
+      end:   { taxable:t, tfsa:f, rrsp:r },
+      shortfall: Math.max(0, need)
+    };
+  }
+
+  // Simulate a full run & return End_Total at life expectancy for a given order
+  function endTotalForOrder(cfg0, orderKey){
+    const cfg = clone(cfg0);
+    const order = ORDER_MAP[orderKey];
+    const liqs = liqMap(cfg.asset_liquidations);
+    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+
+    // --- pre-retirement ---
+    let age = cfg.current_age;
+    let t = cfg.taxable0, r = cfg.rrsp0, f = cfg.tfsa0;
+    let save = cfg.annual_saving;
+    const gN_pre = 1 + cfg.return_rate;
+    const gT_pre = 1 + cfg.return_rate * (1 - d);
+
+    while (age < cfg.retirement_age){
+      const t0 = t;
+      t = t0 * gT_pre;  r *= gN_pre;  f *= gN_pre;
+      t += (save || 0) + (liqs[age] || 0);
+      save *= (1 + (cfg.saving_increase_rate||0));
+      age++;
+    }
+
+    // --- retirement loop ---
+    const gN = 1 + cfg.return_rate_after;
+    const gT = 1 + cfg.return_rate_after * (1 - d);
+    const taxRate = (cfg.income_tax_rate || 0);
+
+    for (age = cfg.retirement_age; age <= cfg.life_expectancy; age++){
+      const expense = livingExpenseAtAge(cfg, age);
+      const cpp     = cppAtAge(cfg, age);
+      const oasG    = oasGrossAtAge(cfg, age);
+
+      // initial pass uses OAS gross
+      let pass = allocateByOrder(
+        Math.max(0, expense - cpp - oasG),
+        { taxable:t, tfsa:f, rrsp:r },
+        order,
+        taxRate
+      );
+
+      // OAS clawback (tax-lite proxy matches your engine)
+      let oasClaw = 0;
+      if (cfg.oas_monthly>0 && cfg.oas_start_age>0 && age>=cfg.oas_start_age &&
+          cfg.oas_threshold>0 && cfg.oas_clawback_rate>0){
+        const incomeForClaw = pass.draws.fromRRSPGross + pass.draws.fromTax + oasG + cpp;
+        oasClaw = Math.max(0, incomeForClaw - cfg.oas_threshold) * cfg.oas_clawback_rate;
+        oasClaw = Math.min(oasClaw, oasG);
+      }
+      if (oasClaw > 0){
+        const top = allocateByOrder(oasClaw, pass.end, order, taxRate);
+        // merge
+        pass.draws.fromTax       += top.draws.fromTax;
+        pass.draws.fromTFSA      += top.draws.fromTFSA;
+        pass.draws.fromRRSPGross += top.draws.fromRRSPGross;
+        pass.end = top.end;
+      }
+
+      // RRIF minimum
+      if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age){
+        const mustGross = pass.end.rrsp * rrifMinPct(age);
+        if (pass.draws.fromRRSPGross < mustGross){
+          const extraGross = mustGross - pass.draws.fromRRSPGross;
+          const extraTax   = extraGross * taxRate;
+          const extraNet   = extraGross - extraTax;
+          pass.draws.fromRRSPGross += extraGross;
+          pass.end.rrsp            -= extraGross;
+          pass.end.taxable         += extraNet;   // spill into taxable
+        }
+      }
+
+      // taxable overlay only when drag==0 (matches your table)
+      if ((cfg.taxable_drag||0) === 0 && taxRate>0){
+        const grossUp = taxRate / (1 - taxRate);
+        const overlay = pass.draws.fromTax * grossUp;
+        pass.end.taxable -= Math.min(overlay, Math.max(0, pass.end.taxable));
+      }
+
+      // add any one-off liquidation
+      pass.end.taxable += (liqs[age] || 0);
+
+      // grow to end-of-year
+      const t0 = pass.end.taxable;
+      t = t0 * gT;   r = pass.end.rrsp * gN;   f = pass.end.tfsa * gN;
+    }
+
+    return t + r + f; // End_Total at life expectancy
+  }
+
+  // ---------- main render hook ----------
   window.renderTaxCharts = function(rows, cfg){
     try{
+      // pick up arrays from the current order run
       const ages     = rows.map(r => r.Age);
-      const fromTax  = rows.map(r => num(r.From_Taxable));
-      const fromTFSA = rows.map(r => num(r.From_TFSA));
-      const fromRRSP = rows.map(r => num(r.From_RRSP_Gross));
-      const rrifTax  = rows.map(r => num(r.Tax_On_Taxable));
-      const taxRRSP  = rows.map(r => num(r.Tax_On_RRSP));
-      const oasClaw  = rows.map(r => num(r.OAS_Clawback));
       const endT     = rows.map(r => num(r.End_Taxable));
       const endF     = rows.map(r => num(r.End_TFSA));
       const endR     = rows.map(r => num(r.End_RRSP));
       const endTot   = rows.map(r => num(r.End_Total));
+      const rrifTax  = rows.map(r => num(r.Tax_On_Taxable));
+      const taxRRSP  = rows.map(r => num(r.Tax_On_RRSP));
+      const oasClaw  = rows.map(r => num(r.OAS_Clawback));
 
-      // Net spend proxy: From Taxable (gross) + TFSA + RRSP net
+      // effective tax on spending (%)
       const flatT = num(cfg?.income_tax_rate || 0);
-      const rrspNet = rows.map((r,i) => num(r.From_RRSP_Gross) * (1 - flatT));
-      const netSpend = rows.map((_,i)=> num(fromTax[i]) + num(fromTFSA[i]) + rrspNet[i]);
-
-    // ---- Find canvases (by id) ----
-    const c1 = document.getElementById("taxviz_withdrawals");
-    const c2 = document.getElementById("taxviz_balances");
-    const c3 = document.getElementById("taxviz_taxes");
-
-      if (!c1 || !c2 || !c3) return; // container not present
-
-      // Destroy old charts if re-rendering
-      ["__c1","__c2","__c3"].forEach(k => {
-        if (window[k]) { window[k].destroy(); window[k] = null; }
+      const fromTax  = rows.map(r => num(r.From_Taxable));
+      const fromTFSA = rows.map(r => num(r.From_TFSA));
+      const fromRRSP = rows.map(r => num(r.From_RRSP_Gross));
+      const rrspNet  = fromRRSP.map(v => v * (1 - flatT));
+      const netSpend = fromTax.map((v,i)=> v + fromTFSA[i] + rrspNet[i]);
+      const effTaxOnSpend = netSpend.map((s,i)=> {
+        const tax = num(rrifTax[i]) + num(taxRRSP[i]) + num(oasClaw[i]);
+        return s>0 ? (tax/s*100) : 0;
       });
 
-      // 1) Withdrawals (stacked) + RRIF min tax + net spend line
-      window.__c1 = new Chart(c1.getContext("2d"), {
+      // canvases
+      const cOrders = document.getElementById("taxviz_orders");
+      const cTaxes  = document.getElementById("taxviz_taxes");
+      const cBal    = document.getElementById("taxviz_balances");
+      if (!cOrders || !cTaxes || !cBal) return;
+
+      // Destroy old charts if any
+      ["__taxC1","__taxC2","__taxC3"].forEach(k => { try{ window[k]?.destroy(); }catch(e){} });
+
+      // (1) BAR: end-of-life End Total for ALL SIX orders (re-simulate locally)
+      const orderKeys = Object.keys(ORDER_MAP);
+      const eoLife = orderKeys.map(k => endTotalForOrder(cfg, k));
+
+      window.__taxC1 = new Chart(cOrders.getContext("2d"), {
         type: "bar",
+        data: {
+          labels: orderKeys.map(k => ORDER_LABEL[k]),
+          datasets: [{ label: "End Total at lifespan end", data: eoLife }]
+        },
+        options: {
+          responsive: false, maintainAspectRatio: false, devicePixelRatio: 1, animation: false,
+          scales: { y: { beginAtZero: false, title: { display: true, text: "$ at age " + cfg.life_expectancy } } },
+          plugins: { legend: { position: "top" } }
+        }
+      });
+
+      // (2) TAXES: overlay tax & OAS clawback + effective tax on spending
+      window.__taxC2 = new Chart(cTaxes.getContext("2d"), {
         data: {
           labels: ages,
           datasets: [
-            { label: "From Taxable (gross)", data: fromTax, stack: "draws" },
-            { label: "From TFSA",            data: fromTFSA, stack: "draws" },
-            { label: "From RRSP (gross)",    data: fromRRSP, stack: "draws" },
-            { label: "RRIF minimum tax (paid from Taxable)", data: rrifTax, stack: "rrif" },
-            { label: "Net Spend (after OAS & CPP)", type:"line", data: netSpend, yAxisID:"y1" }
+            { type:"bar",  label:"Tax on Taxable (overlay)", data: rrifTax, stack:"tax" },
+            { type:"bar",  label:"Tax on RRSP (overlay)",    data: taxRRSP, stack:"tax" },
+            { type:"bar",  label:"OAS Clawback",             data: oasClaw, stack:"tax" },
+            { type:"line", label:"Effective tax on spending (%)", data: effTaxOnSpend, yAxisID:"y1" }
           ]
         },
         options: {
-          responsive: true,
+          responsive: false, maintainAspectRatio: false, devicePixelRatio: 1, animation: false,
           scales: {
-            y:  { beginAtZero:true, title:{display:true, text:"$/year"} },
-            y1: { position:"right", grid:{drawOnChartArea:false}, title:{display:true, text:"$/year"} }
+            y:  { beginAtZero:true, title:{display:true, text:"$ / year"} },
+            y1: { position:"right", grid:{drawOnChartArea:false}, title:{display:true, text:"%"} }
           },
           plugins:{ legend:{position:"top"} }
         }
       });
 
-      // 2) Account balances
-      window.__c2 = new Chart(c2.getContext("2d"), {
+      // (3) BOTTOM: balances over time for CURRENT order
+      window.__taxC3 = new Chart(cBal.getContext("2d"), {
         type: "line",
         data: {
           labels: ages,
@@ -3255,42 +3449,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           ]
         },
         options: {
-          responsive: true,
+          responsive: false, maintainAspectRatio: false, devicePixelRatio: 1, animation: false,
           scales: { y: { beginAtZero:false, title:{display:true, text:"$"} } },
           plugins:{ legend:{position:"top"} }
         }
       });
-
-      // 3) Taxes & OAS clawback (bars) + effective tax on spending (line)
-      const effTaxOnSpend = rows.map((_,i)=>{
-        const tax = num(rrifTax[i]) + num(taxRRSP[i]);
-        const spend = Math.max(1, netSpend[i]);
-        return tax / spend * 100;
-      });
-
-      window.__c3 = new Chart(c3.getContext("2d"), {
-        data: {
-          labels: ages,
-          datasets: [
-            { type:"bar",  label:"Tax on Taxable (overlay)", data: rrifTax, stack:"tax" },
-            { type:"bar",  label:"Tax on RRSP (overlay)",    data: taxRRSP, stack:"tax" },
-            { type:"bar",  label:"OAS Clawback",             data: oasClaw, stack:"tax" },
-            { type:"line", label:"Effective tax on spending (%)", data: effTaxOnSpend, yAxisID:"y1" }
-          ]
-        },
-        options:{
-          responsive:true,
-          scales:{
-            y:  { beginAtZero:true, title:{display:true, text:"$ / year"} },
-            y1: { position:"right", grid:{drawOnChartArea:false}, title:{display:true, text:"%"} }
-          },
-          plugins:{ legend:{position:"top"} }
-        }
-      });
-    } catch(e){ /* swallow to avoid breaking the table */ }
+    } catch(e){ /* never block the table */ }
   };
 })();
 </script>
+
 
 
 
