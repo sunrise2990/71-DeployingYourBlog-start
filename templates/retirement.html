@@ -2781,6 +2781,61 @@ function ensureLayout(layout, seriesForAxis){
     return cfg.oas_monthly * 12 * factor;
   }
 
+
+
+// ---------- Lite bracket helpers (REQUIRED) ----------
+  function readBracketsFromUI() {
+    // Read UI; fall back to defaults if any field is missing/blank
+    const lim1  = Number(document.getElementById("tb_lim1")?.value)  || 50000;
+    const lim2  = Number(document.getElementById("tb_lim2")?.value)  || 100000;
+    const rate1 = (Number(document.getElementById("tb_rate1")?.value) || 10) / 100;
+    const rate2 = (Number(document.getElementById("tb_rate2")?.value) || 20) / 100;
+    const rate3 = (Number(document.getElementById("tb_rate3")?.value) || 30) / 100;
+
+    // Ensure increasing limits and non-negative rates
+    const L1 = Math.max(0, Math.min(lim1, lim2));
+    const L2 = Math.max(L1, lim2);
+
+    return [
+      { limit: L1,       rate: Math.max(0, rate1) },
+      { limit: L2,       rate: Math.max(0, rate2) },
+      { limit: Infinity, rate: Math.max(0, rate3) }
+    ];
+  }
+
+  // Total tax for a given income with progressive brackets
+  function taxFromBrackets(income, brackets) {
+    const y = Math.max(0, Number(income) || 0);
+    const br = (brackets && brackets.length) ? brackets : [
+      { limit: 50000,  rate: 0.10 },
+      { limit: 100000, rate: 0.20 },
+      { limit: Infinity, rate: 0.30 }
+    ];
+
+    let tax = 0, prev = 0;
+    for (const b of br) {
+      const upto = Math.min(y, b.limit);
+      if (upto > prev) tax += (upto - prev) * (b.rate || 0);
+      if (y <= b.limit) return tax;
+      prev = b.limit;
+    }
+    // Shouldn’t reach here if Infinity tier exists, but keep it safe:
+    const lastRate = (br[br.length - 1] || {}).rate || 0;
+    return tax + Math.max(0, y - prev) * lastRate;
+  }
+
+  // Incremental tax for adding `delta` income on top of `base`
+  function incrementalTax(delta, base, brackets) {
+    const b = Math.max(0, Number(base)  || 0);
+    const d = Math.max(0, Number(delta) || 0);
+    const t0 = taxFromBrackets(b, brackets);
+    const t1 = taxFromBrackets(b + d, brackets);
+    return Math.max(0, t1 - t0);
+  }
+
+
+
+
   // Build config from UI/top
   function buildCfg() {
     const current_age    = Number($("litev1_start_age").value);
