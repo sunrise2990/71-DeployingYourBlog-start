@@ -3342,6 +3342,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
   // ---------- utils ----------
   const num   = n => (typeof n === "number" && isFinite(n)) ? n : 0;
+  const clone = o => JSON.parse(JSON.stringify(o));
   const kFmt  = v => {
     const s = v < 0 ? "-" : "";
     const a = Math.abs(v);
@@ -3350,7 +3351,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   const mFmt0  = v => "$" + (v/1e6).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) + "M";
   const intFmt = v => "$" + Math.round(v).toLocaleString();
 
-  // UI order maps
+  // Map UI select -> array order
   const ORDER_MAP = {
     "taxable_tfsa_rrsp": ["taxable","tfsa","rrsp"],
     "tfsa_taxable_rrsp": ["tfsa","taxable","rrsp"],
@@ -3368,7 +3369,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "rrsp_tfsa_taxable": "RRSP → TFSA → Taxable"
   };
 
-  // ---------- helpers (same as engine) ----------
+  // ---------- helpers copied to mirror engine ----------
   const within = (x,a,b)=> x>=a && x<=b;
 
   function rrifMinPct(age){
@@ -3401,12 +3402,13 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     }); return m;
   }
 
-  // Brackets use the same shape as UI: {enabled, bands:[{limit,rate},...]}
+  // Brackets use the SAME object shape as your UI: { enabled, bands: [{limit, rate}, ...] }
   function taxFromBrackets(income, bracketsObj) {
     const y  = Math.max(0, Number(income) || 0);
     const br = (bracketsObj?.bands?.length)
       ? bracketsObj.bands
       : [{limit:Infinity, rate:0}];
+
     let tax = 0, prev = 0;
     for (const b of br) {
       const upto = Math.min(y, b.limit);
@@ -3423,7 +3425,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return Math.max(0, taxFromBrackets(b + d, bracketsObj) - taxFromBrackets(b, bracketsObj));
   }
 
-  // --- exact allocator (with safety) ---
+  // EXACT allocator (uses flat rate only for net↔gross conversion)
   function allocateByOrder(netNeed, balances, order, rrspFlat){
     let need = Math.max(0, netNeed);
     let {taxable:t, tfsa:f, rrsp:r} = balances;
@@ -3438,11 +3440,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const draw = Math.min(need, t);
         fromTax   += draw; t -= draw; need -= draw;
       } else if (src === "rrsp") {
-        const flat = Math.max(0, Math.min(1, rrspFlat || 0));
-        const netPossible = r * (1 - flat);
+        const netPossible = r * (1 - rrspFlat);
         const netTake     = Math.min(need, Math.max(0, netPossible));
-        const gross       = netTake > 0 ? netTake / (1 - flat) : 0;
-        const tax         = gross * flat;
+        const gross       = netTake > 0 ? netTake / (1 - rrspFlat) : 0;
+        const tax         = gross * rrspFlat;
         fromRRSPGross    += gross;
         taxRRSP          += tax;
         r                -= gross;
@@ -3461,56 +3462,48 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     };
   }
 
-  // ---------- exact copy of engine logic, parametric on order ----------
-  function prerollToRetirementCopy(cfg) {
-    let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
-          taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
+  // ---------- bracket-aware endTotal sim to match the table ----------
+  function endTotalForOrder(cfg0, orderKey){
+    const cfg   = clone(cfg0);
+    const order = ORDER_MAP[orderKey];
+    const liqs  = liqMap(cfg.asset_liquidations);
+    const d     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+    const rrspFlat = (cfg.income_tax_rate || 0);
+    const bracketsEnabled = !!(cfg.tax_brackets && (cfg.tax_brackets.enabled || cfg.tax_brackets.bands));
+    const bracketsObj     = cfg.tax_brackets || null;
 
-    let age = current_age;
-    let taxable = taxable0, rrsp = rrsp0, tfsa = tfsa0;
-    let save = annual_saving;
+    // --- pre-retirement (parity) ---
+    let age = cfg.current_age;
+    let t = cfg.taxable0, r = cfg.rrsp0, f = cfg.tfsa0;
+    let save = cfg.annual_saving;
+    const gN_pre = 1 + cfg.return_rate;
+    const gT_pre = 1 + cfg.return_rate * (1 - d);
 
-    const lm = liqMap(asset_liquidations);
-    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const gN = 1 + return_rate;
-    const gT = 1 + return_rate * (1 - d);
-
-    while (age < retirement_age) {
-      const t0 = taxable;
-      taxable = t0 * gT; rrsp *= gN; tfsa *= gN;
-      taxable += save + (lm[age] || 0);
+    while (age < cfg.retirement_age){
+      const t0 = t;
+      t = t0 * gT_pre;  r *= gN_pre;  f *= gN_pre;
+      t += (save || 0) + (liqs[age] || 0);
       save *= (1 + (cfg.saving_increase_rate||0));
-      age += 1;
+      age++;
     }
-    return { taxable, rrsp, tfsa };
-  }
 
-  function simulateEndTotalWithOrder(cfg, orderArr) {
-    const lm = liqMap(cfg.asset_liquidations);
-    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+    // --- retirement loop (mirror of engine) ---
     const gN = 1 + cfg.return_rate_after;
     const gT = 1 + cfg.return_rate_after * (1 - d);
 
-    const rrspFlat       = (cfg.income_tax_rate || 0);
-    const bracketsOn     = !!(cfg.tax_brackets && (cfg.tax_brackets.enabled || cfg.tax_brackets.bands));
-    const bracketsObj    = cfg.tax_brackets || null;
-
-    let { taxable:t, rrsp:r, tfsa:f } = prerollToRetirementCopy(cfg);
-
-    for (let age = cfg.retirement_age; age <= cfg.life_expectancy; age++){
+    for (age = cfg.retirement_age; age <= cfg.life_expectancy; age++){
       const expense = livingExpenseAtAge(cfg, age);
       const cpp     = cppAtAge(cfg, age);
       const oasG    = oasGrossAtAge(cfg, age);
 
-      // first pass w/ OAS gross
       let pass = allocateByOrder(
         Math.max(0, expense - cpp - oasG),
         { taxable:t, tfsa:f, rrsp:r },
-        orderArr,
+        order,
         rrspFlat
       );
 
-      // OAS clawback + top-up
+      // OAS clawback + top-up re-allocation
       let incomeForClaw = pass.draws.fromRRSPGross + pass.draws.fromTax + oasG + cpp;
       let oasClaw = 0;
       if (cfg.oas_monthly>0 && cfg.oas_start_age>0 && age>=cfg.oas_start_age &&
@@ -3519,11 +3512,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         oasClaw = Math.min(oasClaw, oasG);
       }
       if (oasClaw > 0){
-        const top = allocateByOrder(oasClaw, pass.endBalancesBeforeGrowth, orderArr, rrspFlat);
+        const top = allocateByOrder(oasClaw, pass.endBalancesBeforeGrowth, order, rrspFlat);
         pass.draws.fromTax       += top.draws.fromTax;
         pass.draws.fromTFSA      += top.draws.fromTFSA;
         pass.draws.fromRRSPGross += top.draws.fromRRSPGross;
-        pass.taxes.taxRRSP       += top.taxes.taxRRSP;
+        pass.taxes.taxRRSP       += top.taxes.taxRRSP; // flat mode only
         pass.endBalancesBeforeGrowth = top.endBalancesBeforeGrowth;
       }
 
@@ -3532,13 +3525,13 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const mustGross = pass.endBalancesBeforeGrowth.rrsp * rrifMinPct(age);
         if (pass.draws.fromRRSPGross < mustGross){
           const extraGross = mustGross - pass.draws.fromRRSPGross;
-          if (bracketsOn){
+          if (bracketsEnabled){
             const baseIncome = (cpp||0) + (oasG||0) + (pass.draws.fromRRSPGross||0);
             const extraTax   = incrementalTax(extraGross, baseIncome, bracketsObj);
             const extraNet   = extraGross - extraTax;
             pass.endBalancesBeforeGrowth.taxable += extraNet;
             pass.endBalancesBeforeGrowth.rrsp    -= extraGross;
-            pass.__rrifMinTax = (pass.__rrifMinTax || 0) + extraTax;
+            pass.__rrifMinTax = (pass.__rrifMinTax || 0) + extraTax; // overlay later if drag==0
           } else {
             const extraTax = extraGross * rrspFlat;
             const extraNet = extraGross - extraTax;
@@ -3550,23 +3543,28 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         }
       }
 
-      // overlay rule
+      // Decide taxes/overlay
       let overlayTaxable = 0;
-      if (bracketsOn){
-        overlayTaxable = (d === 0) ? (pass.__rrifMinTax || 0) : 0;
+      if (bracketsEnabled){
+        // RRSP spend tax is analytic only (doesn't fund from assets)
+        const baseIncome     = (cpp||0) + (oasG||0);
+        const rrspGrossSpend = Math.max(0, pass.draws.fromRRSPGross||0);
+        /* const taxOnRRSP  = */ incrementalTax(rrspGrossSpend, baseIncome, bracketsObj);
+        overlayTaxable       = (d === 0) ? (pass.__rrifMinTax || 0) : 0;
       } else {
+        // Flat overlay mode (legacy)
         const useOverlay = (d === 0) && (rrspFlat > 0);
         const grossUp    = useOverlay ? (rrspFlat / (1 - rrspFlat)) : 0;
         overlayTaxable   = useOverlay ? (pass.draws.fromTax * grossUp) : 0;
       }
 
-      // pay overlay from taxable, then one-off liquidations
+      // Pay overlay from taxable; add one-off liquidations
       let T = pass.endBalancesBeforeGrowth.taxable;
       let F = pass.endBalancesBeforeGrowth.tfsa;
       let R = pass.endBalancesBeforeGrowth.rrsp;
 
       T -= Math.min(overlayTaxable, Math.max(0, T));
-      if (lm[age]) T += lm[age];
+      if (liqs[age]) T += liqs[age];
 
       // grow to end-of-year
       const T0 = T;
@@ -3574,7 +3572,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       t = T; f = F; r = R;
     }
 
-    return t + f + r; // End_Total at life expectancy
+    return t + f + r;
   }
 
   // --- vertical marker plugin for taxes chart ---
@@ -3634,9 +3632,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       // destroy old charts
       ["__taxC1","__taxC2","__taxC3"].forEach(k => { try{ window[k]?.destroy(); }catch(e){} });
 
-      // (1) BAR: simulate all orders using the SAME logic as the table
+      // (1) BAR: simulate all orders with bracket-aware engine
       const orderKeys = Object.keys(ORDER_MAP);
-      const eoLifeRaw = orderKeys.map(k => simulateEndTotalWithOrder(cfg, ORDER_MAP[k]));
+      const eoLifeRaw = orderKeys.map(k => endTotalForOrder(cfg, k));
       const eoLife    = eoLifeRaw.map(Math.round);
 
       const bestIdx = eoLifeRaw.indexOf(Math.max.apply(null, eoLifeRaw));
@@ -3713,7 +3711,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   };
 })();
 </script>
-
 
 
 
