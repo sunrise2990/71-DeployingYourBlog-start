@@ -2784,54 +2784,76 @@ function ensureLayout(layout, seriesForAxis){
 
 
 // ---------- Lite bracket helpers (REQUIRED) ----------
-  function readBracketsFromUI() {
-    // Read UI; fall back to defaults if any field is missing/blank
-    const lim1  = Number(document.getElementById("tb_lim1")?.value)  || 50000;
-    const lim2  = Number(document.getElementById("tb_lim2")?.value)  || 100000;
-    const rate1 = (Number(document.getElementById("tb_rate1")?.value) || 10) / 100;
-    const rate2 = (Number(document.getElementById("tb_rate2")?.value) || 20) / 100;
-    const rate3 = (Number(document.getElementById("tb_rate3")?.value) || 30) / 100;
 
-    // Ensure increasing limits and non-negative rates
-    const L1 = Math.max(0, Math.min(lim1, lim2));
-    const L2 = Math.max(L1, lim2);
+// Default curve used when UI values are missing/invalid
+const DEFAULT_BRACKETS = [
+  { limit:  50000,   rate: 0.10 },
+  { limit: 100000,   rate: 0.20 },
+  { limit:  Infinity,rate: 0.30 }
+];
 
-    return [
-      { limit: L1,       rate: Math.max(0, rate1) },
-      { limit: L2,       rate: Math.max(0, rate2) },
-      { limit: Infinity, rate: Math.max(0, rate3) }
-    ];
+function readBracketsFromUI() {
+  const getNum = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return NaN;
+    const s = (el.value ?? "").toString().replace(/,/g, "").trim();
+    if (s === "") return NaN;
+    const v = Number(s);
+    return Number.isFinite(v) ? v : NaN;
+  };
+
+  // Read raw values
+  const lim1 = getNum("tb_lim1");
+  const lim2 = getNum("tb_lim2");
+  const r1   = getNum("tb_rate1") / 100;
+  const r2   = getNum("tb_rate2") / 100;
+  const r3   = getNum("tb_rate3") / 100;
+
+  // If any field is missing/invalid, or all rates are zero, fall back
+  const anyBad = [lim1, lim2, r1, r2, r3].some(v => !Number.isFinite(v));
+  const allZeroRates = (r1 || 0) === 0 && (r2 || 0) === 0 && (r3 || 0) === 0;
+  if (anyBad || allZeroRates) return DEFAULT_BRACKETS.slice();
+
+  // Sanitize: non-negative limits & rates, increasing limits
+  const L1 = Math.max(0, Math.min(lim1, lim2));
+  const L2 = Math.max(L1, lim2);
+  const clampRate = (x) => Math.max(0, Number(x) || 0);
+
+  return [
+    { limit: L1,        rate: clampRate(r1) },
+    { limit: L2,        rate: clampRate(r2) },
+    { limit: Infinity,  rate: clampRate(r3) }
+  ];
+}
+
+// Progressive tax for a given income and bracket set
+function taxFromBrackets(income, brackets) {
+  const y  = Math.max(0, Number(income) || 0);
+  const br = (brackets && brackets.length) ? brackets : DEFAULT_BRACKETS;
+
+  // Ensure sorted by limit and Infinity last
+  const sorted = br.slice().sort((a, b) => (a.limit === Infinity) - (b.limit === Infinity) || (a.limit - b.limit));
+  if (sorted[sorted.length - 1].limit !== Infinity) {
+    sorted.push({ limit: Infinity, rate: (sorted[sorted.length - 1].rate || 0) });
   }
 
-  // Total tax for a given income with progressive brackets
-  function taxFromBrackets(income, brackets) {
-    const y = Math.max(0, Number(income) || 0);
-    const br = (brackets && brackets.length) ? brackets : [
-      { limit: 50000,  rate: 0.10 },
-      { limit: 100000, rate: 0.20 },
-      { limit: Infinity, rate: 0.30 }
-    ];
-
-    let tax = 0, prev = 0;
-    for (const b of br) {
-      const upto = Math.min(y, b.limit);
-      if (upto > prev) tax += (upto - prev) * (b.rate || 0);
-      if (y <= b.limit) return tax;
-      prev = b.limit;
-    }
-    // Shouldn’t reach here if Infinity tier exists, but keep it safe:
-    const lastRate = (br[br.length - 1] || {}).rate || 0;
-    return tax + Math.max(0, y - prev) * lastRate;
+  let tax = 0, prev = 0;
+  for (const b of sorted) {
+    const upto = Math.min(y, b.limit);
+    if (upto > prev) tax += (upto - prev) * (Math.max(0, b.rate || 0));
+    if (y <= b.limit) break;
+    prev = b.limit;
   }
+  return tax;
+}
 
-  // Incremental tax for adding `delta` income on top of `base`
-  function incrementalTax(delta, base, brackets) {
-    const b = Math.max(0, Number(base)  || 0);
-    const d = Math.max(0, Number(delta) || 0);
-    const t0 = taxFromBrackets(b, brackets);
-    const t1 = taxFromBrackets(b + d, brackets);
-    return Math.max(0, t1 - t0);
-  }
+// Incremental tax of adding `delta` on top of `base`
+function incrementalTax(delta, base, brackets) {
+  const b = Math.max(0, Number(base)  || 0);
+  const d = Math.max(0, Number(delta) || 0);
+  return Math.max(0, taxFromBrackets(b + d, brackets) - taxFromBrackets(b, brackets));
+}
+
 
 
 
@@ -2935,42 +2957,51 @@ function ensureLayout(layout, seriesForAxis){
   }
 
   // Allocate by order (net need only; no overlay inside)
-  function allocateByOrder(netNeed, balances, order, rrspFlat) {
-    let need = Math.max(0, netNeed);
+function allocateByOrder(netNeed, balances, order, rrspFlat) {
+  let need = Math.max(0, netNeed);
 
-    let t = balances.taxable;
-    let f = balances.tfsa;
-    let r = balances.rrsp;
+  let t = balances.taxable;
+  let f = balances.tfsa;
+  let r = balances.rrsp;
 
-    let fromTax = 0, fromTFSA = 0, fromRRSPGross = 0, taxRRSP = 0;
+  let fromTax = 0, fromTFSA = 0, fromRRSPGross = 0, taxRRSP = 0;
 
-    for (const src of order) {
-      if (need <= 0) break;
+  for (const src of order) {
+    if (need <= 0) break;
 
-      if (src === "tfsa") {
-        const draw = Math.min(need, f);
-        fromTFSA += draw; f -= draw; need -= draw;
-      } else if (src === "taxable") {
-        const draw = Math.min(need, t);
-        fromTax   += draw; t -= draw; need -= draw;
-      } else if (src === "rrsp") {
-        const netPossible = r * (1 - rrspFlat);
-        const netTake     = Math.min(need, Math.max(0, netPossible));
-        const gross       = netTake / (1 - rrspFlat);
-        const tax         = gross * rrspFlat;
-        fromRRSPGross    += gross;
-        taxRRSP          += tax;
-        r                -= gross;
-        need             -= netTake;
-      }
+    if (src === "tfsa") {
+      const draw = Math.min(need, f);
+      fromTFSA += draw; f -= draw; need -= draw;
+    } else if (src === "taxable") {
+      const draw = Math.min(need, t);
+      fromTax   += draw; t -= draw; need -= draw;
+    } else if (src === "rrsp") {
+      const netPossible = r * (1 - rrspFlat);
+      const netTake     = Math.min(need, Math.max(0, netPossible));
+      const gross       = netTake > 0 ? netTake / (1 - rrspFlat) : 0;
+      const tax         = gross * rrspFlat;
+      fromRRSPGross    += gross;
+      taxRRSP          += tax;
+      r                -= gross;
+      need             -= netTake;
     }
-    return {
-      draws: { fromTax, fromTFSA, fromRRSPGross },
-      taxes: { taxRRSP },
-      shortfall: Math.max(0, need),
-      endBalancesBeforeGrowth: { taxable: t, tfsa: f, rrsp: r }
-    };
   }
+
+  // ✅ SAFETY: if any need remains and we still have Taxable, take it from Taxable.
+  if (need > 0 && t > 0) {
+    const draw = Math.min(need, t);
+    fromTax += draw; t -= draw; need -= draw;
+  }
+
+  return {
+    draws: { fromTax, fromTFSA, fromRRSPGross },
+    taxes: { taxRRSP },
+    shortfall: Math.max(0, need),
+    endBalancesBeforeGrowth: { taxable: t, tfsa: f, rrsp: r }
+  };
+}
+
+
 
   // Pre-retirement (grow, then deposit savings & liquidations)
   // Taxable grows with drag; RRSP/TFSA grow normally.
