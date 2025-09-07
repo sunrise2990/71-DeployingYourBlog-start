@@ -3341,15 +3341,17 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   window.__taxChartsLoaded = true;
 
   // ---------- utils ----------
-  const num  = n => (typeof n === "number" && isFinite(n)) ? n : 0;
-  const clone= o => JSON.parse(JSON.stringify(o));
-  const kFmt = v => {
+  const num   = n => (typeof n === "number" && isFinite(n)) ? n : 0;
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const kFmt  = v => {
     const s = v < 0 ? "-" : "";
     const a = Math.abs(v);
     return s + (a/1000).toLocaleString(undefined,{maximumFractionDigits:0}) + "K";
   };
-  const mFmt = v => "$" + (v/1e6).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) + "M";
+  const mFmt0 = v => "$" + (v/1e6).toLocaleString(undefined,{maximumFractionDigits:2, minimumFractionDigits:2}) + "M";
+  const intFmt = v => "$" + Math.round(v).toLocaleString(); // for tooltips/titles
 
+  // Map UI select -> array order
   const ORDER_MAP = {
     "taxable_tfsa_rrsp": ["taxable","tfsa","rrsp"],
     "tfsa_taxable_rrsp": ["tfsa","taxable","rrsp"],
@@ -3367,7 +3369,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "rrsp_tfsa_taxable": "RRSP → TFSA → Taxable"
   };
 
-  // ---------- exact-lite physics (copied to match the engine) ----------
+  // ---------- shared helpers ----------
   const within = (x,a,b)=> x>=a && x<=b;
   function rrifMinPct(age){
     const t = {71:0.0528,72:0.0540,73:0.0553,74:0.0567,75:0.0582,76:0.0598,77:0.0617,78:0.0636,79:0.0658,
@@ -3398,7 +3400,30 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       m[a]=(m[a]||0)+amt;
     }); return m;
   }
-  // same “flat inside allocator” as engine (keeps gross/net stable)
+
+  // ---------- lite bracket helpers (same as engine) ----------
+  function taxFromBrackets(income, brackets) {
+    const y = Math.max(0, Number(income) || 0);
+    const br = (brackets && brackets.length) ? brackets
+             : [{ limit: Infinity, rate: 0 }];
+
+    let tax = 0, prev = 0;
+    for (const b of br) {
+      const upto = Math.min(y, b.limit);
+      if (upto > prev) tax += (upto - prev) * (b.rate || 0);
+      if (y <= b.limit) return tax;
+      prev = b.limit;
+    }
+    const lastRate = (br[br.length - 1] || {}).rate || 0;
+    return tax + Math.max(0, y - prev) * lastRate;
+  }
+  function incrementalTax(delta, base, brackets) {
+    const b = Math.max(0, Number(base)  || 0);
+    const d = Math.max(0, Number(delta) || 0);
+    return Math.max(0, taxFromBrackets(b + d, brackets) - taxFromBrackets(b, brackets));
+  }
+
+  // Allocation by order (uses flat rate only to convert net need <-> gross for RRSP)
   function allocateByOrder(netNeed, balances, order, rrspFlat){
     let need = Math.max(0, netNeed);
     let {taxable:t, tfsa:f, rrsp:r} = balances;
@@ -3422,46 +3447,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         need             -= netTake;
       }
     }
-    return {
-      draws: { fromTax, fromTFSA, fromRRSPGross },
-      end:   { taxable:t, tfsa:f, rrsp:r },
-      shortfall: Math.max(0, need)
-    };
+    return { draws:{ fromTax, fromTFSA, fromRRSPGross }, end:{ taxable:t, tfsa:f, rrsp:r }, shortfall:Math.max(0, need) };
   }
 
-  // ---- bracket helpers (identical to engine’s) ----
-  function taxFromBrackets(income, brackets){
-    const y = Math.max(0, Number(income) || 0);
-    const br = (brackets && brackets.length) ? brackets : [{limit:Infinity, rate:0}];
-    let tax = 0, prev = 0;
-    for (const b of br) {
-      const upto = Math.min(y, b.limit);
-      if (upto > prev) tax += (upto - prev) * (b.rate || 0);
-      if (y <= b.limit) return tax;
-      prev = b.limit;
-    }
-    const lastRate = (br[br.length - 1] || {}).rate || 0;
-    return tax + Math.max(0, y - prev) * lastRate;
-  }
-  function incrementalTax(delta, base, brackets){
-    const b = Math.max(0, Number(base)  || 0);
-    const d = Math.max(0, Number(delta) || 0);
-    const t0 = taxFromBrackets(b, brackets);
-    const t1 = taxFromBrackets(b + d, brackets);
-    return Math.max(0, t1 - t0);
-  }
-
-  // simulate one order with the same step order as the engine; RETURN integer
-  function simEndTotal(cfg0, orderKey){
+  // Simulate full run for a given order (bracket-aware taxes)
+  function endTotalForOrder(cfg0, orderKey){
     const cfg = clone(cfg0);
     const order = ORDER_MAP[orderKey];
     const liqs = liqMap(cfg.asset_liquidations);
     const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const brackets = (cfg.tax_brackets && cfg.tax_brackets.length)
-      ? cfg.tax_brackets
-      : [{limit:Infinity, rate:0}];
+    const brackets = (cfg.tax_brackets && cfg.tax_brackets.length) ? cfg.tax_brackets : [{limit:Infinity, rate:0}];
+    const rrspFlat = (cfg.income_tax_rate || 0);  // still used solely for net/gross split inside allocation
 
-    // --- pre-retirement: grow then deposit; taxable uses drag ---
+    // --- pre-retirement ---
     let age = cfg.current_age;
     let t = cfg.taxable0, r = cfg.rrsp0, f = cfg.tfsa0;
     let save = cfg.annual_saving;
@@ -3476,77 +3474,67 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       age++;
     }
 
-    // --- retirement: exact 1→2→3→4→5 flow ---
+    // --- retirement loop ---
     const gN = 1 + cfg.return_rate_after;
     const gT = 1 + cfg.return_rate_after * (1 - d);
-    const flatRate = (cfg.income_tax_rate || 0); // still inside allocator
 
     for (age = cfg.retirement_age; age <= cfg.life_expectancy; age++){
       const expense = livingExpenseAtAge(cfg, age);
       const cpp     = cppAtAge(cfg, age);
       const oasG    = oasGrossAtAge(cfg, age);
 
-      // 1) allocate net need using OAS gross
+      // Allocate net need (uses flat rrsp rate only to split net/gross)
       let pass = allocateByOrder(
         Math.max(0, expense - cpp - oasG),
         { taxable:t, tfsa:f, rrsp:r },
         order,
-        flatRate
+        rrspFlat
       );
 
-      // 2) OAS clawback & top-up
-      let oasClaw = 0;
-      if (cfg.oas_monthly>0 && cfg.oas_start_age>0 && age>=cfg.oas_start_age &&
-          cfg.oas_threshold>0 && cfg.oas_clawback_rate>0){
-        const incomeForClaw = pass.draws.fromRRSPGross + pass.draws.fromTax + oasG + cpp;
-        oasClaw = Math.max(0, incomeForClaw - cfg.oas_threshold) * cfg.oas_clawback_rate;
-        oasClaw = Math.min(oasClaw, oasG);
-      }
-      if (oasClaw > 0){
-        const top = allocateByOrder(oasClaw, pass.end, order, flatRate);
-        pass.draws.fromTax       += top.draws.fromTax;
-        pass.draws.fromTFSA      += top.draws.fromTFSA;
-        pass.draws.fromRRSPGross += top.draws.fromRRSPGross;
-        pass.end = top.end;
-      }
+      // -------- lite bracket taxes (parity with table/lines) --------
+      const baseIncome = (cpp || 0) + (oasG || 0);
 
-      // 3) RRIF minimum: extra gross beyond spend; overlay only if drag==0
-      let overlayTaxable = 0;
+      // Tax on RRSP used for spending (does not change balances; analytics only)
+      const rrspGrossSpend = Math.max(0, pass.draws.fromRRSPGross || 0);
+      const taxRRSP_spend  = incrementalTax(rrspGrossSpend, baseIncome, brackets);
+
+      // RRIF minimum top-up (if any) — tax computed incrementally over base+spend
+      let rrifTax_on_min = 0;
       if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age){
-        const rrspGrossSpend = Math.max(0, pass.draws.fromRRSPGross || 0);
         const mustGross = pass.end.rrsp * rrifMinPct(age);
         if (rrspGrossSpend < mustGross){
           const extraGross = mustGross - rrspGrossSpend;
 
-          // bracket incremental tax on the extra gross (on top of base + spend)
-          const baseIncomeForTax = (cpp || 0) + (oasG || 0) + rrspGrossSpend;
-          const taxBeforeExtra = taxFromBrackets(baseIncomeForTax, brackets);
-          const taxAfterExtra  = taxFromBrackets(baseIncomeForTax + extraGross, brackets);
-          const extraTax       = Math.max(0, taxAfterExtra - taxBeforeExtra);
-          const extraNet       = extraGross - extraTax;
+          const taxBefore = taxFromBrackets(baseIncome + rrspGrossSpend, brackets);
+          const taxAfter  = taxFromBrackets(baseIncome + rrspGrossSpend + extraGross, brackets);
+          const extraTax  = Math.max(0, taxAfter - taxBefore);
+          const extraNet  = extraGross - extraTax;
 
-          pass.end.taxable += extraNet;  // spill to taxable
+          // balances reflect gross-out-of-RRSP and net-into-Taxable
           pass.end.rrsp    -= extraGross;
+          pass.end.taxable += extraNet;
 
-          if (d === 0) overlayTaxable = extraTax; // pay overlay only in parity mode
+          rrifTax_on_min = extraTax;  // if drag==0 we pay it from Taxable as overlay below
         }
       }
 
-      // 4) pay overlay (if any), then one-off liquidations
-      if (overlayTaxable > 0){
-        pass.end.taxable -= Math.min(overlayTaxable, Math.max(0, pass.end.taxable));
+      // Pay the overlay from Taxable only when drag==0 (parity rule)
+      if ((cfg.taxable_drag||0) === 0 && rrifTax_on_min > 0){
+        pass.end.taxable -= Math.min(rrifTax_on_min, Math.max(0, pass.end.taxable));
       }
+
+      // one-off liquidation
       pass.end.taxable += (liqs[age] || 0);
 
-      // 5) grow to end-of-year (drag only on taxable)
+      // grow to end-of-year
       const t0 = pass.end.taxable;
       t = t0 * gT;   r = pass.end.rrsp * gN;   f = pass.end.tfsa * gN;
     }
 
-    return Math.round(t + r + f); // integer parity with table “End Total”
+    return t + r + f; // End_Total at life expectancy
   }
 
-  // --- vertical marker plugin for the taxes chart ---
+  // --- custom plugin: vertical markers on taxes chart ---
   const vlinePlugin = {
     id: "vline",
     afterDraw(chart, args, opts){
@@ -3559,15 +3547,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           ctx.save();
           ctx.setLineDash([4,4]);
           ctx.strokeStyle = item.color || "#888";
-          ctx.beginPath();
-          ctx.moveTo(x, chartArea.top);
-          ctx.lineTo(x, chartArea.bottom);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.fillStyle = item.color || "#666";
-          ctx.textAlign = "left";
-          ctx.textBaseline = "top";
-          ctx.font = "11px sans-serif";
+          ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom); ctx.stroke();
+          ctx.setLineDash([]); ctx.fillStyle = item.color || "#666";
+          ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.font = "11px sans-serif";
           ctx.fillText(item.label, x + 4, chartArea.top + 4);
           ctx.restore();
         }
@@ -3588,7 +3570,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const taxRRSP  = rows.map(r => num(r.Tax_On_RRSP));
       const oasClaw  = rows.map(r => num(r.OAS_Clawback));
 
-      // effective tax on spending (%)
+      // Effective tax on spending (%)
       const flatT = num(cfg?.income_tax_rate || 0);
       const fromTax  = rows.map(r => num(r.From_Taxable));
       const fromTFSA = rows.map(r => num(r.From_TFSA));
@@ -3600,21 +3582,26 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         return s>0 ? (tax/s*100) : 0;
       });
 
+      // canvases
       const cOrders = document.getElementById("taxviz_orders");
       const cTaxes  = document.getElementById("taxviz_taxes");
       const cBal    = document.getElementById("taxviz_balances");
       if (!cOrders || !cTaxes || !cBal) return;
 
-      // destroy old charts
+      // Destroy old charts
       ["__taxC1","__taxC2","__taxC3"].forEach(k => { try{ window[k]?.destroy(); }catch(e){} });
 
-      // (1) BAR: recompute all six orders with exact-lite sim (rounded integers)
+      // (1) BAR: simulate all six orders with bracket-aware engine
       const orderKeys = Object.keys(ORDER_MAP);
-      const eoLife = orderKeys.map(k => simEndTotal(cfg, k));
-      const bestIdx = eoLife.indexOf(Math.max.apply(null, eoLife));
-      const worstIdx= eoLife.indexOf(Math.min.apply(null, eoLife));
-      const bestTxt  = `${mFmt(eoLife[bestIdx])} (best: ${ORDER_LABEL[orderKeys[bestIdx]]})`;
-      const worstTxt = `${mFmt(eoLife[worstIdx])} (worst: ${ORDER_LABEL[orderKeys[worstIdx]]})`;
+      const eoLifeRaw = orderKeys.map(k => endTotalForOrder(cfg, k));
+      const eoLife    = eoLifeRaw.map(x => Math.round(x)); // integer bars/tooltips
+
+      const bestIdx = eoLifeRaw.indexOf(Math.max.apply(null, eoLifeRaw));
+      const worstIdx= eoLifeRaw.indexOf(Math.min.apply(null, eoLifeRaw));
+      const bestName = ORDER_LABEL[orderKeys[bestIdx]];
+      const worstName= ORDER_LABEL[orderKeys[worstIdx]];
+      const bestTxt  = `${mFmt0(eoLifeRaw[bestIdx])} (best: ${bestName})`;
+      const worstTxt = `${mFmt0(eoLifeRaw[worstIdx])} (worst: ${worstName})`;
 
       window.__taxC1 = new Chart(cOrders.getContext("2d"), {
         type: "bar",
@@ -3630,34 +3617,22 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
             const idx = pts[0].index;
             const key = orderKeys[idx];
             const sel = document.getElementById("wd_order");
-            if (sel) {
-              sel.value = key;
-              sel.dispatchEvent(new Event("change", {bubbles:true}));
-            } else {
-              document.getElementById("litev1_run")?.click();
-            }
+            if (sel) { sel.value = key; sel.dispatchEvent(new Event("change", {bubbles:true})); }
+            else { document.getElementById("litev1_run")?.click(); }
           },
           scales: {
-            y: {
-              beginAtZero: false,
-              title: { display: true, text: "$ at age " + cfg.life_expectancy },
-              ticks: { callback: kFmt }
-            }
+            y: { beginAtZero:false, title:{display:true, text:"$ at age " + cfg.life_expectancy}, ticks:{ callback: kFmt } }
           },
           plugins: {
             legend: { position: "top" },
             title:  { display: true, text: `${bestTxt}   vs   ${worstTxt}` },
-            subtitle: {
-              display: true,
-              text: "🌟Tip: bars are clickable — click a bar to switch the withdrawal order",
-              color: "#6c757d",
-              font: { size: 11 }
-            }
+            subtitle: { display:true, text:"🌟Tip: bars are clickable — click a bar to switch the withdrawal order", color:"#6c757d", font:{size:11} },
+            tooltip: { callbacks: { label: (ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } }
           }
         }
       });
 
-      // (2) TAXES chart (table-driven is already correct)
+      // (2) TAXES: overlay tax & OAS clawback + effective tax on spending
       window.__taxC2 = new Chart(cTaxes.getContext("2d"), {
         data: {
           labels: ages,
@@ -3676,17 +3651,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           },
           plugins:{
             legend:{position:"top"},
-            vline: {
-              ages: [
-                { age: 65, label: "65: OAS starts",      color: "#999" },
-                { age: 72, label: "72: RRIF min starts", color: "#999" }
-              ]
-            }
+            vline:{ ages:[ {age:65,label:"65: OAS starts",color:"#999"}, {age:72,label:"72: RRIF min starts",color:"#999"} ] }
           }
         }
       });
 
-      // (3) balances over time (from rows, so it matches the table)
+      // (3) BOTTOM: balances over time for CURRENT order
       window.__taxC3 = new Chart(cBal.getContext("2d"), {
         type: "line",
         data: {
@@ -3700,16 +3670,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         },
         options: {
           responsive: false, maintainAspectRatio: false, devicePixelRatio: 1, animation: false,
-          scales: {
-            y: { position: "right", beginAtZero:false, title:{display:true, text:"$"}, ticks:{ callback: kFmt } }
-          },
-          plugins:{ legend:{position:"top"} }
+          scales: { y: { position:"right", beginAtZero:false, title:{display:true, text:"$"}, ticks:{ callback: kFmt } } },
+          plugins:{ legend:{position:"top"}, tooltip:{ callbacks:{ label:(ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } } }
         }
       });
-    } catch(e){ /* charts never block the table */ }
+    } catch(e){ /* never block the table */ }
   };
 })();
 </script>
+
 
 
 
