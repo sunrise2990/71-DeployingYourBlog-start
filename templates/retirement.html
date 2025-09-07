@@ -2784,74 +2784,69 @@ function ensureLayout(layout, seriesForAxis){
 
 
 // ---------- Lite bracket helpers (REQUIRED) ----------
-
-// Default curve used when UI values are missing/invalid
-const DEFAULT_BRACKETS = [
-  { limit:  50000,   rate: 0.10 },
-  { limit: 100000,   rate: 0.20 },
-  { limit:  Infinity,rate: 0.30 }
-];
-
 function readBracketsFromUI() {
-  const getNum = (id) => {
+  const getN = id => {
     const el = document.getElementById(id);
     if (!el) return NaN;
-    const s = (el.value ?? "").toString().replace(/,/g, "").trim();
-    if (s === "") return NaN;
-    const v = Number(s);
+    const v = Number((el.value ?? "").toString().replace(/,/g, "").trim());
     return Number.isFinite(v) ? v : NaN;
   };
 
-  // Read raw values
-  const lim1 = getNum("tb_lim1");
-  const lim2 = getNum("tb_lim2");
-  const r1   = getNum("tb_rate1") / 100;
-  const r2   = getNum("tb_rate2") / 100;
-  const r3   = getNum("tb_rate3") / 100;
+  const lim1 = getN("tb_lim1");
+  const lim2 = getN("tb_lim2");
+  const r1   = getN("tb_rate1");
+  const r2   = getN("tb_rate2");
+  const r3   = getN("tb_rate3");
 
-  // If any field is missing/invalid, or all rates are zero, fall back
-  const anyBad = [lim1, lim2, r1, r2, r3].some(v => !Number.isFinite(v));
-  const allZeroRates = (r1 || 0) === 0 && (r2 || 0) === 0 && (r3 || 0) === 0;
-  if (anyBad || allZeroRates) return DEFAULT_BRACKETS.slice();
+  // If ALL five fields are missing/zero/blank -> disable bracket mode
+  const allBlankOrZero = [lim1, lim2, r1, r2, r3].every(v => !Number.isFinite(v) || v === 0);
+  if (allBlankOrZero) return null;   // <- brackets OFF (use flat overlay engine)
 
-  // Sanitize: non-negative limits & rates, increasing limits
-  const L1 = Math.max(0, Math.min(lim1, lim2));
-  const L2 = Math.max(L1, lim2);
-  const clampRate = (x) => Math.max(0, Number(x) || 0);
+  // Otherwise sanitize and enable brackets
+  const L1 = Number.isFinite(lim1) && lim1 > 0 ? lim1 : 50000;
+  const L2 = Math.max(L1, (Number.isFinite(lim2) && lim2 > 0 ? lim2 : 100000));
 
-  return [
-    { limit: L1,        rate: clampRate(r1) },
-    { limit: L2,        rate: clampRate(r2) },
-    { limit: Infinity,  rate: clampRate(r3) }
-  ];
+  const rate1 = (Number.isFinite(r1) && r1 >= 0 ? r1 : 10) / 100;
+  const rate2 = (Number.isFinite(r2) && r2 >= 0 ? r2 : 20) / 100;
+  const rate3 = (Number.isFinite(r3) && r3 >= 0 ? r3 : 30) / 100;
+
+  return {
+    enabled: true,
+    bands: [
+      { limit: L1,       rate: rate1 },
+      { limit: L2,       rate: rate2 },
+      { limit: Infinity, rate: rate3 }
+    ]
+  };
 }
 
-// Progressive tax for a given income and bracket set
-function taxFromBrackets(income, brackets) {
+// Total tax for a given income with progressive brackets
+function taxFromBrackets(income, bracketsObj) {
   const y  = Math.max(0, Number(income) || 0);
-  const br = (brackets && brackets.length) ? brackets : DEFAULT_BRACKETS;
-
-  // Ensure sorted by limit and Infinity last
-  const sorted = br.slice().sort((a, b) => (a.limit === Infinity) - (b.limit === Infinity) || (a.limit - b.limit));
-  if (sorted[sorted.length - 1].limit !== Infinity) {
-    sorted.push({ limit: Infinity, rate: (sorted[sorted.length - 1].rate || 0) });
-  }
+  const br = (bracketsObj?.bands?.length ? bracketsObj.bands : [
+    { limit: 50000,  rate: 0.10 },
+    { limit: 100000, rate: 0.20 },
+    { limit: Infinity, rate: 0.30 }
+  ]);
 
   let tax = 0, prev = 0;
-  for (const b of sorted) {
+  for (const b of br) {
     const upto = Math.min(y, b.limit);
-    if (upto > prev) tax += (upto - prev) * (Math.max(0, b.rate || 0));
-    if (y <= b.limit) break;
+    if (upto > prev) tax += (upto - prev) * (b.rate || 0);
+    if (y <= b.limit) return tax;
     prev = b.limit;
   }
-  return tax;
+  const lastRate = (br[br.length - 1] || {}).rate || 0;
+  return tax + Math.max(0, y - prev) * lastRate;
 }
 
-// Incremental tax of adding `delta` on top of `base`
-function incrementalTax(delta, base, brackets) {
-  const b = Math.max(0, Number(base)  || 0);
-  const d = Math.max(0, Number(delta) || 0);
-  return Math.max(0, taxFromBrackets(b + d, brackets) - taxFromBrackets(b, brackets));
+// Incremental tax for adding `delta` income on top of `base`
+function incrementalTax(delta, base, bracketsObj) {
+  const b  = Math.max(0, Number(base)  || 0);
+  const d  = Math.max(0, Number(delta) || 0);
+  const t0 = taxFromBrackets(b, bracketsObj);
+  const t1 = taxFromBrackets(b + d, bracketsObj);
+  return Math.max(0, t1 - t0);
 }
 
 
@@ -3051,24 +3046,17 @@ function allocateByOrder(netNeed, balances, order, rrspFlat) {
 
 
 
-// Retirement: allocate base need; OAS/RRIF gated; overlay tax on taxable only if drag=0
+// Retirement: allocate base need; OAS/RRIF gated;
+// When brackets OFF -> original flat overlay on taxable (drag==0).
 function runTaxYearByYearLocal(cfg, balances, baselineMap) {
   const endAge   = cfg.life_expectancy;
   const startRet = cfg.retirement_age;
   const lm       = liqMap(cfg.asset_liquidations);
   const order    = readDrawOrder();
+  const flatRate = cfg.income_tax_rate || 0;
 
-  // Flat rate is still used INSIDE allocateByOrder to keep flows stable.
-  const taxRate  = cfg.income_tax_rate || 0;
-
-  // Brackets for the lite curve (fallback if none were provided)
-  const brackets = (cfg.tax_brackets && cfg.tax_brackets.length)
-    ? cfg.tax_brackets
-    : [
-        { limit: 50000,  rate: 0.10 },
-        { limit: 100000, rate: 0.20 },
-        { limit: Infinity, rate: 0.30 }
-      ];
+  const bracketsEnabled = !!(cfg.tax_brackets && cfg.tax_brackets.enabled);
+  const bracketsObj     = cfg.tax_brackets; // may be null
 
   let rows = [];
 
@@ -3078,78 +3066,92 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     const oasGross= oasGrossAtAge(cfg, age);
     const netNeedInitial = Math.max(0, expense - cpp - oasGross); // assume no clawback first pass
 
-    // 1) Allocate net need per order (first pass, using OAS gross). This still uses FLAT tax for gross/net split.
+    // 1) Allocate net need per order (first pass, using OAS gross)
     let pass = allocateByOrder(
       netNeedInitial,
       { taxable: balances.taxable, tfsa: balances.tfsa, rrsp: balances.rrsp },
       order,
-      taxRate
+      flatRate     // used only inside gross/net split for RRSP in allocator
     );
 
-    // 2) Compute OAS clawback (gated)
+    // 2) OAS clawback (same as before)
     let incomeForClawback = pass.draws.fromRRSPGross + pass.draws.fromTax + oasGross + cpp;
     let oasClawback = 0, oasNet = oasGross;
     if (cfg.oas_monthly > 0 && cfg.oas_start_age > 0 && age >= cfg.oas_start_age &&
         cfg.oas_threshold > 0 && cfg.oas_clawback_rate > 0) {
       oasClawback = Math.max(0, incomeForClawback - cfg.oas_threshold) * cfg.oas_clawback_rate;
       oasClawback = Math.min(oasClawback, oasGross);
-      oasNet = Math.max(0, oasGross - oasClawback);
+      oasNet      = Math.max(0, oasGross - oasClawback);
     }
 
-    // If there is clawback, we need extra cash equal to the clawback (because we used OAS gross in pass)
     if (oasClawback > 0) {
       const topUp = allocateByOrder(
         oasClawback,
         pass.endBalancesBeforeGrowth,
         order,
-        taxRate
+        flatRate
       );
-      // Merge the top-up (note: we will recompute taxes via brackets later)
       pass.draws.fromTax       += topUp.draws.fromTax;
       pass.draws.fromTFSA      += topUp.draws.fromTFSA;
       pass.draws.fromRRSPGross += topUp.draws.fromRRSPGross;
+      pass.taxes.taxRRSP       += topUp.taxes.taxRRSP; // only meaningful in flat mode
       pass.endBalancesBeforeGrowth = topUp.endBalancesBeforeGrowth;
     }
 
-    // ----- Bracket-based taxes (lite) -----
-
-    // Base income used for bracket math in THIS step.
-    // (Step 2 will upgrade this to include dividend gross-up / cap-gains inclusion.)
-    const baseIncomeForTax = (cpp || 0) + (oasGross || 0);
-
-    // RRSP tax on the portion used for spending (incremental on top of base)
-    const rrspGrossSpend = Math.max(0, pass.draws.fromRRSPGross || 0);
-    const taxRRSP_spend  = incrementalTax(rrspGrossSpend, baseIncomeForTax, brackets);
-
-    // RRIF minimum (gated by start age) — bracket tax on the "extra gross" only
+    // 3) RRIF minimum (applies in both modes, funding differences handled below)
     let rrifMinPctApplied = 0;
-    let rrifTax_on_min    = 0;
     if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age) {
       rrifMinPctApplied = rrifMinPct(age);
       const mustGross   = pass.endBalancesBeforeGrowth.rrsp * rrifMinPctApplied;
-      if (rrspGrossSpend < mustGross) {
-        const extraGross = mustGross - rrspGrossSpend;
+      if (pass.draws.fromRRSPGross < mustGross) {
+        const extraGross = mustGross - pass.draws.fromRRSPGross;
 
-        // incremental tax for the extra minimum on top of (base + spend)
-        const taxBeforeExtra = taxFromBrackets(baseIncomeForTax + rrspGrossSpend, brackets);
-        const taxAfterExtra  = taxFromBrackets(baseIncomeForTax + rrspGrossSpend + extraGross, brackets);
-        const extraTax       = Math.max(0, taxAfterExtra - taxBeforeExtra);
-        const extraNet       = extraGross - extraTax;
+        if (bracketsEnabled) {
+          // Bracket mode: compute tax only on the extra min; net goes to Taxable
+          const baseIncome   = (cpp || 0) + (oasGross || 0) + (pass.draws.fromRRSPGross || 0);
+          const taxBefore    = taxFromBrackets(baseIncome, bracketsObj);
+          const taxAfter     = taxFromBrackets(baseIncome + extraGross, bracketsObj);
+          const extraTax     = Math.max(0, taxAfter - taxBefore);
+          const extraNet     = extraGross - extraTax;
+          pass.endBalancesBeforeGrowth.taxable += extraNet;
+          pass.endBalancesBeforeGrowth.rrsp    -= extraGross;
 
-        // RRIF-min above what was needed moves (net) into Taxable; RRSP reduced by (gross)
-        pass.endBalancesBeforeGrowth.taxable += extraNet;
-        pass.endBalancesBeforeGrowth.rrsp    -= extraGross;
-
-        rrifTax_on_min = extraTax;  // paid from Taxable (overlay) if drag==0
+          // store in a temp we’ll overlay from taxable (see step 5) if drag==0
+          pass.__rrifMinTax = (pass.__rrifMinTax || 0) + extraTax;
+        } else {
+          // Flat mode: same math but tax is flat
+          const extraTax = extraGross * flatRate;
+          const extraNet = extraGross - extraTax;
+          pass.draws.fromRRSPGross += extraGross;
+          pass.taxes.taxRRSP       += extraTax;
+          pass.endBalancesBeforeGrowth.taxable += extraNet;
+          pass.endBalancesBeforeGrowth.rrsp    -= extraGross;
+        }
       }
     }
 
-    // Overlay on Taxable: in bracket mode, overlay = RRIF-min tax (if drag==0). We do NOT gross-up the whole taxable draw.
-    const d          = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const useOverlay = (d === 0);
-    const overlayTaxable = useOverlay ? rrifTax_on_min : 0;
+    // 4) Decide taxes/overlay based on mode
+    const d = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+    let taxOnRRSP = 0;
+    let overlayTaxable = 0;
 
-    // 5) Pay overlay from taxable pre-growth, then liquidations hit taxable
+    if (bracketsEnabled) {
+      // Tax on RRSP used for spending (not funded from assets)
+      const baseIncome     = (cpp || 0) + (oasGross || 0);
+      const rrspGrossSpend = Math.max(0, pass.draws.fromRRSPGross || 0);
+      taxOnRRSP            = incrementalTax(rrspGrossSpend, baseIncome, bracketsObj);
+
+      // Overlay only the RRIF-min tax from step 3 if drag==0
+      overlayTaxable       = (d === 0) ? (pass.__rrifMinTax || 0) : 0;
+    } else {
+      // Original flat overlay engine (what your bar uses)
+      taxOnRRSP = pass.taxes.taxRRSP || 0;
+      const useOverlay = (d === 0) && (flatRate > 0);
+      const grossUp    = useOverlay ? (flatRate / (1 - flatRate)) : 0;
+      overlayTaxable   = useOverlay ? (pass.draws.fromTax * grossUp) : 0;
+    }
+
+    // 5) Pay overlay from taxable pre-growth, then apply one-off liquidations
     let t = pass.endBalancesBeforeGrowth.taxable;
     let f = pass.endBalancesBeforeGrowth.tfsa;
     let r = pass.endBalancesBeforeGrowth.rrsp;
@@ -3171,26 +3173,23 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
 
     rows.push({
       Age: age,
-      // Show gross taxable flow incl. overlay so the bar chart matches cash reality
-      From_Taxable: r0(pass.draws.fromTax + overlayTaxable),
-      From_TFSA: r0(pass.draws.fromTFSA),
-      // IMPORTANT: display only the RRSP used to fund spending, not the RRIF-min top-up
-      From_RRSP_Gross: r0(rrspGrossSpend),
-      RRIF_Min_Pct: (rrifMinPctApplied*100).toFixed(2) + "%",
+      From_Taxable: Math.round(pass.draws.fromTax + overlayTaxable),
+      From_TFSA:    Math.round(pass.draws.fromTFSA),
+      From_RRSP_Gross: Math.round(pass.draws.fromRRSPGross),
+      RRIF_Min_Pct: (rrifMinPctApplied * 100).toFixed(2) + "%",
 
-      OAS_Gross: r0(oasGross),
-      OAS_Clawback: r0(oasClawback),
-      OAS_Net: r0(oasNet),
+      OAS_Gross:    Math.round(oasGross),
+      OAS_Clawback: Math.round(oasClawback),
+      OAS_Net:      Math.round(oasNet),
 
-      // Taxes (bracket-based)
-      Tax_On_Taxable: r0(overlayTaxable),     // = RRIF-min tax when drag==0; else 0
-      Tax_On_RRSP: r0(taxRRSP_spend),         // tax on RRSP used for spending
+      Tax_On_Taxable: Math.round(overlayTaxable),
+      Tax_On_RRSP:    Math.round(taxOnRRSP),
 
-      Taxable_Drag: r0(dragAmt),
-      End_Taxable: r0(t),
-      End_TFSA: r0(f),
-      End_RRSP: r0(r),
-      End_Total: r0(endTotal)
+      Taxable_Drag:   Math.round(dragAmt),
+      End_Taxable:    Math.round(t),
+      End_TFSA:       Math.round(f),
+      End_RRSP:       Math.round(r),
+      End_Total:      Math.round(endTotal)
     });
 
     balances = { taxable: t, tfsa: f, rrsp: r };
@@ -3204,11 +3203,12 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
 
   return {
     rows,
-    flat_tax_rate: taxRate, // still exposed for meta (allocation used it)
-    annual_spend: r0(Math.max(0, livingExpenseAtAge(cfg, cfg.retirement_age) - cppAtAge(cfg, cfg.retirement_age))),
+    flat_tax_rate: flatRate,
+    annual_spend: Math.round(Math.max(0, livingExpenseAtAge(cfg, cfg.retirement_age) - cppAtAge(cfg, cfg.retirement_age))),
     earliest_depletion_age: earliest
   };
 }
+
 
 
 
