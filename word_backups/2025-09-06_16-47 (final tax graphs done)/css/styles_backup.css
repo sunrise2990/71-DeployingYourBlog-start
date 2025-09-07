@@ -11127,3 +11127,18 @@ header.masthead.post-banner .post-heading .subheading {
   margin-left:.35rem; cursor:help; user-select:none;
 }
 .help-tip::before{ content:"?"; transform:translateY(-.5px); }
+
+
+<style>
+  /* compact numbers in the body cells */
+  #litev1_tax_table tbody td {
+    font-size: 12px !important;
+    padding: .25rem .40rem !important;
+    line-height: 1.2 !important;
+  }
+
+  /* optional: ensure header is a touch smaller too */
+  #litev1_tax_table thead th { font-size: 11px !important; }
+</style>
+
+

@@ -2482,6 +2482,29 @@ function ensureLayout(layout, seriesForAxis){
       </div>
     </div>
 
+
+<!-- Lite brackets (optional UI) -->
+<div class="row g-2 mt-2" id="tax_brackets_ui">
+  <div class="col-auto"><label class="form-label">Bracket 1 up to ($)</label>
+    <input id="tb_lim1" type="number" class="form-control form-control-sm" value="50000">
+  </div>
+  <div class="col-auto"><label class="form-label">Rate 1 (%)</label>
+    <input id="tb_rate1" type="number" class="form-control form-control-sm" value="10" step="0.1">
+  </div>
+  <div class="col-auto"><label class="form-label">Bracket 2 up to ($)</label>
+    <input id="tb_lim2" type="number" class="form-control form-control-sm" value="100000">
+  </div>
+  <div class="col-auto"><label class="form-label">Rate 2 (%)</label>
+    <input id="tb_rate2" type="number" class="form-control form-control-sm" value="20" step="0.1">
+  </div>
+  <div class="col-auto"><label class="form-label">Rate 3+ (%)</label>
+    <input id="tb_rate3" type="number" class="form-control form-control-sm" value="30" step="0.1">
+  </div>
+</div>
+
+
+
+
     <!-- === Taxable Drag Helper (sub-table) ================================= -->
     <div class="mt-4" id="taxdrag_helper">
       <div class="d-flex align-items-center justify-content-between">

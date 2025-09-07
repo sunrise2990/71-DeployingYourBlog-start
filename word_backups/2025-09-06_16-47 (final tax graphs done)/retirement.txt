@@ -2565,22 +2565,23 @@ function ensureLayout(layout, seriesForAxis){
     <div class="row g-3">
       <div class="col-md-6">
         <!-- Fixed pixel canvas; no shrinking on browser zoom -->
-        <canvas id="taxviz_orders" width="560" height="240"></canvas>
+        <canvas id="taxviz_orders" width="560" height="275"></canvas>
       </div>
       <div class="col-md-6">
-        <canvas id="taxviz_taxes" width="560" height="240"></canvas>
+        <canvas id="taxviz_taxes" width="560" height="275"></canvas>
       </div>
     </div>
 
     <!-- Row 2: FULL width = balances over time -->
     <div class="row g-3 mt-2">
       <div class="col-12">
-        <canvas id="taxviz_balances" width="1160" height="280"></canvas>
+        <canvas id="taxviz_balances" width="1160" height="300"></canvas>
       </div>
     </div>
   </div>
 </div>
 <!-- === /Tax-aware visuals ============================================== -->
+
 
 
 
@@ -3193,9 +3194,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   if (window.__taxChartsLoaded) return;
   window.__taxChartsLoaded = true;
 
-  // ---------- small utils ----------
-  const num = n => (typeof n === "number" && isFinite(n)) ? n : 0;
-  const clone = (o)=> JSON.parse(JSON.stringify(o));
+  // ---------- utils ----------
+  const num  = n => (typeof n === "number" && isFinite(n)) ? n : 0;
+  const clone= o => JSON.parse(JSON.stringify(o));
+  const kFmt = v => {
+    const s = v < 0 ? "-" : "";
+    const a = Math.abs(v);
+    return s + (a/1000).toLocaleString(undefined,{maximumFractionDigits:0}) + "K";
+  };
+  const mFmt = v => "$" + (v/1e6).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) + "M";
 
   // Map UI select -> array order
   const ORDER_MAP = {
@@ -3215,7 +3222,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "rrsp_tfsa_taxable": "RRSP → TFSA → Taxable"
   };
 
-  // ---------- lite physics (duplicated from your engine to simulate 6 orders) ----------
+  // ---------- lite physics (mirrors your engine so we can simulate all 6 orders) ----------
   const within = (x,a,b)=> x>=a && x<=b;
   function rrifMinPct(age){
     const t = {71:0.0528,72:0.0540,73:0.0553,74:0.0567,75:0.0582,76:0.0598,77:0.0617,78:0.0636,79:0.0658,
@@ -3316,7 +3323,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         taxRate
       );
 
-      // OAS clawback (tax-lite proxy matches your engine)
+      // OAS clawback
       let oasClaw = 0;
       if (cfg.oas_monthly>0 && cfg.oas_start_age>0 && age>=cfg.oas_start_age &&
           cfg.oas_threshold>0 && cfg.oas_clawback_rate>0){
@@ -3326,7 +3333,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       }
       if (oasClaw > 0){
         const top = allocateByOrder(oasClaw, pass.end, order, taxRate);
-        // merge
         pass.draws.fromTax       += top.draws.fromTax;
         pass.draws.fromTFSA      += top.draws.fromTFSA;
         pass.draws.fromRRSPGross += top.draws.fromRRSPGross;
@@ -3346,14 +3352,14 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         }
       }
 
-      // taxable overlay only when drag==0 (matches your table)
+      // taxable overlay only when drag==0 (parity with table)
       if ((cfg.taxable_drag||0) === 0 && taxRate>0){
         const grossUp = taxRate / (1 - taxRate);
         const overlay = pass.draws.fromTax * grossUp;
         pass.end.taxable -= Math.min(overlay, Math.max(0, pass.end.taxable));
       }
 
-      // add any one-off liquidation
+      // one-off liquidation
       pass.end.taxable += (liqs[age] || 0);
 
       // grow to end-of-year
@@ -3364,10 +3370,39 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return t + r + f; // End_Total at life expectancy
   }
 
+  // --- custom plugin: vertical markers on taxes chart ---
+  const vlinePlugin = {
+    id: "vline",
+    afterDraw(chart, args, opts){
+      const ages = (opts && opts.ages) || [];
+      const {ctx, chartArea, scales} = chart;
+      if (!scales?.x || !chartArea) return;
+      ages.forEach(item=>{
+        const x = scales.x.getPixelForValue(item.age);
+        if (isFinite(x)){
+          ctx.save();
+          ctx.setLineDash([4,4]);
+          ctx.strokeStyle = item.color || "#888";
+          ctx.beginPath();
+          ctx.moveTo(x, chartArea.top);
+          ctx.lineTo(x, chartArea.bottom);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = item.color || "#666";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "top";
+          ctx.font = "11px sans-serif";
+          ctx.fillText(item.label, x + 4, chartArea.top + 4);
+          ctx.restore();
+        }
+      });
+    }
+  };
+  Chart.register(vlinePlugin);
+
   // ---------- main render hook ----------
   window.renderTaxCharts = function(rows, cfg){
     try{
-      // pick up arrays from the current order run
       const ages     = rows.map(r => r.Age);
       const endT     = rows.map(r => num(r.End_Taxable));
       const endF     = rows.map(r => num(r.End_TFSA));
@@ -3401,18 +3436,61 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       // (1) BAR: end-of-life End Total for ALL SIX orders (re-simulate locally)
       const orderKeys = Object.keys(ORDER_MAP);
       const eoLife = orderKeys.map(k => endTotalForOrder(cfg, k));
+      const bestIdx = eoLife.indexOf(Math.max.apply(null, eoLife));
+      const worstIdx= eoLife.indexOf(Math.min.apply(null, eoLife));
+      const bestName = ORDER_LABEL[orderKeys[bestIdx]];
+      const worstName= ORDER_LABEL[orderKeys[worstIdx]];
+      const bestTxt  = `${mFmt(eoLife[bestIdx])} (best: ${bestName})`;
+      const worstTxt = `${mFmt(eoLife[worstIdx])} (worst: ${worstName})`;
+
 
       window.__taxC1 = new Chart(cOrders.getContext("2d"), {
         type: "bar",
         data: {
           labels: orderKeys.map(k => ORDER_LABEL[k]),
-          datasets: [{ label: "End Total at lifespan end", data: eoLife }]
+          datasets: [{
+            label: "End Total at lifespan end",
+            data: eoLife
+          }]
         },
         options: {
           responsive: false, maintainAspectRatio: false, devicePixelRatio: 1, animation: false,
-          scales: { y: { beginAtZero: false, title: { display: true, text: "$ at age " + cfg.life_expectancy } } },
-          plugins: { legend: { position: "top" } }
+          onClick(evt){
+            const pts = window.__taxC1.getElementsAtEventForMode(
+              evt, "nearest", {intersect:true}, true
+            );
+            if (!pts || !pts.length) return;
+            const idx = pts[0].index;
+            const key = orderKeys[idx];
+            const sel = document.getElementById("wd_order");
+            if (sel) {
+              sel.value = key;
+              // trigger your normal pipeline
+              sel.dispatchEvent(new Event("change", {bubbles:true}));
+            } else {
+              // fallback: click the run button
+              document.getElementById("litev1_run")?.click();
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: false,
+              title: { display: true, text: "$ at age " + cfg.life_expectancy },
+              ticks: { callback: kFmt }
+            }
+          },
+
+        plugins: {
+          legend: { position: "top" },
+          title:  { display: true, text: `${bestTxt}   vs   ${worstTxt}` },
+          subtitle: {
+            display: true,
+            text: "🌟Tip: bars are clickable — click a bar to switch the withdrawal order",
+            color: "#6c757d",
+            font: { size: 11 }
+          }
         }
+       }
       });
 
       // (2) TAXES: overlay tax & OAS clawback + effective tax on spending
@@ -3429,10 +3507,20 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         options: {
           responsive: false, maintainAspectRatio: false, devicePixelRatio: 1, animation: false,
           scales: {
-            y:  { beginAtZero:true, title:{display:true, text:"$ / year"} },
-            y1: { position:"right", grid:{drawOnChartArea:false}, title:{display:true, text:"%"} }
+          y:  { beginAtZero:true, title:{display:true, text:"$ / year"}, ticks:{ callback: (v)=> kFmt(v) } },
+          y1: { position:"right", grid:{drawOnChartArea:false}, title:{display:true, text:"%"} }
           },
-          plugins:{ legend:{position:"top"} }
+
+          plugins:{
+            legend:{position:"top"},
+            // vertical markers
+            vline: {
+              ages: [
+                { age: 65, label: "65: OAS starts",   color: "#999" },
+                { age: 72, label: "72: RRIF min starts", color: "#999" }
+              ]
+            }
+          }
         }
       });
 
@@ -3450,7 +3538,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         },
         options: {
           responsive: false, maintainAspectRatio: false, devicePixelRatio: 1, animation: false,
-          scales: { y: { beginAtZero:false, title:{display:true, text:"$"} } },
+          scales: {
+            y: { position: "right", beginAtZero:false, title:{display:true, text:"$"}, ticks:{ callback: kFmt } }
+          },
           plugins:{ legend:{position:"top"} }
         }
       });
@@ -3458,6 +3548,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   };
 })();
 </script>
+
 
 
 
