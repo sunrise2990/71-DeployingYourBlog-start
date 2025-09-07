@@ -2832,7 +2832,10 @@ function ensureLayout(layout, seriesForAxis){
       return_rate: (pre_ret_pct || 0) / 100,
       return_rate_after: (post_ret_pct || 0) / 100,
       inflation_rate: (infl_pct || 0) / 100,
-      income_tax_rate: (tax_pct || 0) / 100,
+
+      income_tax_rate: (tax_pct || 0) / 100,   // still used for allocation math only
+      // Lite brackets: read from UI if present; else defaults kick in inside readBracketsFromUI()
+      tax_brackets: readBracketsFromUI(),
 
       cpp_monthly: cpp_mo || 0,
       cpp_start_age: cpp_from || retirement_age,
@@ -2960,137 +2963,169 @@ function ensureLayout(layout, seriesForAxis){
     return { rows, taxable, rrsp, tfsa };
   }
 
-  // Retirement: allocate base need; OAS/RRIF gated; overlay tax on taxable only if drag=0
-  function runTaxYearByYearLocal(cfg, balances, baselineMap) {
-    const endAge   = cfg.life_expectancy;
-    const startRet = cfg.retirement_age;
-    const lm       = liqMap(cfg.asset_liquidations);
-    const order    = readDrawOrder();
-    const taxRate  = cfg.income_tax_rate || 0;
 
-    let rows = [];
 
-    for (let age = startRet; age <= endAge; age++) {
-      const expense = livingExpenseAtAge(cfg, age);
-      const cpp     = cppAtAge(cfg, age);
-      const oasGross= oasGrossAtAge(cfg, age);
-      const netNeedInitial = Math.max(0, expense - cpp - oasGross); // assume no clawback first pass
+// Retirement: allocate base need; OAS/RRIF gated; overlay tax on taxable only if drag=0
+function runTaxYearByYearLocal(cfg, balances, baselineMap) {
+  const endAge   = cfg.life_expectancy;
+  const startRet = cfg.retirement_age;
+  const lm       = liqMap(cfg.asset_liquidations);
+  const order    = readDrawOrder();
 
-      // 1) Allocate net need per order (first pass, using OAS gross)
-      let pass = allocateByOrder(
-        netNeedInitial,
-        { taxable: balances.taxable, tfsa: balances.tfsa, rrsp: balances.rrsp },
+  // Flat rate is still used INSIDE allocateByOrder to keep flows stable.
+  const taxRate  = cfg.income_tax_rate || 0;
+
+  // Brackets for the lite curve (fallback if none were provided)
+  const brackets = (cfg.tax_brackets && cfg.tax_brackets.length)
+    ? cfg.tax_brackets
+    : [
+        { limit: 50000,  rate: 0.10 },
+        { limit: 100000, rate: 0.20 },
+        { limit: Infinity, rate: 0.30 }
+      ];
+
+  let rows = [];
+
+  for (let age = startRet; age <= endAge; age++) {
+    const expense = livingExpenseAtAge(cfg, age);
+    const cpp     = cppAtAge(cfg, age);
+    const oasGross= oasGrossAtAge(cfg, age);
+    const netNeedInitial = Math.max(0, expense - cpp - oasGross); // assume no clawback first pass
+
+    // 1) Allocate net need per order (first pass, using OAS gross). This still uses FLAT tax for gross/net split.
+    let pass = allocateByOrder(
+      netNeedInitial,
+      { taxable: balances.taxable, tfsa: balances.tfsa, rrsp: balances.rrsp },
+      order,
+      taxRate
+    );
+
+    // 2) Compute OAS clawback (gated)
+    let incomeForClawback = pass.draws.fromRRSPGross + pass.draws.fromTax + oasGross + cpp;
+    let oasClawback = 0, oasNet = oasGross;
+    if (cfg.oas_monthly > 0 && cfg.oas_start_age > 0 && age >= cfg.oas_start_age &&
+        cfg.oas_threshold > 0 && cfg.oas_clawback_rate > 0) {
+      oasClawback = Math.max(0, incomeForClawback - cfg.oas_threshold) * cfg.oas_clawback_rate;
+      oasClawback = Math.min(oasClawback, oasGross);
+      oasNet = Math.max(0, oasGross - oasClawback);
+    }
+
+    // If there is clawback, we need extra cash equal to the clawback (because we used OAS gross in pass)
+    if (oasClawback > 0) {
+      const topUp = allocateByOrder(
+        oasClawback,
+        pass.endBalancesBeforeGrowth,
         order,
         taxRate
       );
-
-      // 2) Compute OAS clawback (gated)
-      let incomeForClawback = pass.draws.fromRRSPGross + pass.draws.fromTax + oasGross + cpp;
-      let oasClawback = 0, oasNet = oasGross;
-      if (cfg.oas_monthly > 0 && cfg.oas_start_age > 0 && age >= cfg.oas_start_age &&
-          cfg.oas_threshold > 0 && cfg.oas_clawback_rate > 0) {
-        oasClawback = Math.max(0, incomeForClawback - cfg.oas_threshold) * cfg.oas_clawback_rate;
-        oasClawback = Math.min(oasClawback, oasGross);
-        oasNet = Math.max(0, oasGross - oasClawback);
-      }
-
-      // If there is clawback, we need extra cash equal to the clawback (because we used OAS gross in pass)
-      if (oasClawback > 0) {
-        const topUp = allocateByOrder(
-          oasClawback,
-          pass.endBalancesBeforeGrowth,
-          order,
-          taxRate
-        );
-
-        // Merge the top-up into the main pass
-        pass.draws.fromTax       += topUp.draws.fromTax;
-        pass.draws.fromTFSA      += topUp.draws.fromTFSA;
-        pass.draws.fromRRSPGross += topUp.draws.fromRRSPGross;
-        pass.taxes.taxRRSP       += topUp.taxes.taxRRSP;
-        pass.endBalancesBeforeGrowth = topUp.endBalancesBeforeGrowth;
-      }
-
-      // 3) RRIF minimum (gated by start age)
-      let rrifMinPctApplied = 0;
-      if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age) {
-        rrifMinPctApplied = rrifMinPct(age);
-        const mustGross = pass.endBalancesBeforeGrowth.rrsp * rrifMinPctApplied;
-        if (pass.draws.fromRRSPGross < mustGross) {
-          const extraGross = mustGross - pass.draws.fromRRSPGross;
-          const extraTax   = extraGross * taxRate;
-          const extraNet   = extraGross - extraTax;
-
-          pass.draws.fromRRSPGross += extraGross;
-          pass.taxes.taxRRSP       += extraTax;
-          // RRIF min above what was needed moves into Taxable as cash
-          pass.endBalancesBeforeGrowth.taxable += extraNet;
-          pass.endBalancesBeforeGrowth.rrsp    -= extraGross;
-        }
-      }
-
-      // 4) Overlay on Taxable withdrawals (only if drag==0 to avoid double count)
-      const d          = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-      const useOverlay = (d === 0) && (taxRate > 0);
-      const grossUp    = useOverlay ? (taxRate / (1 - taxRate)) : 0;
-      const overlayTaxable = useOverlay ? (pass.draws.fromTax * grossUp) : 0;
-
-      // 5) Pay overlay from taxable pre-growth, then liquidations hit taxable
-      let t = pass.endBalancesBeforeGrowth.taxable;
-      let f = pass.endBalancesBeforeGrowth.tfsa;
-      let r = pass.endBalancesBeforeGrowth.rrsp;
-
-      const overlayPay = Math.min(overlayTaxable, Math.max(0, t));
-      t -= overlayPay;
-
-      if (lm[age]) t += lm[age];
-
-      // 6) Grow (drag only on taxable)
-      const gN = 1 + cfg.return_rate_after;
-      const gT = 1 + cfg.return_rate_after * (1 - d);
-      const t0 = t;
-      const dragAmt = (d > 0) ? (t0 * cfg.return_rate_after * d) : 0;
-
-      t = t0 * gT;
-      f *= gN;
-      r *= gN;
-
-      const endTotal = t + f + r;
-
-      rows.push({
-        Age: age,
-        From_Taxable: r0(pass.draws.fromTax + overlayTaxable),
-        From_TFSA: r0(pass.draws.fromTFSA),
-        From_RRSP_Gross: r0(pass.draws.fromRRSPGross),
-        RRIF_Min_Pct: (rrifMinPctApplied*100).toFixed(2) + "%",
-        OAS_Gross: r0(oasGross),
-        OAS_Clawback: r0(oasClawback),
-        OAS_Net: r0(oasNet),
-        Tax_On_Taxable: r0(overlayTaxable),
-        Tax_On_RRSP: r0(pass.taxes.taxRRSP),
-        Taxable_Drag: r0(dragAmt),
-        End_Taxable: r0(t),
-        End_TFSA: r0(f),
-        End_RRSP: r0(r),
-        End_Total: r0(endTotal)
-      });
-
-      balances = { taxable: t, tfsa: f, rrsp: r };
+      // Merge the top-up (note: we will recompute taxes via brackets later)
+      pass.draws.fromTax       += topUp.draws.fromTax;
+      pass.draws.fromTFSA      += topUp.draws.fromTFSA;
+      pass.draws.fromRRSPGross += topUp.draws.fromRRSPGross;
+      pass.endBalancesBeforeGrowth = topUp.endBalancesBeforeGrowth;
     }
 
-    // earliest depletion (meta)
-    let earliest = null;
-    for (const r of rows) {
-      if (Number(r.End_Total) <= 0) { earliest = Number(r.Age); break; }
+    // ----- Bracket-based taxes (lite) -----
+
+    // Base income used for bracket math in THIS step.
+    // (Step 2 will upgrade this to include dividend gross-up / cap-gains inclusion.)
+    const baseIncomeForTax = (cpp || 0) + (oasGross || 0);
+
+    // RRSP tax on the portion used for spending (incremental on top of base)
+    const rrspGrossSpend = Math.max(0, pass.draws.fromRRSPGross || 0);
+    const taxRRSP_spend  = incrementalTax(rrspGrossSpend, baseIncomeForTax, brackets);
+
+    // RRIF minimum (gated by start age) — bracket tax on the "extra gross" only
+    let rrifMinPctApplied = 0;
+    let rrifTax_on_min    = 0;
+    if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age) {
+      rrifMinPctApplied = rrifMinPct(age);
+      const mustGross   = pass.endBalancesBeforeGrowth.rrsp * rrifMinPctApplied;
+      if (rrspGrossSpend < mustGross) {
+        const extraGross = mustGross - rrspGrossSpend;
+
+        // incremental tax for the extra minimum on top of (base + spend)
+        const taxBeforeExtra = taxFromBrackets(baseIncomeForTax + rrspGrossSpend, brackets);
+        const taxAfterExtra  = taxFromBrackets(baseIncomeForTax + rrspGrossSpend + extraGross, brackets);
+        const extraTax       = Math.max(0, taxAfterExtra - taxBeforeExtra);
+        const extraNet       = extraGross - extraTax;
+
+        // RRIF-min above what was needed moves (net) into Taxable; RRSP reduced by (gross)
+        pass.endBalancesBeforeGrowth.taxable += extraNet;
+        pass.endBalancesBeforeGrowth.rrsp    -= extraGross;
+
+        rrifTax_on_min = extraTax;  // paid from Taxable (overlay) if drag==0
+      }
     }
 
-    return {
-      rows,
-      flat_tax_rate: taxRate,
-      annual_spend: r0(Math.max(0, livingExpenseAtAge(cfg, cfg.retirement_age) - cppAtAge(cfg, cfg.retirement_age))),
-      earliest_depletion_age: earliest
-    };
+    // Overlay on Taxable: in bracket mode, overlay = RRIF-min tax (if drag==0). We do NOT gross-up the whole taxable draw.
+    const d          = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+    const useOverlay = (d === 0);
+    const overlayTaxable = useOverlay ? rrifTax_on_min : 0;
+
+    // 5) Pay overlay from taxable pre-growth, then liquidations hit taxable
+    let t = pass.endBalancesBeforeGrowth.taxable;
+    let f = pass.endBalancesBeforeGrowth.tfsa;
+    let r = pass.endBalancesBeforeGrowth.rrsp;
+
+    t -= Math.min(overlayTaxable, Math.max(0, t));
+    if (lm[age]) t += lm[age];
+
+    // 6) Grow (drag only on taxable)
+    const gN = 1 + cfg.return_rate_after;
+    const gT = 1 + cfg.return_rate_after * (1 - d);
+    const t0 = t;
+    const dragAmt = (d > 0) ? (t0 * cfg.return_rate_after * d) : 0;
+
+    t = t0 * gT;
+    f *= gN;
+    r *= gN;
+
+    const endTotal = t + f + r;
+
+    rows.push({
+      Age: age,
+      // Show gross taxable flow incl. overlay so the bar chart matches cash reality
+      From_Taxable: r0(pass.draws.fromTax + overlayTaxable),
+      From_TFSA: r0(pass.draws.fromTFSA),
+      // IMPORTANT: display only the RRSP used to fund spending, not the RRIF-min top-up
+      From_RRSP_Gross: r0(rrspGrossSpend),
+      RRIF_Min_Pct: (rrifMinPctApplied*100).toFixed(2) + "%",
+
+      OAS_Gross: r0(oasGross),
+      OAS_Clawback: r0(oasClawback),
+      OAS_Net: r0(oasNet),
+
+      // Taxes (bracket-based)
+      Tax_On_Taxable: r0(overlayTaxable),     // = RRIF-min tax when drag==0; else 0
+      Tax_On_RRSP: r0(taxRRSP_spend),         // tax on RRSP used for spending
+
+      Taxable_Drag: r0(dragAmt),
+      End_Taxable: r0(t),
+      End_TFSA: r0(f),
+      End_RRSP: r0(r),
+      End_Total: r0(endTotal)
+    });
+
+    balances = { taxable: t, tfsa: f, rrsp: r };
   }
+
+  // earliest depletion (meta)
+  let earliest = null;
+  for (const r of rows) {
+    if (Number(r.End_Total) <= 0) { earliest = Number(r.Age); break; }
+  }
+
+  return {
+    rows,
+    flat_tax_rate: taxRate, // still exposed for meta (allocation used it)
+    annual_spend: r0(Math.max(0, livingExpenseAtAge(cfg, cfg.retirement_age) - cppAtAge(cfg, cfg.retirement_age))),
+    earliest_depletion_age: earliest
+  };
+}
+
+
+
 
   // Baseline (100% taxable) via backend
   async function runBaselineMap(cfg) {
@@ -3191,7 +3226,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "litev1_start_age","litev1_end_age","litev1_taxable","litev1_rrsp","litev1_tfsa",
     "litev1_spend","litev1_return","litev1_monthly_saving","litev1_income_tax","wd_order",
     "litev1_taxable_drag",
-    "oas_mo","oas_start_age","oas_threshold","oas_rate","rrif_start_age","oas_index"
+    "oas_mo","oas_start_age","oas_threshold","oas_rate","rrif_start_age","oas_index",
+    "tb_lim1","tb_lim2","tb_rate1","tb_rate2","tb_rate3"
   ].forEach(id => $(id)?.addEventListener("input", runAll));
   $("wd_order")?.addEventListener("change", runAll);
 
