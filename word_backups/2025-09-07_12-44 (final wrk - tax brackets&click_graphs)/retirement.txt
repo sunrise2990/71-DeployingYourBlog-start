@@ -2427,10 +2427,32 @@ function ensureLayout(layout, seriesForAxis){
         <label class="form-label">Income Tax Rate (%)</label>
         <input id="litev1_income_tax" type="number" class="form-control" value="0" step="0.1">
       </div>
-      <!-- NOTE: Taxable Drag moved near its helper below -->
+      <div class="col-md-2">
+        <label class="form-label">Taxable Drag (%)</label>
+        <input id="litev1_taxable_drag" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
+        <div class="form-text small">Annual drag applied to Taxable growth only (set manually or auto from helper below).</div>
+      </div>
+
+      <!-- Withdrawal order selector -->
+      <div class="col-md-3">
+        <label class="form-label">Withdrawal order</label>
+        <select id="wd_order" class="form-select">
+          <option value="taxable_tfsa_rrsp">Taxable → TFSA → RRSP</option>
+          <option value="tfsa_taxable_rrsp">TFSA → Taxable → RRSP</option>
+          <option value="rrsp_taxable_tfsa">RRSP → Taxable → TFSA</option>
+          <option value="tfsa_rrsp_taxable">TFSA → RRSP → Taxable</option>
+          <option value="taxable_rrsp_tfsa">Taxable → RRSP → TFSA</option>
+          <option value="rrsp_tfsa_taxable">RRSP → TFSA → Taxable</option>
+        </select>
+        <div class="form-text small">Applied each retirement year (unless RRIF minimum is explicitly enabled).</div>
+      </div>
+
+      <div class="col-md-1 d-flex align-items-end justify-content-end">
+        <button id="litev1_run" class="btn btn-primary w-100" type="button">Run plan</button>
+      </div>
     </div>
 
-    <!-- OAS / RRIF (kept together; Index OAS defaults to checked) -->
+    <!-- OAS / RRIF controls (all start as zeros/off so base case matches old behavior) -->
     <div class="row g-3 mt-3">
       <div class="col-md-2">
         <label class="form-label">OAS Monthly ($)</label>
@@ -2454,54 +2476,38 @@ function ensureLayout(layout, seriesForAxis){
       </div>
       <div class="col-md-1 d-flex align-items-end">
         <div class="form-check">
-          <input id="oas_index" class="form-check-input" type="checkbox" checked>
+          <input id="oas_index" class="form-check-input" type="checkbox">
           <label class="form-check-label small" for="oas_index">Index OAS</label>
         </div>
       </div>
     </div>
 
-    <!-- Lite brackets -->
-    <div class="row g-2 mt-3" id="tax_brackets_ui">
-      <div class="col-auto">
-        <label class="form-label">Bracket 1 up to ($)</label>
-        <input id="tb_lim1"  type="number" class="form-control form-control-sm" value="0" placeholder="57,375">
-      </div>
-      <div class="col-auto">
-        <label class="form-label">Rate 1 (%)</label>
-        <input id="tb_rate1" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="14.5">
-      </div>
-      <div class="col-auto">
-        <label class="form-label">Bracket 2 up to ($)</label>
-        <input id="tb_lim2"  type="number" class="form-control form-control-sm" value="0" placeholder="114,750">
-      </div>
-      <div class="col-auto">
-        <label class="form-label">Rate 2 (%)</label>
-        <input id="tb_rate2" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="20.5">
-      </div>
-      <div class="col-auto">
-        <label class="form-label">Rate 3+ (%)</label>
-        <input id="tb_rate3" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="26–32">
-      </div>
-      <div class="col-12 small text-muted mt-1">
-        Example only: ~$57,375 → ~14.5%; ~$114,750 → ~20.5%; income above that typically ~26–32% depending on province/territory.
-        <a href="/guides/tax-brackets" target="_blank" rel="noopener">See simple bracket table</a>.
-      </div>
-    </div>
 
-    <!-- Taxable Drag (moved here) -->
-    <div class="row g-3 mt-4">
-      <div class="col-md-3">
-        <label class="form-label">Taxable Drag (%)</label>
-        <input id="litev1_taxable_drag" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
-        <div class="form-text small">
-          Optional friction on <em>Taxable</em> growth only. Enter manually, or use the helper below
-          and tick “Auto-apply” to fill this for you.
-        </div>
-      </div>
-    </div>
+<!-- Lite brackets (optional UI) -->
+<div class="row g-2 mt-2" id="tax_brackets_ui">
+  <div class="col-auto"><label class="form-label">Bracket 1 up to ($)</label>
+    <input id="tb_lim1"  type="number" class="form-control form-control-sm" value="0" placeholder="50000">
+  </div>
+  <div class="col-auto"><label class="form-label">Rate 1 (%)</label>
+    <input id="tb_rate1" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="10">
+  </div>
+  <div class="col-auto"><label class="form-label">Bracket 2 up to ($)</label>
+    <input id="tb_lim2"  type="number" class="form-control form-control-sm" value="0" placeholder="100000">
+  </div>
+  <div class="col-auto"><label class="form-label">Rate 2 (%)</label>
+    <input id="tb_rate2" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="20">
+  </div>
+  <div class="col-auto"><label class="form-label">Rate 3+ (%)</label>
+    <input id="tb_rate3" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="30">
+  </div>
+</div>
+
+
+
+
 
     <!-- === Taxable Drag Helper (sub-table) ================================= -->
-    <div class="mt-3" id="taxdrag_helper">
+    <div class="mt-4" id="taxdrag_helper">
       <div class="d-flex align-items-center justify-content-between">
         <h6 class="mb-2">Taxable Drag Helper</h6>
         <div class="form-check">
@@ -2559,36 +2565,17 @@ function ensureLayout(layout, seriesForAxis){
         </table>
       </div>
       <div class="small text-muted">
-        <strong>Allocation</strong> is the share of your Taxable balance in that stream (≤100% total).
+        <strong>Allocation</strong> is the share of your Taxable balance in that stream (must not exceed 100% in total, but it’s fine if it’s less).
         <strong>Yield</strong> is the annual % paid/realized on that slice.
-        We sum each row’s <code>Allocation × Yield × Effective Rate</code> to get <em>Absolute Drag</em> (% of the taxable balance),
-        then divide by your Return Rate to get the model’s <em>Taxable Drag (%)</em>.
+        We sum each row’s <code>Allocation × Yield × Effective Rate</code> to get <em>Absolute Drag</em> (% of the taxable balance).
+        Then we divide by your Return Rate to get the model’s <em>Taxable Drag (%)</em>, which is applied to Taxable growth only.
       </div>
     </div>
 
     <hr class="my-3">
 
-    <!-- Bottom controls: order + run (kept just above visuals) -->
-    <div class="row g-3 align-items-end">
-      <div class="col-md-6">
-        <label class="form-label">Withdrawal order</label>
-        <select id="wd_order" class="form-select">
-          <option value="taxable_tfsa_rrsp">Taxable → TFSA → RRSP</option>
-          <option value="tfsa_taxable_rrsp">TFSA → Taxable → RRSP</option>
-          <option value="rrsp_taxable_tfsa">RRSP → Taxable → TFSA</option>
-          <option value="tfsa_rrsp_taxable">TFSA → RRSP → Taxable</option>
-          <option value="taxable_rrsp_tfsa">Taxable → RRSP → TFSA</option>
-          <option value="rrsp_tfsa_taxable">RRSP → TFSA → Taxable</option>
-        </select>
-        <div class="form-text small">Applied each retirement year (unless RRIF minimum is explicitly enabled).</div>
-      </div>
-      <div class="col-md-6 d-flex justify-content-md-end">
-        <button id="litev1_run" class="btn btn-primary btn-lg" type="button">Run plan</button>
-      </div>
-    </div>
-  </div>
-</div>
-<!-- === /COMBINED ========================================================= -->
+
+
 
 <!-- === Tax-aware visuals (beta) ========================================= -->
 <div class="card mt-4" id="taxviz_card">
@@ -2598,18 +2585,26 @@ function ensureLayout(layout, seriesForAxis){
       <span class="text-muted small">Parity mode — charts never block the table</span>
     </div>
 
+    <!-- Row 1: LEFT = order comparison (bars), RIGHT = taxes + clawback -->
     <div class="row g-3">
-      <div class="col-md-6"><canvas id="taxviz_orders" width="560" height="275"></canvas></div>
-      <div class="col-md-6"><canvas id="taxviz_taxes"  width="560" height="275"></canvas></div>
+      <div class="col-md-6">
+        <!-- Fixed pixel canvas; no shrinking on browser zoom -->
+        <canvas id="taxviz_orders" width="560" height="275"></canvas>
+      </div>
+      <div class="col-md-6">
+        <canvas id="taxviz_taxes" width="560" height="275"></canvas>
+      </div>
     </div>
 
+    <!-- Row 2: FULL width = balances over time -->
     <div class="row g-3 mt-2">
-      <div class="col-12"><canvas id="taxviz_balances" width="1160" height="300"></canvas></div>
+      <div class="col-12">
+        <canvas id="taxviz_balances" width="1160" height="300"></canvas>
+      </div>
     </div>
   </div>
 </div>
 <!-- === /Tax-aware visuals ============================================== -->
-
 
 
 
