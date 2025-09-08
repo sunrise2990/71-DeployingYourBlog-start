@@ -2427,7 +2427,7 @@ function ensureLayout(layout, seriesForAxis){
         <label class="form-label">Income Tax Rate (%)</label>
         <input id="litev1_income_tax" type="number" class="form-control" value="0" step="0.1">
       </div>
-      <!-- NOTE: Taxable Drag moved near its helper below -->
+      <!-- NOTE: Taxable Drag lives near its helper below -->
     </div>
 
     <!-- OAS / RRIF (kept together; Index OAS defaults to checked) -->
@@ -2482,20 +2482,33 @@ function ensureLayout(layout, seriesForAxis){
         <label class="form-label">Rate 3+ (%)</label>
         <input id="tb_rate3" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="26–32">
       </div>
+
+      <!-- Bracket helper / links / note -->
       <div class="col-12 small text-muted mt-1">
         Example only: ~$57,375 → ~14.5%; ~$114,750 → ~20.5%; income above that typically ~26–32% depending on province/territory.
-        <a href="/guides/tax-brackets" target="_blank" rel="noopener">See simple bracket table</a>.
+        <a href="https://www.canada.ca/en/revenue-agency/services/tax/individuals/frequently-asked-questions-individuals/canadian-income-tax-rates-individuals-current-previous-years.html"
+           target="_blank" rel="noopener">
+          See simple bracket table (CRA)
+        </a>.
+      </div>
+      <div class="col-12 small mt-1">
+        <strong>Note:</strong> With <em>brackets ON</em> the flat <em>Income Tax Rate (%)</em> is ignored.
+        Use <strong>Taxable Drag (%)</strong> to include ongoing tax on taxable investment income.
+        RRIF-min taxes still show under <em>“Tax paid from Taxable (overlay)”</em>.
       </div>
     </div>
 
-    <!-- Taxable Drag (moved here) -->
+    <!-- Taxable Drag (side note fills right-side whitespace) -->
     <div class="row g-3 mt-4">
       <div class="col-md-3">
         <label class="form-label">Taxable Drag (%)</label>
         <input id="litev1_taxable_drag" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
-        <div class="form-text small">
-          Optional friction on <em>Taxable</em> growth only. Enter manually, or use the helper below
-          and tick “Auto-apply” to fill this for you.
+      </div>
+      <div class="col-md-9 d-flex align-items-center">
+        <div class="small text-muted">
+          Optional friction on <em>Taxable</em> growth only. Enter manually, or use the helper below and tick
+          <strong>Auto-apply</strong> to fill this for you. If you want to <em>overwrite</em> the helper, simply
+          <strong>uncheck Auto-apply</strong> and type your own value here.
         </div>
       </div>
     </div>
@@ -2558,11 +2571,19 @@ function ensureLayout(layout, seriesForAxis){
           </tfoot>
         </table>
       </div>
+
+      <!-- Detailed explainer (restored & expanded) -->
       <div class="small text-muted">
-        <strong>Allocation</strong> is the share of your Taxable balance in that stream (≤100% total).
-        <strong>Yield</strong> is the annual % paid/realized on that slice.
-        We sum each row’s <code>Allocation × Yield × Effective Rate</code> to get <em>Absolute Drag</em> (% of the taxable balance),
-        then divide by your Return Rate to get the model’s <em>Taxable Drag (%)</em>.
+        <strong>Allocation</strong> is the share of your Taxable balance in that stream (total ≤ 100%).
+        <strong>Yield</strong> is the annual % paid/realized on that slice. For each row, we compute
+        <code>Allocation × Yield × Effective&nbsp;Rate</code> to get that row’s contribution to
+        <em>Absolute Drag</em> (% of the taxable balance). Summing rows gives total Absolute Drag.
+        We then divide Absolute Drag by your <em>Return Rate</em> to get the model’s
+        <strong>Taxable Drag (%)</strong>, which is applied to <em>Taxable growth only</em>.
+      </div>
+      <div class="small mt-1">
+        <em>Example (common inputs):</em> 60% equities @ 2% yield taxed 10% → 0.12%; &nbsp;40% bonds @ 4% yield taxed 30% → 0.48%.
+        <strong>Absolute Drag = 0.60%</strong>. With an 8% return, <strong>Taxable Drag = 0.60 ÷ 8 = 7.5%</strong>.
       </div>
     </div>
 
@@ -2609,6 +2630,7 @@ function ensureLayout(layout, seriesForAxis){
   </div>
 </div>
 <!-- === /Tax-aware visuals ============================================== -->
+
 
 
 
