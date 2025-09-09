@@ -3861,50 +3861,42 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
   if (!tEl || !rEl || !fEl || !totalEl || !guardEl) return;
 
-  // robust number: strip anything not [0-9.-] so we always get the live value
-  const parseNum = (el) => {
+  // ---- helpers
+  const fmt = v => '$' + Math.round(v).toLocaleString();
+  const parseNum = el => {
     const raw = (el?.value ?? '').toString();
     const cleaned = raw.replace(/[^\d.-]/g, '');
     const n = parseFloat(cleaned);
     return Number.isFinite(n) ? n : 0;
   };
-  const fmt = (v) => '$' + Math.round(v).toLocaleString();
+  const readTopTotal = () => {
+    const attr = Number(elCard?.dataset?.topAssets || '');
+    if (Number.isFinite(attr) && attr > 0) return attr;
+    const win  = Number(window.__topAssetsTotal || '');
+    if (Number.isFinite(win) && win > 0) return win;
+    return 0;
+  };
 
-  // --- resolve baseline ONCE from Top inputs (not from the live field value) ---
-  function resolveInitialBaseline(){
-    const fromAttr = Number(elCard?.dataset?.topAssets || '');
-    if (Number.isFinite(fromAttr) && fromAttr > 0) return fromAttr;
-
-    const fromWin  = Number(window.__topAssetsTotal || '');
-    if (Number.isFinite(fromWin)  && fromWin  > 0) return fromWin;
-
-    // default provided from Top inputs on first render
-    const fromDefault = Number(tEl.defaultValue || tEl.getAttribute('value') || '');
-    if (Number.isFinite(fromDefault) && fromDefault > 0) return fromDefault;
-
-    // last resort
-    return parseNum(tEl) + parseNum(rEl) + parseNum(fEl);
+  // ---- baseline is ALWAYS the Top inputs total (if present), else the server default of Taxable
+  let baseline = readTopTotal();
+  if (!baseline) {
+    const defT = Number(tEl.defaultValue || tEl.getAttribute('value') || '');
+    if (Number.isFinite(defT) && defT > 0) baseline = defT;
   }
-  let baseline = resolveInitialBaseline();
 
-  function maybeRebaseline(){
-    const next = Number(elCard?.dataset?.topAssets || window.__topAssetsTotal || '');
-    if (Number.isFinite(next) && next > 0 && next !== baseline) {
-      baseline = next;
-    }
+  // Force A (Taxable) to the Top total
+  function primeTaxableToTop() {
+    if (baseline > 0) tEl.value = String(baseline);
   }
 
   function update(){
-    // D = A + B + C  (live sum from the three fields)
-    const sum = parseNum(tEl) + parseNum(rEl) + parseNum(fEl);
-
-    // F (guard line) compares D vs Top inputs baseline
+    const sum = parseNum(tEl) + parseNum(rEl) + parseNum(fEl); // D = A+B+C
     const pct = baseline > 0 ? (sum / baseline) * 100 : 100;
 
-    totalEl.textContent = fmt(sum); // left number (D)
-    vsEl.textContent    = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : '';
+    totalEl.textContent = fmt(sum);                             // left = live sum
+    vsEl.textContent    = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : ''; // right = Top total
 
-    const tol = Math.max(1, baseline * 0.001); // ~0.1% or $1 minimum
+    const tol = Math.max(1, baseline * 0.001); // ~0.1% or $1
     const ok  = baseline > 0 ? Math.abs(sum - baseline) <= tol : true;
 
     guardEl.className  = 'small ' + (ok ? 'text-success' : 'text-danger');
@@ -3913,22 +3905,27 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       : 'Total should equal your current assets (100%). Adjust the amounts above.';
   }
 
-  // live edits
+  // Live edits
   [tEl, rEl, fEl].forEach(el => {
     el.addEventListener('input', update);
     el.addEventListener('change', update);
-    el.addEventListener('keyup', update); // catch IME/soft-keyboard edge cases
+    el.addEventListener('keyup',  update);
   });
 
-  // Top inputs changed elsewhere → rebaseline & refresh
-  window.addEventListener('topAssets:changed', () => { maybeRebaseline(); update(); });
+  // Top inputs changed elsewhere → re-baseline AND re-prime Taxable to match Top total
+  window.addEventListener('topAssets:changed', () => {
+    const next = readTopTotal();
+    if (Number.isFinite(next) && next > 0) baseline = next;
+    primeTaxableToTop();  // <-- A mirrors Top total
+    update();
+  });
 
-  // init + safety ticks
+  // Init: ensure A = Top total, then compute
+  primeTaxableToTop();
   update();
-  setTimeout(()=>{ maybeRebaseline(); update(); }, 50);
-  setTimeout(()=>{ maybeRebaseline(); update(); }, 250);
-})();
-</script>
+
+  // Safety ticks (if Top total arrives a bea
+
 
 
 
