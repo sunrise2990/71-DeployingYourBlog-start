@@ -3738,23 +3738,26 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       });
 
       // (3) BALANCES
-      window.__taxC3 = new Chart(cBal.getContext("2d"), {
-        type: "line",
-        data: {
-          labels: ages,
-          datasets: [
-            { label: "End Taxable", data: endT },
-            { label: "End TFSA",    data: endF },
-            { label: "End RRSP",    data: endR },
-            { label: "End Total",   data: endTot, borderWidth: 3 }
-          ]
-        },
-        options: {
-          responsive:false, maintainAspectRatio:false, devicePixelRatio:1, animation:false,
-          scales:{ y:{ position:"right", beginAtZero:false, title:{display:true,text:"$"}, ticks:{ callback:kFmt } } },
-          plugins:{ legend:{position:"top"}, tooltip:{ callbacks:{ label:(ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } } }
-        }
-      });
+    window.__taxC3 = new Chart(cBal.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: ages,
+        datasets: [
+          // make these very thin + no points
+          { label: "End Taxable", data: endT, borderWidth: 1, pointRadius: 0, pointHoverRadius: 3 },
+          { label: "End TFSA",    data: endF, borderWidth: 1, pointRadius: 0, pointHoverRadius: 3 },
+          { label: "End RRSP",    data: endR, borderWidth: 1, pointRadius: 0, pointHoverRadius: 3 },
+
+          // keep End Total emphasized
+          { label: "End Total",   data: endTot, borderWidth: 3, pointRadius: 2, pointHoverRadius: 4 }
+        ]
+      },
+      options: {
+        responsive:false, maintainAspectRatio:false, devicePixelRatio:1, animation:false,
+        scales:{ y:{ position:"right", beginAtZero:false, title:{display:true,text:"$"}, ticks:{ callback:kFmt } } },
+        plugins:{ legend:{position:"top"}, tooltip:{ callbacks:{ label:(ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } } }
+      }
+    });
     } catch(e){ /* never block */ }
   };
 })();
