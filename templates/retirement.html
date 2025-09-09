@@ -3924,7 +3924,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   primeTaxableToTop();
   update();
 
-  // Safety ticks (if Top total arrives a bea
+  // Safety ticks (if Top total arrives a beat later)
+  setTimeout(() => { const n = readTopTotal(); if (n) { baseline = n; primeTaxableToTop(); update(); } }, 50);
+  setTimeout(() => { const n = readTopTotal(); if (n) { baseline = n; primeTaxableToTop(); update(); } }, 250);
+})();
+</script>
+
 
 
 
