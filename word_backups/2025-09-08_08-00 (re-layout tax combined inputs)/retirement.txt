@@ -2524,12 +2524,6 @@ function ensureLayout(layout, seriesForAxis){
       </div>
     </div>
 
-      <!-- Hint shown only when Brackets are ON and implied drag is 0% (toggled by JS) -->
-    <div id="drag_hint" class="small text-warning mt-1" style="display:none;">
-      Tip: Brackets are ON and your implied <em>Taxable Drag</em> is 0%.
-      For apples-to-apples with flat mode, consider adding Taxable Drag (via the helper).
-    </div>
-
     <!-- === Taxable Drag Helper (sub-table) ================================= -->
     <div class="mt-3" id="taxdrag_helper">
       <div class="d-flex align-items-center justify-content-between">
@@ -2590,16 +2584,14 @@ function ensureLayout(layout, seriesForAxis){
       </div>
 
       <!-- Detailed explainer (restored & expanded) -->
-        <div class="small text-muted">
-          <strong>Allocation</strong> is the share of your Taxable balance in that stream (total ≤ 100%).
-          <strong>Yield</strong> is the annual % paid/realized on that slice (e.g., 5% dividend yield;
-          for <em>realized gains</em>, enter the % of that slice you expect to realize this year —
-          for example, realizing $50k on a $200k growth slice = <strong>25%</strong>).
-          For each row we compute <code>Allocation × Yield × Effective&nbsp;Rate</code> to get that row’s
-          contribution to <em>Absolute Drag</em> (% of the taxable balance). Summing rows gives total
-          Absolute Drag. We then divide Absolute Drag by your <em>Return Rate</em> to get the model’s
-          <strong>Taxable Drag (%)</strong>, which is applied to <em>Taxable growth only</em>.
-        </div>
+      <div class="small text-muted">
+        <strong>Allocation</strong> is the share of your Taxable balance in that stream (total ≤ 100%).
+        <strong>Yield</strong> is the annual % paid/realized on that slice. For each row, we compute
+        <code>Allocation × Yield × Effective&nbsp;Rate</code> to get that row’s contribution to
+        <em>Absolute Drag</em> (% of the taxable balance). Summing rows gives total Absolute Drag.
+        We then divide Absolute Drag by your <em>Return Rate</em> to get the model’s
+        <strong>Taxable Drag (%)</strong>, which is applied to <em>Taxable growth only</em>.
+      </div>
       <div class="small mt-1">
         <em>Example (common inputs):</em> 60% equities @ 2% yield taxed 10% → 0.12%; &nbsp;40% bonds @ 4% yield taxed 30% → 0.48%.
         <strong>Absolute Drag = 0.60%</strong>. With an 8% return, <strong>Taxable Drag = 0.60 ÷ 8 = 7.5%</strong>.
@@ -3761,60 +3753,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 </script>
 
 
-<!-- ---------- show/hide the hint for Taxable Drag (%) row automatically ---------- -->
-<script>
-(function setupBracketDragHint(){
-  const bracketIds = ['tb_lim1','tb_lim2','tb_rate1','tb_rate2','tb_rate3'];
-  const helperIds  = ['td_a_div','td_y_div','td_t_div',
-                      'td_a_int','td_y_int','td_t_int',
-                      'td_a_cg','td_y_cg','td_t_cg'];
-  const dragInput  = document.getElementById('litev1_taxable_drag');
-  const impliedEl  = document.getElementById('td_implied');
-  const hint       = document.getElementById('drag_hint');
-  const autoChk    = document.getElementById('td_auto_apply');
 
-  // If the hint element isn't on this page, bail quietly.
-  if (!hint) return;
 
-  function bracketsOn(){
-    return bracketIds.some(id => {
-      const el = document.getElementById(id);
-      return el && (+el.value > 0);
-    });
-  }
 
-  function parsePctFromEl(el){
-    if (!el) return 0;
-    const txt = (el.textContent || el.innerText || '').replace(/[%\s]/g,'');
-    const v = parseFloat(txt);
-    return Number.isFinite(v) ? v : 0;
-  }
 
-  function updateHint(){
-    const on       = bracketsOn();
-    const implied  = parsePctFromEl(impliedEl);      // e.g., "7.50%" -> 7.5
-    const dragVal  = parseFloat(dragInput?.value || '0');
-    const nearZero = Math.abs(implied) < 0.01 && Math.abs(dragVal) < 0.01; // treat <0.01% as zero
-    hint.style.display = (on && nearZero) ? '' : 'none';
-  }
 
-  // React to user edits on bracket and helper fields, drag input, and auto-apply toggle
-  [...bracketIds, ...helperIds, 'litev1_taxable_drag','td_auto_apply'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.addEventListener('input',  updateHint);
-      el.addEventListener('change', updateHint);
-    }
-  });
 
-  // Also react when code updates the implied cell text
-  if (impliedEl && 'MutationObserver' in window) {
-    new MutationObserver(updateHint).observe(impliedEl, { childList:true, characterData:true, subtree:true });
-  }
-
-  updateHint(); // init
-})();
-</script>
 
 
 
