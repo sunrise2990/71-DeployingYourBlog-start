@@ -2380,49 +2380,49 @@ function ensureLayout(layout, seriesForAxis){
 <div class="card mt-5" id="litev1_card">
   <div class="card-body">
 
-    <!-- Title (restored) -->
-    <div class="d-flex align-items-center justify-content-between">
-      <h5 class="card-title mb-0">Deterministic + Tax-lite (combined)</h5>
-      <div class="d-flex align-items-center gap-2">
-        <span id="litev1_status" class="small text-muted"></span>
-      </div>
-    </div>
+<!-- Title (restored) -->
+<div class="d-flex align-items-center justify-content-between">
+  <h5 class="card-title mb-0">Deterministic + Tax-lite (combined)</h5>
+  <div class="d-flex align-items-center gap-2">
+    <span id="litev1_status" class="small text-muted"></span>
+  </div>
+</div>
 
-    <!-- Block A: Guidance (above the three balances) -->
-    <div class="row mt-3">
-      <div class="col-12 small text-muted">
-        <strong>Allocate your current assets</strong> across these three accounts.
-        The total here should match your current portfolio balance.
-      </div>
-    </div>
+<!-- Guidance ABOVE the three balances -->
+<div class="row mt-3">
+  <div class="col-12 small text-muted">
+    <strong>Allocate your current assets</strong> across these three accounts.
+    The total here should match your current portfolio balance.
+  </div>
+</div>
 
-    <!-- Block A: Balances -->
-    <div class="row g-3 mt-1">
-      <div class="col-md-3">
-        <label class="form-label">Taxable ($)</label>
-        <!-- value is populated from “Top inputs”; defaultValue will be used as the baseline -->
-        <input id="litev1_taxable" type="number" class="form-control" value="400000" min="0" step="1">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">RRSP ($)</label>
-        <input id="litev1_rrsp" type="number" class="form-control" value="400000" min="0" step="1">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">TFSA ($)</label>
-        <input id="litev1_tfsa" type="number" class="form-control" value="100000" min="0" step="1">
-      </div>
-    </div>
+<!-- Balances -->
+<div class="row g-3 mt-1">
+  <div class="col-md-3">
+    <label class="form-label">Taxable ($)</label>
+    <!-- This value is filled from Top inputs; we also use it as a baseline fallback -->
+    <input id="litev1_taxable" type="number" class="form-control" value="1000000" min="0" step="1">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">RRSP ($)</label>
+    <input id="litev1_rrsp" type="number" class="form-control" value="0" min="0" step="1">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">TFSA ($)</label>
+    <input id="litev1_tfsa" type="number" class="form-control" value="0" min="0" step="1">
+  </div>
+</div>
 
-    <!-- Block A: Guardrail (directly below the balances) -->
-    <div class="row mt-1">
-      <div class="col-12 small">
-        Total allocated: <strong id="acct_total">$0</strong>
-        <span id="acct_vs" class="text-muted"></span>
-      </div>
-      <div class="col-12">
-        <div id="acct_guard" class="small"></div>
-      </div>
-    </div>
+<!-- Guardrail DIRECTLY BELOW the balances -->
+<div class="row mt-1">
+  <div class="col-12 small">
+    Total allocated: <strong id="acct_total">$0</strong>
+    <span id="acct_vs" class="text-muted"></span>
+  </div>
+  <div class="col-12">
+    <div id="acct_guard" class="small"></div>
+  </div>
+</div>
 
     <!-- Block B: Timing & flows (rest of the row) -->
     <div class="row g-3 mt-3">
@@ -3861,19 +3861,17 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
   if (!tEl || !rEl || !fEl || !totalEl || !guardEl) return;
 
-  // Baseline: use the *default value of Taxable ($)* (from server / Top inputs).
-  // Fallbacks keep it robust if defaultValue is empty.
+  // Baseline: read live Top inputs total. Priority: data attribute > window var > CURRENT Taxable value
   function getBaseline(){
-    const fromAttr = Number(elCard?.dataset?.baselineTotal || '');
+    const fromAttr = Number(elCard?.dataset?.topAssets || '');
     if (Number.isFinite(fromAttr) && fromAttr > 0) return fromAttr;
 
-    const taxableDefault = Number(tEl.defaultValue || tEl.getAttribute('value') || '');
-    if (Number.isFinite(taxableDefault) && taxableDefault > 0) return taxableDefault;
+    const fromWin  = Number(window.__topAssetsTotal || '');
+    if (Number.isFinite(fromWin)  && fromWin  > 0) return fromWin;
 
-    if (Number(window.__topAssetsTotal) > 0) return Number(window.__topAssetsTotal);
-
-    // last resort: initial sum at load
-    return (+tEl.value||0) + (+rEl.value||0) + (+fEl.value||0);
+    // Last resort: whatever Taxable currently shows (Top inputs usually write here first)
+    const fromTax  = Number(tEl.value || '');
+    return Number.isFinite(fromTax) ? fromTax : 0;
   }
 
   function fmt(v){ return '$' + Math.round(v).toLocaleString(); }
@@ -3883,12 +3881,14 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const sum = (+tEl.value||0) + (+rEl.value||0) + (+fEl.value||0);
     const pct = baseline > 0 ? (sum / baseline) * 100 : 100;
 
+    // 2) LEFT number is ALWAYS the live sum of the three inputs
     totalEl.textContent = fmt(sum);
+
+    // 3) RIGHT number is ALWAYS the Top inputs total (baseline)
     vsEl.textContent = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : '';
 
-    // tolerance: ~0.1% or $1 minimum
-    const tol = Math.max(1, baseline * 0.001);
-    const ok  = Math.abs(sum - baseline) <= tol;
+    const tol = Math.max(1, baseline * 0.001); // ~0.1% or $1 min
+    const ok  = baseline > 0 ? Math.abs(sum - baseline) <= tol : true;
 
     guardEl.className = 'small ' + (ok ? 'text-success' : 'text-danger');
     guardEl.textContent = ok
@@ -3896,18 +3896,23 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       : 'Total should equal your current assets (100%). Adjust the amounts above.';
   }
 
+  // Live edits
   [tEl, rEl, fEl].forEach(el => {
     el.addEventListener('input', update);
     el.addEventListener('change', update);
   });
 
-  // If your top inputs update Taxable’s default later, emit this to recompute:
-  // window.dispatchEvent(new Event('topAssets:changed'));
+  // Programmatic updates from Top inputs (emit this when you set values)
   window.addEventListener('topAssets:changed', update);
 
-  update(); // init
+  // Catch late programmatic writes (no events fired) — run a few times after load
+  update();
+  setTimeout(update, 50);
+  setTimeout(update, 250);
+  setTimeout(update, 750);
 })();
 </script>
+
 
 
 
