@@ -3861,33 +3861,43 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
   if (!tEl || !rEl || !fEl || !totalEl || !guardEl) return;
 
-  // Baseline: read live Top inputs total. Priority: data attribute > window var > CURRENT Taxable value
-  function getBaseline(){
+  // --- resolve baseline ONCE from Top inputs (not from the live field value) ---
+  function resolveInitialBaseline(){
     const fromAttr = Number(elCard?.dataset?.topAssets || '');
     if (Number.isFinite(fromAttr) && fromAttr > 0) return fromAttr;
 
     const fromWin  = Number(window.__topAssetsTotal || '');
     if (Number.isFinite(fromWin)  && fromWin  > 0) return fromWin;
 
-    // Last resort: whatever Taxable currently shows (Top inputs usually write here first)
-    const fromTax  = Number(tEl.value || '');
-    return Number.isFinite(fromTax) ? fromTax : 0;
+    // Use the default value that was populated from Top inputs on first render
+    const fromDefault = Number(tEl.defaultValue || tEl.getAttribute('value') || '');
+    if (Number.isFinite(fromDefault) && fromDefault > 0) return fromDefault;
+
+    // Last resort: the initial sum at page load
+    return (+tEl.value||0) + (+rEl.value||0) + (+fEl.value||0);
+  }
+  let baseline = resolveInitialBaseline();
+
+  // Optional: allow re-baselining if Top inputs change later
+  function maybeRebaseline(){
+    const next = Number(elCard?.dataset?.topAssets || window.__topAssetsTotal || '');
+    if (Number.isFinite(next) && next > 0 && next !== baseline) {
+      baseline = next;
+    }
   }
 
   function fmt(v){ return '$' + Math.round(v).toLocaleString(); }
 
   function update(){
-    const baseline = getBaseline();
+    // keep baseline stable unless a topAssets change is signaled
     const sum = (+tEl.value||0) + (+rEl.value||0) + (+fEl.value||0);
     const pct = baseline > 0 ? (sum / baseline) * 100 : 100;
 
-    // 2) LEFT number is ALWAYS the live sum of the three inputs
+    // LEFT = live sum; RIGHT = Top inputs total (baseline)
     totalEl.textContent = fmt(sum);
-
-    // 3) RIGHT number is ALWAYS the Top inputs total (baseline)
     vsEl.textContent = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : '';
 
-    const tol = Math.max(1, baseline * 0.001); // ~0.1% or $1 min
+    const tol = Math.max(1, baseline * 0.001); // ~0.1% or $1 minimum
     const ok  = baseline > 0 ? Math.abs(sum - baseline) <= tol : true;
 
     guardEl.className = 'small ' + (ok ? 'text-success' : 'text-danger');
@@ -3902,16 +3912,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     el.addEventListener('change', update);
   });
 
-  // Programmatic updates from Top inputs (emit this when you set values)
-  window.addEventListener('topAssets:changed', update);
+  // Programmatic Top inputs update: call this when you change the top total
+  window.addEventListener('topAssets:changed', () => { maybeRebaseline(); update(); });
 
-  // Catch late programmatic writes (no events fired) — run a few times after load
+  // Init + a couple of safety ticks (in case Top inputs write after render)
   update();
-  setTimeout(update, 50);
-  setTimeout(update, 250);
-  setTimeout(update, 750);
+  setTimeout(()=>{ maybeRebaseline(); update(); }, 50);
+  setTimeout(()=>{ maybeRebaseline(); update(); }, 250);
 })();
 </script>
+
 
 
 
