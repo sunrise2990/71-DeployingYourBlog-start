@@ -3861,76 +3861,74 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
   if (!tEl || !rEl || !fEl || !totalEl || !guardEl) return;
 
-  // ---- helpers
-  const num = v => Number.isFinite(+v) ? +v : 0;
-  const fmt = v => '$' + Math.round(v).toLocaleString();
+  // robust number: strip anything not [0-9.-] so we always get the live value
+  const parseNum = (el) => {
+    const raw = (el?.value ?? '').toString();
+    const cleaned = raw.replace(/[^\d.-]/g, '');
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const fmt = (v) => '$' + Math.round(v).toLocaleString();
 
-  // Resolve Top inputs total once on init.
-  function resolveTopTotalOnce(){
-    const fromAttr = num(elCard?.dataset?.topAssets);
-    if (fromAttr > 0) return fromAttr;
+  // --- resolve baseline ONCE from Top inputs (not from the live field value) ---
+  function resolveInitialBaseline(){
+    const fromAttr = Number(elCard?.dataset?.topAssets || '');
+    if (Number.isFinite(fromAttr) && fromAttr > 0) return fromAttr;
 
-    const fromWin = num(window.__topAssetsTotal);
-    if (fromWin > 0) return fromWin;
+    const fromWin  = Number(window.__topAssetsTotal || '');
+    if (Number.isFinite(fromWin)  && fromWin  > 0) return fromWin;
 
-    // final fallback: the default (server-provided) Taxable value at first render
-    const defTax  = num(tEl.defaultValue || tEl.getAttribute('value'));
-    if (defTax > 0) return defTax;
+    // default provided from Top inputs on first render
+    const fromDefault = Number(tEl.defaultValue || tEl.getAttribute('value') || '');
+    if (Number.isFinite(fromDefault) && fromDefault > 0) return fromDefault;
 
-    return 0;
+    // last resort
+    return parseNum(tEl) + parseNum(rEl) + parseNum(fEl);
+  }
+  let baseline = resolveInitialBaseline();
+
+  function maybeRebaseline(){
+    const next = Number(elCard?.dataset?.topAssets || window.__topAssetsTotal || '');
+    if (Number.isFinite(next) && next > 0 && next !== baseline) {
+      baseline = next;
+    }
   }
 
-  let baseline = resolveTopTotalOnce();
-
-  // Poll for Top inputs changes (works even if no custom event is fired)
-  let lastSeenTop = baseline;
-  const poll = setInterval(() => {
-    // Prefer data attribute if present; else window var.
-    const topNow = num(elCard?.dataset?.topAssets) || num(window.__topAssetsTotal);
-    if (topNow > 0 && topNow !== lastSeenTop) {
-      lastSeenTop = topNow;
-      baseline = topNow;     // <-- rebaseline to Top inputs
-      update();
-    }
-  }, 250);
-  window.addEventListener('beforeunload', () => clearInterval(poll));
-
   function update(){
-    const sum = num(tEl.value) + num(rEl.value) + num(fEl.value);
+    // D = A + B + C  (live sum from the three fields)
+    const sum = parseNum(tEl) + parseNum(rEl) + parseNum(fEl);
+
+    // F (guard line) compares D vs Top inputs baseline
     const pct = baseline > 0 ? (sum / baseline) * 100 : 100;
 
-    // LEFT = live sum of three fields
-    totalEl.textContent = fmt(sum);
+    totalEl.textContent = fmt(sum); // left number (D)
+    vsEl.textContent    = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : '';
 
-    // RIGHT = Top inputs total (baseline)
-    vsEl.textContent = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : '';
-
-    const tol = Math.max(1, baseline * 0.001);  // ~0.1% or $1
+    const tol = Math.max(1, baseline * 0.001); // ~0.1% or $1 minimum
     const ok  = baseline > 0 ? Math.abs(sum - baseline) <= tol : true;
 
-    guardEl.className = 'small ' + (ok ? 'text-success' : 'text-danger');
+    guardEl.className  = 'small ' + (ok ? 'text-success' : 'text-danger');
     guardEl.textContent = ok
       ? '✓ Total matches your current assets.'
       : 'Total should equal your current assets (100%). Adjust the amounts above.';
   }
 
+  // live edits
   [tEl, rEl, fEl].forEach(el => {
-    el.addEventListener('input',  update);
+    el.addEventListener('input', update);
     el.addEventListener('change', update);
+    el.addEventListener('keyup', update); // catch IME/soft-keyboard edge cases
   });
 
-  update(); // initial render
+  // Top inputs changed elsewhere → rebaseline & refresh
+  window.addEventListener('topAssets:changed', () => { maybeRebaseline(); update(); });
 
-  // Optional explicit API if you prefer pushing instead of polling:
-  window.setTopAssetsTotal = function(v){
-    if (!Number.isFinite(+v) || +v <= 0) return;
-    baseline = +v;
-    lastSeenTop = +v;
-    update();
-  };
+  // init + safety ticks
+  update();
+  setTimeout(()=>{ maybeRebaseline(); update(); }, 50);
+  setTimeout(()=>{ maybeRebaseline(); update(); }, 250);
 })();
 </script>
-
 
 
 
