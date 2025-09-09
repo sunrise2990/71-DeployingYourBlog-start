@@ -3863,70 +3863,77 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
   // ---- helpers
   const fmt = v => '$' + Math.round(v).toLocaleString();
-  const parseNum = el => {
-    const raw = (el?.value ?? '').toString();
-    const cleaned = raw.replace(/[^\d.-]/g, '');
+  const num = s => {
+    const cleaned = String(s ?? '').replace(/[^\d.-]/g, '');
     const n = parseFloat(cleaned);
     return Number.isFinite(n) ? n : 0;
   };
+
+  // Read Top inputs total (preferred sources)
   const readTopTotal = () => {
-    const attr = Number(elCard?.dataset?.topAssets || '');
-    if (Number.isFinite(attr) && attr > 0) return attr;
-    const win  = Number(window.__topAssetsTotal || '');
-    if (Number.isFinite(win) && win > 0) return win;
+    const fromAttr = num(elCard?.dataset?.topAssets);
+    if (fromAttr > 0) return fromAttr;
+    const fromWin  = num(window.__topAssetsTotal);
+    if (fromWin > 0) return fromWin;
     return 0;
   };
 
-  // ---- baseline is ALWAYS the Top inputs total (if present), else the server default of Taxable
+  // Baseline starts from Top inputs if available, else 0 (we'll settle soon)
   let baseline = readTopTotal();
-  if (!baseline) {
-    const defT = Number(tEl.defaultValue || tEl.getAttribute('value') || '');
-    if (Number.isFinite(defT) && defT > 0) baseline = defT;
-  }
 
-  // Force A (Taxable) to the Top total
-  function primeTaxableToTop() {
-    if (baseline > 0) tEl.value = String(baseline);
-  }
+  // Track if the user has started editing (so we don't rebaseline from their typing)
+  let userTouched = false;
+  [tEl, rEl, fEl].forEach(el => {
+    el.addEventListener('input', () => { userTouched = true; update(); });
+    el.addEventListener('change', () => { userTouched = true; update(); });
+    el.addEventListener('keyup',  () => { userTouched = true; update(); });
+  });
+
+  // Settle window: for the first ~1.2s, if Top inputs push a value or Taxable
+  // gets programmatically set (and user hasn't typed yet), adopt that as baseline.
+  const t0 = Date.now();
+  const settleTimer = setInterval(() => {
+    const now = Date.now();
+    const topNow = readTopTotal();
+    if (topNow > 0 && topNow !== baseline) {
+      baseline = topNow;
+      update();
+    } else if (!baseline && !userTouched) {
+      const maybeFromTaxable = num(tEl.value);
+      if (maybeFromTaxable > 0) {
+        baseline = maybeFromTaxable;
+        update();
+      }
+    }
+    if (now - t0 > 1200) clearInterval(settleTimer);
+  }, 120);
+
+  // Also allow explicit re-baselining when Top inputs change
+  window.addEventListener('topAssets:changed', () => {
+    const topNow = readTopTotal();
+    if (topNow > 0) baseline = topNow;
+    update();
+  });
 
   function update(){
-    const sum = parseNum(tEl) + parseNum(rEl) + parseNum(fEl); // D = A+B+C
+    // LEFT = live sum of A+B+C
+    const sum = num(tEl.value) + num(rEl.value) + num(fEl.value);
+    totalEl.textContent = fmt(sum);
+
+    // RIGHT = Top inputs total (baseline)
     const pct = baseline > 0 ? (sum / baseline) * 100 : 100;
+    vsEl.textContent = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : '';
 
-    totalEl.textContent = fmt(sum);                             // left = live sum
-    vsEl.textContent    = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : ''; // right = Top total
-
+    // Guardrail text
     const tol = Math.max(1, baseline * 0.001); // ~0.1% or $1
     const ok  = baseline > 0 ? Math.abs(sum - baseline) <= tol : true;
-
     guardEl.className  = 'small ' + (ok ? 'text-success' : 'text-danger');
     guardEl.textContent = ok
       ? '✓ Total matches your current assets.'
       : 'Total should equal your current assets (100%). Adjust the amounts above.';
   }
 
-  // Live edits
-  [tEl, rEl, fEl].forEach(el => {
-    el.addEventListener('input', update);
-    el.addEventListener('change', update);
-    el.addEventListener('keyup',  update);
-  });
-
-  // Top inputs changed elsewhere → re-baseline AND re-prime Taxable to match Top total
-  window.addEventListener('topAssets:changed', () => {
-    const next = readTopTotal();
-    if (Number.isFinite(next) && next > 0) baseline = next;
-    primeTaxableToTop();  // <-- A mirrors Top total
-    update();
-  });
-
-  // Init: ensure A = Top total, then compute
-  primeTaxableToTop();
-  update();
-
-  // Safety ticks (if Top total arrives a beat later)
-  setTimeout(() => { const n = readTopTotal(); if (n) { baseline = n; primeTaxableToTop(); update(); } }, 50);
-  setTimeout(() => { const n = readTopTotal(); if (n) { baseline = n; primeTaxableToTop(); update(); } }, 250);
+  update(); // initial render
 })();
 </script>
 
