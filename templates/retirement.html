@@ -2377,58 +2377,64 @@ function ensureLayout(layout, seriesForAxis){
 
 
 <!-- === COMBINED: LITE V1 + TAX-LITE (ONE SECTION) ========================== -->
-<div class="card mt-5" id="litev1_card">
-  <div class="card-body">
-    <div class="d-flex align-items-center justify-content-between">
-      <h5 class="card-title mb-0">Deterministic + Tax-lite (combined)</h5>
-      <div class="d-flex align-items-center gap-2">
-        <span id="litev1_status" class="small text-muted"></span>
-      </div>
-    </div>
 
-    <!-- Core inputs -->
-    <div class="row g-3 mt-3">
-      <div class="col-md-2">
-        <label class="form-label">Start Age</label>
-        <input id="litev1_start_age" type="number" class="form-control" value="53">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">End Age</label>
-        <input id="litev1_end_age" type="number" class="form-control" value="95">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Taxable ($)</label>
-        <input id="litev1_taxable" type="number" class="form-control" value="200000">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">RRSP ($)</label>
-        <input id="litev1_rrsp" type="number" class="form-control" value="500000">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">TFSA ($)</label>
-        <input id="litev1_tfsa" type="number" class="form-control" value="150000">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Monthly Spend ($)</label>
-        <input id="litev1_spend" type="number" class="form-control" value="6000">
-      </div>
+<!-- Core inputs — Block A: Current balances (allocate to 100%) -->
+<div class="row g-3 mt-3 align-items-end">
+  <div class="col-md-3">
+    <label class="form-label">Taxable ($)</label>
+    <input id="litev1_taxable" type="number" class="form-control" value="200000" min="0" step="1">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">RRSP ($)</label>
+    <input id="litev1_rrsp" type="number" class="form-control" value="500000" min="0" step="1">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">TFSA ($)</label>
+    <input id="litev1_tfsa" type="number" class="form-control" value="150000" min="0" step="1">
+  </div>
+  <div class="col-md-3">
+    <div class="small text-muted">
+      <strong>Allocate your current assets</strong> across these three accounts. The total here should match your
+      current portfolio balance.
     </div>
+    <div class="small mt-1">
+      Total allocated:
+      <strong id="acct_total">$0</strong>
+      <span id="acct_vs" class="text-muted"></span>
+      <div id="acct_guard" class="small"></div>
+    </div>
+  </div>
+</div>
 
-    <div class="row g-3 mt-2">
-      <div class="col-md-2">
-        <label class="form-label">Return Rate (ann., %)</label>
-        <input id="litev1_return" type="number" class="form-control" value="8" step="0.1">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Monthly Savings ($)</label>
-        <input id="litev1_monthly_saving" type="number" class="form-control" value="0">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Income Tax Rate (%)</label>
-        <input id="litev1_income_tax" type="number" class="form-control" value="0" step="0.1">
-      </div>
-      <!-- NOTE: Taxable Drag lives near its helper below -->
-    </div>
+<!-- Core inputs — Block B: Timing & flows -->
+<div class="row g-3 mt-3">
+  <div class="col-md-2">
+    <label class="form-label">Start Age</label>
+    <input id="litev1_start_age" type="number" class="form-control" value="53" min="0" step="1">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">End Age</label>
+    <input id="litev1_end_age" type="number" class="form-control" value="95" min="0" step="1">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Monthly Spend ($)</label>
+    <input id="litev1_spend" type="number" class="form-control" value="6000" min="0" step="1">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Return Rate (ann., %)</label>
+    <input id="litev1_return" type="number" class="form-control" value="8" step="0.1" min="0" max="100">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Monthly Savings ($)</label>
+    <input id="litev1_monthly_saving" type="number" class="form-control" value="0" min="0" step="1">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Income Tax Rate (%)</label>
+    <input id="litev1_income_tax" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
+  </div>
+</div>
+
+
 
     <!-- OAS / RRIF (kept together; Index OAS defaults to checked) -->
     <div class="row g-3 mt-3">
@@ -3744,12 +3750,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         labels: ages,
         datasets: [
           // make these very thin + no points
-          { label: "End Taxable", data: endT, borderWidth: 1, pointRadius: 0, pointHoverRadius: 3 },
-          { label: "End TFSA",    data: endF, borderWidth: 1, pointRadius: 0, pointHoverRadius: 3 },
-          { label: "End RRSP",    data: endR, borderWidth: 1, pointRadius: 0, pointHoverRadius: 3 },
+          { label: "End Taxable", data: endT, borderWidth: 1, pointRadius: 0.25, pointHoverRadius: 3, pointHitRadius: 6 },
+          { label: "End TFSA",    data: endF, borderWidth: 1, pointRadius: 0.25, pointHoverRadius: 3, pointHitRadius: 6 },
+          { label: "End RRSP",    data: endR, borderWidth: 1, pointRadius: 0.25, pointHoverRadius: 3, pointHitRadius: 6 },
 
           // keep End Total emphasized
-          { label: "End Total",   data: endTot, borderWidth: 3, pointRadius: 2, pointHoverRadius: 4 }
+          { label: "End Total",   data: endTot, borderWidth: 3, pointRadius: 2, pointHoverRadius: 4, pointHitRadius: 8 }
         ]
       },
       options: {
@@ -3821,7 +3827,59 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
+<!-- ---------- Adds a live guardrail: “Allocated $X of $Y (Z%)” ---------- -->
+<script>
+(function setupBalancesGuardrail(){
+  if (window.__balancesGuardrailSetup) return; window.__balancesGuardrailSetup = true;
 
+  const elCard  = document.getElementById('litev1_card');
+  const tEl     = document.getElementById('litev1_taxable');
+  const rEl     = document.getElementById('litev1_rrsp');
+  const fEl     = document.getElementById('litev1_tfsa');
+  const totalEl = document.getElementById('acct_total');
+  const vsEl    = document.getElementById('acct_vs');
+  const guardEl = document.getElementById('acct_guard');
+
+  if (!tEl || !rEl || !fEl || !totalEl || !guardEl) return;
+
+  // Baseline precedence: data attribute > global > initial sum
+  const initialSum  = (+tEl.value||0) + (+rEl.value||0) + (+fEl.value||0);
+  function getBaseline(){
+    const attr = Number(elCard?.dataset?.baselineTotal || '');
+    if (Number.isFinite(attr) && attr > 0) return attr;
+    if (Number(window.__topAssetsTotal) > 0) return Number(window.__topAssetsTotal);
+    return initialSum;
+  }
+
+  function fmt(v){ return '$' + Math.round(v).toLocaleString(); }
+
+  function update(){
+    const baseline = getBaseline();
+    const sum = (+tEl.value||0) + (+rEl.value||0) + (+fEl.value||0);
+    const pct = baseline > 0 ? (sum / baseline) * 100 : 100;
+    totalEl.textContent = fmt(sum);
+    vsEl.textContent = baseline > 0 ? ` of ${fmt(baseline)} (${pct.toFixed(1)}%)` : '';
+
+    const tol = Math.max(1, baseline * 0.001); // ~0.1% or $1 minimum
+    const ok  = Math.abs(sum - baseline) <= tol;
+
+    guardEl.className = 'small ' + (ok ? 'text-success' : 'text-danger');
+    guardEl.textContent = ok
+      ? '✓ Total matches your current assets.'
+      : 'Total should equal your current assets (100%). Adjust the amounts above.';
+  }
+
+  [tEl, rEl, fEl].forEach(el => {
+    el.addEventListener('input', update);
+    el.addEventListener('change', update);
+  });
+
+  // Optional: re-baseline on demand (emit this event elsewhere if your top inputs change)
+  window.addEventListener('topAssets:changed', update);
+
+  update(); // init
+})();
+</script>
 
 
 
