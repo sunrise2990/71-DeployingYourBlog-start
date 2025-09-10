@@ -51,25 +51,30 @@
       {% endfor %}
 
       <!-- Asset Liquidation Amounts and Ages with tooltip -->
-      {% set asset_tooltips = {
-        "asset_liquidation_1": "Amounts you expect to liquidate (sell or withdraw) from your asset 1 at specific ages.",
-        "asset_liquidation_age_1": "Estimated age when you plan to liquidate asset 1.",
-        "asset_liquidation_2": "Amounts you expect to liquidate (sell or withdraw) from your asset 2 at specific ages.",
-        "asset_liquidation_age_2": "Estimated age when you plan to liquidate asset 2.",
-        "asset_liquidation_3": "Amounts you expect to liquidate (sell or withdraw) from your asset 3 at specific ages.",
-        "asset_liquidation_age_3": "Estimated age when you plan to liquidate asset 3."
-      } %}
-      {% for name, tooltip in asset_tooltips.items() %}
-      <div class="col-md-3">
-        <label class="form-label">
-          {{ name.replace('_', ' ').title() }}
-          <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ tooltip }}"
-                style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
-        </label>
-        <input type="number" name="{{ name }}" class="form-control" step="1"
-               value="{{ '0' if reset else request.form.get(name, '0') }}">
-      </div>
-      {% endfor %}
+        {% set asset_tooltips = {
+          "asset_liquidation_1": "<strong>Net cash from sale.</strong><br>At the sale age (e.g., 60) enter the <em>after-tax, after-fees, after-debt</em> cash you expect.<br><u>Quick worksheet</u>:<ul class='mb-0 ps-3'><li>Expected sale price at 60</li><li>− Mortgage payoff (balance at 60, incl. any penalty)</li><li>− Selling costs (realtor, legal, etc.)</li><li>− Estimated tax on the gain</li><li>= <strong>Net cash to you</strong> → enter this as the liquidation at age 60</li></ul>",
+          "asset_liquidation_age_1": "Age you receive the proceeds (e.g., 60 for a property sale).",
+          "asset_liquidation_2": "Additional asset’s <strong>net cash</strong> at its sale/withdrawal age (same worksheet logic).",
+          "asset_liquidation_age_2": "Age you receive proceeds for asset 2.",
+          "asset_liquidation_3": "Third asset’s <strong>net cash</strong> at its sale/withdrawal age (same worksheet logic).",
+          "asset_liquidation_age_3": "Age you receive proceeds for asset 3."
+        } %}
+        {% for name, tooltip in asset_tooltips.items() %}
+          <div class="col-md-3">
+            <label class="form-label">
+              {{ name.replace('_', ' ').title() }}
+              <span
+                tabindex="0"
+                data-bs-toggle="tooltip"
+                data-bs-placement="top"
+                data-bs-html="true"
+                title="{{ tooltip }}"
+                style="cursor:help; display:inline-block; margin-left:.25rem;"
+              >&#9432;</span>
+            </label>
+            {# ... your input for this field goes here ... #}
+          </div>
+        {% endfor %}
 
       <!-- Return Std Dev Dropdown with tooltip -->
       <div class="col-md-3">
