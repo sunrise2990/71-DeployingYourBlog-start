@@ -52,13 +52,16 @@
 
       <!-- Asset Liquidation Amounts and Ages with tooltip -->
         {% set asset_tooltips = {
-          "asset_liquidation_1": "<strong>Net cash from sale.</strong><br>At the sale age (e.g., 60) enter the <em>after-tax, after-fees, after-debt</em> cash you expect.<br><u>Quick worksheet</u>:<ul class='mb-0 ps-3'><li>Expected sale price at 60</li><li>− Mortgage payoff (balance at 60, incl. any penalty)</li><li>− Selling costs (realtor, legal, etc.)</li><li>− Estimated tax on the gain</li><li>= <strong>Net cash to you</strong> → enter this as the liquidation at age 60</li></ul>",
-          "asset_liquidation_age_1": "Age you receive the proceeds (e.g., 60 for a property sale).",
-          "asset_liquidation_2": "Additional asset’s <strong>net cash</strong> at its sale/withdrawal age (same worksheet logic).",
-          "asset_liquidation_age_2": "Age you receive proceeds for asset 2.",
-          "asset_liquidation_3": "Third asset’s <strong>net cash</strong> at its sale/withdrawal age (same worksheet logic).",
-          "asset_liquidation_age_3": "Age you receive proceeds for asset 3."
+          "asset_liquidation_1": "Net cash from sale/withdrawal. At the sale age (e.g., 60) enter the AFTER-TAX, AFTER-FEES, AFTER-DEBT amount you will receive. Quick calc: price − mortgage payoff − selling costs − tax on gain = net cash (enter this).",
+          "asset_liquidation_age_1": "Age you receive the proceeds for asset 1 (e.g., 60 for a property sale).",
+
+          "asset_liquidation_2": "Net cash from asset 2 at its sale/withdrawal age (same rule as above).",
+          "asset_liquidation_age_2": "Age you receive the proceeds for asset 2.",
+
+          "asset_liquidation_3": "Net cash from asset 3 at its sale/withdrawal age (same rule as above).",
+          "asset_liquidation_age_3": "Age you receive the proceeds for asset 3."
         } %}
+
       {% for name, tooltip in asset_tooltips.items() %}
       <div class="col-md-3">
         <label class="form-label">
