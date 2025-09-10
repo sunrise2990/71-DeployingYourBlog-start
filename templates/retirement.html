@@ -59,22 +59,17 @@
           "asset_liquidation_3": "Third asset’s <strong>net cash</strong> at its sale/withdrawal age (same worksheet logic).",
           "asset_liquidation_age_3": "Age you receive proceeds for asset 3."
         } %}
-        {% for name, tooltip in asset_tooltips.items() %}
-          <div class="col-md-3">
-            <label class="form-label">
-              {{ name.replace('_', ' ').title() }}
-              <span
-                tabindex="0"
-                data-bs-toggle="tooltip"
-                data-bs-placement="top"
-                data-bs-html="true"
-                title="{{ tooltip }}"
-                style="cursor:help; display:inline-block; margin-left:.25rem;"
-              >&#9432;</span>
-            </label>
-            {# ... your input for this field goes here ... #}
-          </div>
-        {% endfor %}
+      {% for name, tooltip in asset_tooltips.items() %}
+      <div class="col-md-3">
+        <label class="form-label">
+          {{ name.replace('_', ' ').title() }}
+          <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ tooltip }}"
+                style="cursor: pointer; color: #0d6efd; font-weight: bold;">&#9432;</span>
+        </label>
+        <input type="number" name="{{ name }}" class="form-control" step="1"
+               value="{{ '0' if reset else request.form.get(name, '0') }}">
+      </div>
+      {% endfor %}
 
       <!-- Return Std Dev Dropdown with tooltip -->
       <div class="col-md-3">
