@@ -2396,22 +2396,41 @@ function ensureLayout(layout, seriesForAxis){
   <div class="col-12 small text-muted">
     <strong>Allocate your current assets</strong> across these three accounts.
     The total here should match your current portfolio balance.
+    <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+          title="Enter today’s balances across Taxable, RRSP, and TFSA. The three amounts should add up to your current investable assets.">
+      &#9432;
+    </span>
   </div>
 </div>
 
 <!-- Balances -->
 <div class="row g-3 mt-1">
   <div class="col-md-3">
-    <label class="form-label">Taxable ($)</label>
+    <label class="form-label">Taxable ($)
+      <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+            title="Non-registered accounts. Excludes home equity. This is the portion taxed annually by yields/realized gains (via Taxable Drag).">
+        &#9432;
+      </span>
+    </label>
     <!-- This value is filled from Top inputs; we also use it as a baseline fallback -->
     <input id="litev1_taxable" type="number" class="form-control" value="1000000" min="0" step="1">
   </div>
   <div class="col-md-3">
-    <label class="form-label">RRSP ($)</label>
+    <label class="form-label">RRSP ($)
+      <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+            title="Registered (tax-deferred). Withdrawals are taxable; RRIF minimums start at your RRIF start age.">
+        &#9432;
+      </span>
+    </label>
     <input id="litev1_rrsp" type="number" class="form-control" value="0" min="0" step="1">
   </div>
   <div class="col-md-3">
-    <label class="form-label">TFSA ($)</label>
+    <label class="form-label">TFSA ($)
+      <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+            title="Tax-free account. Growth and withdrawals are not taxed.">
+        &#9432;
+      </span>
+    </label>
     <input id="litev1_tfsa" type="number" class="form-control" value="0" min="0" step="1">
   </div>
 </div>
@@ -2430,27 +2449,57 @@ function ensureLayout(layout, seriesForAxis){
     <!-- Block B: Timing & flows (rest of the row) -->
     <div class="row g-3 mt-3">
       <div class="col-md-2">
-        <label class="form-label">Start Age</label>
+        <label class="form-label">Start Age
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Your current age — simulation begins here.">
+            &#9432;
+          </span>
+        </label>
         <input id="litev1_start_age" type="number" class="form-control" value="52" min="0" step="1">
       </div>
       <div class="col-md-2">
-        <label class="form-label">End Age</label>
+        <label class="form-label">End Age
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Life expectancy / last simulated year. Charts and table stop here.">
+            &#9432;
+          </span>
+        </label>
         <input id="litev1_end_age" type="number" class="form-control" value="84" min="0" step="1">
       </div>
       <div class="col-md-2">
-        <label class="form-label">Monthly Spend ($)</label>
+        <label class="form-label">Monthly Spend ($)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="After-tax spending target in retirement (today’s dollars; inflation handled by the model).">
+            &#9432;
+          </span>
+        </label>
         <input id="litev1_spend" type="number" class="form-control" value="6900" min="0" step="1">
       </div>
       <div class="col-md-2">
-        <label class="form-label">Return Rate (post %)</label>
+        <label class="form-label">Return Rate (post %)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Expected annual portfolio return during retirement (after fees). Taxable Drag applies only to the Taxable slice.">
+            &#9432;
+          </span>
+        </label>
         <input id="litev1_return" type="number" class="form-control" value="8" step="0.1" min="0" max="100">
       </div>
       <div class="col-md-2">
-        <label class="form-label">Monthly Savings ($)</label>
+        <label class="form-label">Monthly Savings ($)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Pre-retirement savings. Use a negative number if you expect net top-ups (e.g., property carry costs).">
+            &#9432;
+          </span>
+        </label>
         <input id="litev1_monthly_saving" type="number" class="form-control" value="7100" min="0" step="1">
       </div>
       <div class="col-md-2">
-        <label class="form-label">Income Tax Rate (%)</label>
+        <label class="form-label">Income Tax Rate (%)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Flat RRSP tax used only when brackets are OFF. Ignored when brackets are ON.">
+            &#9432;
+          </span>
+        </label>
         <input id="litev1_income_tax" type="number" class="form-control" value="12" step="0.1" min="0" max="100">
       </div>
     </div>
@@ -2461,29 +2510,60 @@ function ensureLayout(layout, seriesForAxis){
     <!-- OAS / RRIF (kept together; Index OAS defaults to checked) -->
     <div class="row g-3 mt-3">
       <div class="col-md-2">
-        <label class="form-label">OAS Monthly ($)</label>
+        <label class="form-label">OAS Monthly ($)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Gross monthly OAS benefit before any clawback at the start age.">
+            &#9432;
+          </span>
+        </label>
         <input id="oas_mo" type="number" class="form-control" value="0" step="1" min="0">
       </div>
       <div class="col-md-2">
-        <label class="form-label">OAS Start Age</label>
+        <label class="form-label">OAS Start Age
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Age OAS payments begin.">
+            &#9432;
+          </span>
+        </label>
         <input id="oas_start_age" type="number" class="form-control" value="0" min="0">
       </div>
       <div class="col-md-3">
-        <label class="form-label">OAS Clawback Threshold ($/yr)</label>
+        <label class="form-label">OAS Clawback Threshold ($/yr)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Net income level where OAS recovery tax begins.">
+            &#9432;
+          </span>
+        </label>
         <input id="oas_threshold" type="number" class="form-control" value="0" step="1000" min="0">
       </div>
       <div class="col-md-2">
-        <label class="form-label">Clawback Rate (%)</label>
+        <label class="form-label">Clawback Rate (%)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Percentage applied to income above the threshold (e.g., 15%).">
+            &#9432;
+          </span>
+        </label>
         <input id="oas_rate" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
       </div>
       <div class="col-md-2">
-        <label class="form-label">RRIF Start Age</label>
+        <label class="form-label">RRIF Start Age
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Age your RRSP converts to RRIF and minimum withdrawals are enforced.">
+            &#9432;
+          </span>
+        </label>
         <input id="rrif_start_age" type="number" class="form-control" value="0" min="0">
       </div>
       <div class="col-md-1 d-flex align-items-end">
         <div class="form-check">
           <input id="oas_index" class="form-check-input" type="checkbox" checked>
-          <label class="form-check-label small" for="oas_index">Index OAS</label>
+          <label class="form-check-label small" for="oas_index">
+            Index OAS
+            <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                  title="When checked, OAS grows with inflation from the start age.">
+              &#9432;
+            </span>
+          </label>
         </div>
       </div>
     </div>
@@ -2502,23 +2582,48 @@ function ensureLayout(layout, seriesForAxis){
     <!-- Lite brackets -->
     <div class="row g-2 mt-3" id="tax_brackets_ui">
       <div class="col-auto">
-        <label class="form-label">Bracket 1 up to ($)</label>
+        <label class="form-label">Bracket 1 up to ($)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Top of band 1 for taxable income.">
+            &#9432;
+          </span>
+        </label>
         <input id="tb_lim1"  type="number" class="form-control form-control-sm" value="0" placeholder="57,375">
       </div>
       <div class="col-auto">
-        <label class="form-label">Rate 1 (%)</label>
+        <label class="form-label">Rate 1 (%)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Combined marginal tax rate within band 1.">
+            &#9432;
+          </span>
+        </label>
         <input id="tb_rate1" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="14.5">
       </div>
       <div class="col-auto">
-        <label class="form-label">Bracket 2 up to ($)</label>
+        <label class="form-label">Bracket 2 up to ($)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Top of band 2 for taxable income.">
+            &#9432;
+          </span>
+        </label>
         <input id="tb_lim2"  type="number" class="form-control form-control-sm" value="0" placeholder="114,750">
       </div>
       <div class="col-auto">
-        <label class="form-label">Rate 2 (%)</label>
+        <label class="form-label">Rate 2 (%)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Combined marginal tax rate within band 2.">
+            &#9432;
+          </span>
+        </label>
         <input id="tb_rate2" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="20.5">
       </div>
       <div class="col-auto">
-        <label class="form-label">Rate 3+ (%)</label>
+        <label class="form-label">Rate 3+ (%)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Marginal tax rate applied to income above band 2.">
+            &#9432;
+          </span>
+        </label>
         <input id="tb_rate3" type="number" class="form-control form-control-sm" value="0" step="0.1" placeholder="26–32">
       </div>
 
@@ -2540,7 +2645,12 @@ function ensureLayout(layout, seriesForAxis){
     <!-- Taxable Drag (side note fills right-side whitespace) -->
     <div class="row g-3 mt-4">
       <div class="col-md-3">
-        <label class="form-label">Taxable Drag (%)</label>
+        <label class="form-label">Taxable Drag (%)
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Ongoing drag on Taxable growth from distributions/fees/taxes. Use the helper to estimate.">
+            &#9432;
+          </span>
+        </label>
         <input id="litev1_taxable_drag" type="number" class="form-control" value="0" step="0.1" min="0" max="100">
       </div>
       <div class="col-md-9 d-flex align-items-center">
@@ -2574,11 +2684,11 @@ function ensureLayout(layout, seriesForAxis){
         <table class="table table-sm align-middle">
           <thead>
             <tr>
-              <th style="min-width:200px;">Stream</th>
-              <th>Allocation (% of taxable)</th>
-              <th>Yield (% on that slice)</th>
-              <th>Effective Tax Rate (%)</th>
-              <th>Contribution to Absolute Drag (%)</th>
+              <th style="min-width:200px;" title="Income type within your Taxable account (dividends, interest, realized gains).">Stream</th>
+              <th title="Share of your Taxable account in this stream (sums ≤ 100%).">Allocation (% of taxable)</th>
+              <th title="Annual % paid/realized on that slice (e.g., 5% dividend; for realized gains enter % you’ll realize).">Yield (% on that slice)</th>
+              <th title="Effective tax rate on that income type (after credits/inclusion).">Effective Tax Rate (%)</th>
+              <th title="Row’s Allocation × Yield × Effective Rate.">Contribution to Absolute Drag (%)</th>
             </tr>
           </thead>
           <tbody>
@@ -2610,7 +2720,7 @@ function ensureLayout(layout, seriesForAxis){
               <th id="td_abs" class="text-end">0.000%</th>
             </tr>
             <tr>
-              <th colspan="4" class="text-end">Implied Taxable Drag d = Absolute Drag ÷ Return Rate</th>
+              <th colspan="4" class="text-end" title="Implied Taxable Drag = Absolute Drag ÷ Return Rate (post).">Implied Taxable Drag d = Absolute Drag ÷ Return Rate</th>
               <th id="td_implied" class="text-end">0.00%</th>
             </tr>
           </tfoot>
@@ -2639,7 +2749,12 @@ function ensureLayout(layout, seriesForAxis){
     <!-- Bottom controls: order + run (kept just above visuals) -->
     <div class="row g-3 align-items-end">
       <div class="col-md-6">
-        <label class="form-label">Withdrawal order</label>
+        <label class="form-label">Withdrawal order
+          <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+                title="Applied each retirement year unless RRIF minimum is explicitly enabled. Tip: the order bars are clickable to switch orders.">
+            &#9432;
+          </span>
+        </label>
         <select id="wd_order" class="form-select">
           <option value="taxable_tfsa_rrsp">Taxable → TFSA → RRSP</option>
           <option value="tfsa_taxable_rrsp">TFSA → Taxable → RRSP</option>
@@ -2657,6 +2772,9 @@ function ensureLayout(layout, seriesForAxis){
   </div>
 </div>
 <!-- === /COMBINED ========================================================= -->
+
+
+
 
 <!-- === Tax-aware visuals (beta) ========================================= -->
 <div class="card mt-4" id="taxviz_card">
