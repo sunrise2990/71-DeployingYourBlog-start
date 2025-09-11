@@ -2446,6 +2446,8 @@ function ensureLayout(layout, seriesForAxis){
   </div>
 </div>
 
+
+
 <!-- Pre-retirement contribution split (applies before Retirement Age) -->
 <div class="row mt-2" id="precontrib_row">
   <div class="col-12 small">
@@ -3096,6 +3098,31 @@ function incrementalTax(delta, base, bracketsObj) {
 
 
 
+// --- UI helper for pre-retire savings allocatoin: keep "Taxable (annual — auto)" in sync ----------------------
+function updatePreSplitUI(){
+  const fmt = v => "$" + Math.round(v).toLocaleString();
+  const moSav = Number(document.getElementById("litev1_monthly_saving")?.value || 0);
+  const tfsaA = Number(document.getElementById("pre_tfsa_annual")?.value || 0);
+  const rrspA = Number(document.getElementById("pre_rrsp_annual")?.value || 0);
+
+  const annual = Math.max(0, moSav * 12);
+  const taxableA = Math.max(0, annual - tfsaA - rrspA);
+
+  const out = document.getElementById("pre_taxable_annual");
+  if (out) out.value = Math.round(taxableA);
+
+  const hint = document.getElementById("pre_split_hint");
+  if (hint) hint.textContent =
+    `Computed as ${fmt(moSav)} × 12 − ${fmt(tfsaA)} − ${fmt(rrspA)} = ${fmt(taxableA)}`;
+}
+
+// keep it live
+["litev1_monthly_saving","pre_tfsa_annual","pre_rrsp_annual"]
+  .forEach(id => document.getElementById(id)?.addEventListener("input", () => { updatePreSplitUI(); runAll(); }));
+
+document.addEventListener("DOMContentLoaded", updatePreSplitUI);
+
+
 
 
   // Build config from UI/top
@@ -3107,6 +3134,11 @@ function incrementalTax(delta, base, bracketsObj) {
     const tfsa0          = Number($("litev1_tfsa").value);
 
     const monthly_saving = Number($("litev1_monthly_saving").value);
+
+    // NEW: read annual TFSA/RRSP targets used for the pre-retirement split
+    const tfsa_annual = Number($("pre_tfsa_annual")?.value) || 0;
+    const rrsp_annual = Number($("pre_rrsp_annual")?.value) || 0;
+
     const monthly_exp    = Number($("litev1_spend").value);
     const pre_ret_pct    = Number($("litev1_return").value);
     const tax_pct        = Number($("litev1_income_tax").value);
@@ -3144,6 +3176,10 @@ function incrementalTax(delta, base, bracketsObj) {
 
       annual_saving: (monthly_saving || 0) * 12,
       saving_increase_rate: (saving_inc_pct || 0) / 100,
+
+      // NEW: contribution targets (caps) for the pre-retirement splitter
+      pre_tfsa_annual: tfsa_annual,
+      pre_rrsp_annual: rrsp_annual,
 
       annual_expense: (monthly_exp || 0) * 12,
       return_rate: (pre_ret_pct || 0) / 100,
@@ -3267,9 +3303,20 @@ function allocateByOrder(netNeed, balances, order, rrspFlat) {
       rrsp    *= gN;
       tfsa    *= gN;
 
-      // deposits (savings + any liquidation this year)
-      taxable += save;
-      if (lm[age]) taxable += lm[age];
+    // deposits (split savings TFSA → RRSP → Taxable) + any liquidation this year
+    const tfsaCap = Math.max(0, cfg.pre_tfsa_annual || 0);
+    const rrspCap = Math.max(0, cfg.pre_rrsp_annual || 0);
+
+    const toTFSA      = Math.min(save, tfsaCap);
+    const afterTFSA   = Math.max(0, save - toTFSA);
+    const toRRSP      = Math.min(afterTFSA, rrspCap);
+    const toTaxable   = Math.max(0, afterTFSA - toRRSP);
+
+    tfsa    += toTFSA;
+    rrsp    += toRRSP;
+    taxable += toTaxable;
+
+    if (lm[age]) taxable += lm[age];
 
       const endTotal = taxable + rrsp + tfsa;
       const dragAmt  = (d > 0) ? (t0 * return_rate * d) : 0;
@@ -3558,7 +3605,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "litev1_spend","litev1_return","litev1_monthly_saving","litev1_income_tax","wd_order",
     "litev1_taxable_drag",
     "oas_mo","oas_start_age","oas_threshold","oas_rate","rrif_start_age","oas_index",
-    "tb_lim1","tb_lim2","tb_rate1","tb_rate2","tb_rate3"
+    "tb_lim1","tb_lim2","tb_rate1","tb_rate2","tb_rate3",
+    // NEW:
+    "pre_tfsa_annual","pre_rrsp_annual"
   ].forEach(id => $(id)?.addEventListener("input", runAll));
   $("wd_order")?.addEventListener("change", runAll);
 
