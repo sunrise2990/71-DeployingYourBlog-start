@@ -2446,58 +2446,6 @@ function ensureLayout(layout, seriesForAxis){
   </div>
 </div>
 
-<!-- Pre-retirement contribution split (applies before Retirement Age) -->
-<div class="row mt-2" id="precontrib_row">
-  <div class="col-12 small">
-    <strong>Pre-retirement contribution split</strong>: Each pre-retirement year we deposit savings in this order
-    <em>TFSA → RRSP → Taxable</em>. Amounts below are annual targets; <em>Taxable</em> is auto-computed as
-    <code>Monthly Savings × 12 − TFSA − RRSP</code>.
-    <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
-          title="The model routes new savings before retirement in this order: TFSA up to your annual room/target, then RRSP up to its target, and any remainder to Taxable.">
-      &#9432;
-    </span>
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label">TFSA (annual $)
-      <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
-            title="2025 TFSA limit is $7,000. Enter the amount you plan to contribute per year (include any carry-forward room if applicable).">
-        &#9432;
-      </span>
-    </label>
-    <input id="pre_tfsa_annual" type="number" class="form-control" value="0" min="0" step="1">
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label">RRSP (annual $)
-      <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
-            title="Lower of 18% of prior-year earned income or CRA max (2025: $32,490). Include carry-forward room you plan to use.">
-        &#9432;
-      </span>
-    </label>
-    <input id="pre_rrsp_annual" type="number" class="form-control" value="0" min="0" step="1">
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label">Taxable (annual $ — auto)
-      <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
-            title="Automatically computed as Monthly Savings × 12 minus TFSA minus RRSP. Negative values are clipped to $0.">
-        &#9432;
-      </span>
-    </label>
-    <input id="pre_taxable_annual" type="number" class="form-control" value="0" min="0" step="1" disabled>
-  </div>
-
-  <div class="col-md-3 d-flex align-items-end">
-    <div class="small text-muted" id="pre_split_hint"></div>
-  </div>
-
-  <div class="col-12 small text-muted mt-1">
-    Tip: If TFSA&nbsp;+&nbsp;RRSP exceeds <em>Monthly Savings × 12</em>, we’ll use TFSA first, then RRSP, and set Taxable to $0 for that year.
-  </div>
-</div>
-
-
     <!-- Block B: Timing & flows (rest of the row) -->
     <div class="row g-3 mt-3">
       <div class="col-md-2">
