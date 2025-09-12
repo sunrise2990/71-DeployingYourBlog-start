@@ -2499,6 +2499,24 @@ function ensureLayout(layout, seriesForAxis){
   </div>
 </div>
 
+      <div class="col-12 small text-muted">
+  Savings grow each pre-retirement year by your <strong>Annual Saving Increase Rate (%)</strong>
+  and are then split in this order <strong>TFSA → RRSP → Taxable</strong>.
+  <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+        title="Each pre-retirement year: AnnualSavings(t) = (Monthly Savings × 12) × (1 + Increase%)^(t−1). Then we allocate min(TFSA cap for year t, remaining) → min(RRSP target, remaining) → remainder to Taxable.">
+    &#9432;
+  </span>
+</div>
+
+<div class="col-12 small text-muted">
+  TFSA cap grows automatically from <strong>$7,000</strong> in <strong>2025</strong> by <strong>≈2.1%/yr</strong> for 2026+.
+  We apply that cap before RRSP and Taxable in the yearly split.
+  <span class="ms-1" style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top"
+        title="TFSA cap in year t ≥ 2026 is 7,000 × 1.021^(t − 2025). (Carry-forward room not modeled.)">
+    &#9432;
+  </span>
+</div>
+
 
     <!-- Block B: Timing & flows (rest of the row) -->
     <div class="row g-3 mt-3">
