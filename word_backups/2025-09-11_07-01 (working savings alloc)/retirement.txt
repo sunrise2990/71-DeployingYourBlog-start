@@ -3125,130 +3125,114 @@ document.addEventListener("DOMContentLoaded", updatePreSplitUI);
 
 
 
-// Build config from UI/top
-function buildCfg() {
-  const current_age    = Number($("litev1_start_age").value);
-  const end_age        = Number($("litev1_end_age").value);
-  const taxable0       = Number($("litev1_taxable").value);
-  const rrsp0          = Number($("litev1_rrsp").value);
-  const tfsa0          = Number($("litev1_tfsa").value);
+  // Build config from UI/top
+  function buildCfg() {
+    const current_age    = Number($("litev1_start_age").value);
+    const end_age        = Number($("litev1_end_age").value);
+    const taxable0       = Number($("litev1_taxable").value);
+    const rrsp0          = Number($("litev1_rrsp").value);
+    const tfsa0          = Number($("litev1_tfsa").value);
 
-  const monthly_saving = Number($("litev1_monthly_saving").value);
+    const monthly_saving = Number($("litev1_monthly_saving").value);
 
-  // NEW: read annual TFSA/RRSP targets used for the pre-retirement split
-  const tfsa_annual = Number($("pre_tfsa_annual")?.value) || 0;  // e.g., 7000
-  const rrsp_annual = Number($("pre_rrsp_annual")?.value) || 0;  // e.g., 30000
+    // NEW: read annual TFSA/RRSP targets used for the pre-retirement split
+    const tfsa_annual = Number($("pre_tfsa_annual")?.value) || 0;
+    const rrsp_annual = Number($("pre_rrsp_annual")?.value) || 0;
 
-  const monthly_exp    = Number($("litev1_spend").value);
-  const pre_ret_pct    = Number($("litev1_return").value);
-  const tax_pct        = Number($("litev1_income_tax").value);
+    const monthly_exp    = Number($("litev1_spend").value);
+    const pre_ret_pct    = Number($("litev1_return").value);
+    const tax_pct        = Number($("litev1_income_tax").value);
 
-  const post_ret_pct   = numValAny("post_retire_return_rate","return_rate_after") ?? pre_ret_pct;
-  const infl_pct       = numValAny("inflation_rate") ?? 2;
-  const retirement_age = numValAny("retirement_age") ?? current_age;
+    const post_ret_pct   = numValAny("post_retire_return_rate","return_rate_after") ?? pre_ret_pct;
+    const infl_pct       = numValAny("inflation_rate") ?? 2;
+    const retirement_age = numValAny("retirement_age") ?? current_age;
 
-  const cpp_mo         = monthlyCPPFromTop();
-  const cpp_from       = cppStartFromTop(retirement_age);
-  const cpp_to         = cppEndFromTop(end_age);
+    const cpp_mo         = monthlyCPPFromTop();
+    const cpp_from       = cppStartFromTop(retirement_age);
+    const cpp_to         = cppEndFromTop(end_age);
 
-  const helper = readHelperDrag();
-  const manual_drag_pct = numVal($("litev1_taxable_drag"));
-  const effective_drag_pct = Number.isFinite(manual_drag_pct) ? manual_drag_pct : (helper?.impliedPct ?? 0);
+    const helper = readHelperDrag();
+    const manual_drag_pct = numVal($("litev1_taxable_drag"));
+    const effective_drag_pct = Number.isFinite(manual_drag_pct) ? manual_drag_pct : (helper?.impliedPct ?? 0);
 
-  const saving_inc_pct = numValAny("saving_increase_rate") ?? 0;
+    const saving_inc_pct = numValAny("saving_increase_rate") ?? 0;
 
-  const liqs = [];
-  for (let i = 1; i <= 3; i++) {
-    const amt = numVal(pick(`asset_liquidation_${i}`));
-    const age = numVal(pick(`asset_liquidation_age_${i}`));
-    if (amt !== undefined && amt !== 0 && age !== undefined && age > 0) {
-      liqs.push({ amount: amt, age: age });
+    const liqs = [];
+    for (let i = 1; i <= 3; i++) {
+      const amt = numVal(pick(`asset_liquidation_${i}`));
+      const age = numVal(pick(`asset_liquidation_age_${i}`));
+      if (amt !== undefined && amt !== 0 && age !== undefined && age > 0) {
+        liqs.push({ amount: amt, age: age });
+      }
     }
+
+    // OAS/RRIF (all default to 0/off)
+    const cfg = {
+      current_age,
+      retirement_age,
+      life_expectancy: end_age,
+
+      taxable0, rrsp0, tfsa0,
+
+      annual_saving: (monthly_saving || 0) * 12,
+      saving_increase_rate: (saving_inc_pct || 0) / 100,
+
+      // NEW: contribution targets (caps) for the pre-retirement splitter
+      pre_tfsa_annual: tfsa_annual,
+      pre_rrsp_annual: rrsp_annual,
+
+      annual_expense: (monthly_exp || 0) * 12,
+      return_rate: (pre_ret_pct || 0) / 100,
+      return_rate_after: (post_ret_pct || 0) / 100,
+      inflation_rate: (infl_pct || 0) / 100,
+
+      income_tax_rate: (tax_pct || 0) / 100,   // still used for allocation math only
+      // Lite brackets: read from UI if present; else defaults kick in inside readBracketsFromUI()
+      tax_brackets: readBracketsFromUI(),
+
+      cpp_monthly: cpp_mo || 0,
+      cpp_start_age: cpp_from || retirement_age,
+      cpp_end_age: cpp_to || end_age,
+
+      taxable_drag: (effective_drag_pct || 0) / 100,
+
+      // new
+      oas_monthly: Number($("oas_mo").value) || 0,
+      oas_start_age: Number($("oas_start_age").value) || 0,
+      oas_threshold: Number($("oas_threshold").value) || 0,
+      oas_clawback_rate: (Number($("oas_rate").value) || 0) / 100,
+      oas_index: !!$("oas_index")?.checked,
+
+      rrif_start_age: Number($("rrif_start_age").value) || 0,
+
+      asset_liquidations: liqs
+    };
+    return cfg;
   }
 
-  // Calendar anchor for pre-retirement years (falls back to current year)
-  const start_year = numValAny("start_year","current_year","base_year") ?? (new Date()).getFullYear();
+  // Helpers
+  const within = (x, a, b) => (x >= a && x <= b);
+  const r0 = (x) => Math.round(x||0);
 
-  // OAS/RRIF (all default to 0/off)
-  const cfg = {
-    current_age,
-    retirement_age,
-    life_expectancy: end_age,
+  function livingExpenseAtAge(cfg, age){
+    const n = Math.max(0, age - cfg.current_age);
+    return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, n);
+  }
+  function cppAtAge(cfg, age){
+    if (!within(age, cfg.cpp_start_age, cfg.cpp_end_age)) return 0;
+    const n = Math.max(0, age - cfg.cpp_start_age);
+    return (cfg.cpp_monthly || 0) * 12 * Math.pow(1 + cfg.inflation_rate, n);
+  }
+  function liqMap(asset_liquidations){
+    const m = {};
+    (asset_liquidations || []).forEach(l=>{
+      const a = Number(l.age)||0, amt = Number(l.amount)||0;
+      m[a] = (m[a]||0)+amt;
+    });
+    return m;
+  }
 
-    start_year,                      // NEW: used to map ages → calendar year
-    tfsa_cagr_after_2025: 0.021,     // NEW: grow TFSA cap from 2026 onward @ 2.1%
-
-    taxable0, rrsp0, tfsa0,
-
-    annual_saving: (monthly_saving || 0) * 12,
-    saving_increase_rate: (saving_inc_pct || 0) / 100,
-
-    // NEW: contribution targets (caps) for the pre-retirement splitter
-    pre_tfsa_annual: tfsa_annual,    // treated as the 2025 anchor (e.g., 7000)
-    pre_rrsp_annual: rrsp_annual,
-
-    annual_expense: (monthly_exp || 0) * 12,
-    return_rate: (pre_ret_pct || 0) / 100,
-    return_rate_after: (post_ret_pct || 0) / 100,
-    inflation_rate: (infl_pct || 0) / 100,
-
-    income_tax_rate: (tax_pct || 0) / 100,   // still used for allocation math only
-    tax_brackets: readBracketsFromUI(),
-
-    cpp_monthly: cpp_mo || 0,
-    cpp_start_age: cpp_from || retirement_age,
-    cpp_end_age: cpp_to || end_age,
-
-    taxable_drag: (effective_drag_pct || 0) / 100,
-
-    // new
-    oas_monthly: Number($("oas_mo").value) || 0,
-    oas_start_age: Number($("oas_start_age").value) || 0,
-    oas_threshold: Number($("oas_threshold").value) || 0,
-    oas_clawback_rate: (Number($("oas_rate").value) || 0) / 100,
-    oas_index: !!$("oas_index")?.checked,
-
-    rrif_start_age: Number($("rrif_start_age").value) || 0,
-
-    asset_liquidations: liqs
-  };
-  return cfg;
-}
-
-// Helpers
-const within = (x, a, b) => (x >= a && x <= b);
-const r0 = (x) => Math.round(x||0);
-
-function livingExpenseAtAge(cfg, age){
-  const n = Math.max(0, age - cfg.current_age);
-  return cfg.annual_expense * Math.pow(1 + cfg.inflation_rate, n);
-}
-function cppAtAge(cfg, age){
-  if (!within(age, cfg.cpp_start_age, cfg.cpp_end_age)) return 0;
-  const n = Math.max(0, age - cfg.cpp_start_age);
-  return (cfg.cpp_monthly || 0) * 12 * Math.pow(1 + cfg.inflation_rate, n);
-}
-function liqMap(asset_liquidations){
-  const m = {};
-  (asset_liquidations || []).forEach(l=>{
-    const a = Number(l.age)||0, amt = Number(l.amount)||0;
-    m[a] = (m[a]||0)+amt;
-  });
-  return m;
-}
-
-// NEW: TFSA cap for a given calendar year
-// - Up to and including 2025 -> use the user’s TFSA annual input (e.g., 7000)
-// - 2026 and later            -> grow that anchor by CAGR 2.1% per year
-function tfsaCapForYear(year, cfg){
-  const base = Math.max(0, Number(cfg.pre_tfsa_annual) || 0);  // 2025 anchor
-  if (year <= 2025) return base;
-  const yrs = Math.max(0, Math.floor(year - 2025));
-  const rate = Math.max(0, Number(cfg.tfsa_cagr_after_2025) || 0.021);
-  return Math.round(base * Math.pow(1 + rate, yrs));
-}
-
-// Allocate by order (net need only; no overlay inside)
+  // Allocate by order (net need only; no overlay inside)
 function allocateByOrder(netNeed, balances, order, rrspFlat) {
   let need = Math.max(0, netNeed);
 
@@ -3293,78 +3277,64 @@ function allocateByOrder(netNeed, balances, order, rrspFlat) {
   };
 }
 
-// Pre-retirement (grow, then deposit savings & liquidations)
-// Taxable grows with drag; RRSP/TFSA grow normally.
-// ✅ Each year we first grow the *total* savings by Top “Annual Saving Increase Rate (%)”,
-// then route that year’s savings TFSA → RRSP → Taxable with the TFSA cap rule above.
-function prerollToRetirement(cfg) {
-  let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
-        taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
 
-  let age = current_age;
-  let rows = [];
-  let taxable = taxable0, rrsp = rrsp0, tfsa = tfsa0;
-  let save = annual_saving;
 
-  const lm = liqMap(asset_liquidations);
-  const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-  const gN = 1 + return_rate;               // normal growth
-  const gT = 1 + return_rate * (1 - d);     // dragged growth for Taxable
+  // Pre-retirement (grow, then deposit savings & liquidations)
+  // Taxable grows with drag; RRSP/TFSA grow normally.
+  function prerollToRetirement(cfg) {
+    let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
+          taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
 
-  while (age < retirement_age) {
-    const t0 = taxable;
+    let age = current_age;
+    let rows = [];
+    let taxable = taxable0, rrsp = rrsp0, tfsa = tfsa0;
+    let save = annual_saving;
 
-    // grow balances to start of year
-    taxable = t0 * gT;
-    rrsp    *= gN;
-    tfsa    *= gN;
+    const lm = liqMap(asset_liquidations);
+    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+    const gN = 1 + return_rate;               // normal growth
+    const gT = 1 + return_rate * (1 - d);     // dragged growth for Taxable
 
-    // ---- deposits this year ----
-    // 1) Determine calendar year for the current pre-retirement age
-    const year = (cfg.start_year || (new Date()).getFullYear()) + (age - cfg.current_age);
+    while (age < retirement_age) {
+      const t0 = taxable;
 
-    // 2) Compute TFSA cap for THIS year (anchor at input for ≤2025; CAGR 2.1% from 2026+)
-    const tfsaCap = tfsaCapForYear(year, cfg);
+      // grow
+      taxable = t0 * gT;
+      rrsp    *= gN;
+      tfsa    *= gN;
 
-    // 3) RRSP cap uses user-provided annual target (no auto growth)
+    // deposits (split savings TFSA → RRSP → Taxable) + any liquidation this year
+    const tfsaCap = Math.max(0, cfg.pre_tfsa_annual || 0);
     const rrspCap = Math.max(0, cfg.pre_rrsp_annual || 0);
 
-    // 4) Route THIS YEAR's savings: TFSA → RRSP → leftover → Taxable
-    const toTFSA    = Math.min(save, tfsaCap);
-    const afterTFSA = Math.max(0, save - toTFSA);
-    const toRRSP    = Math.min(afterTFSA, rrspCap);
-    const toTaxable = Math.max(0, afterTFSA - toRRSP);
+    const toTFSA      = Math.min(save, tfsaCap);
+    const afterTFSA   = Math.max(0, save - toTFSA);
+    const toRRSP      = Math.min(afterTFSA, rrspCap);
+    const toTaxable   = Math.max(0, afterTFSA - toRRSP);
 
     tfsa    += toTFSA;
     rrsp    += toRRSP;
     taxable += toTaxable;
 
-    // One-off asset liquidation this year
     if (lm[age]) taxable += lm[age];
 
-    const endTotal = taxable + rrsp + tfsa;
-    const dragAmt  = (d > 0) ? (t0 * return_rate * d) : 0;
+      const endTotal = taxable + rrsp + tfsa;
+      const dragAmt  = (d > 0) ? (t0 * return_rate * d) : 0;
 
-    rows.push({
-      Age: age,
-      From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0,
-      RRIF_Min_Pct: 0, OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
-      Tax_On_Taxable: 0, Tax_On_RRSP: 0,
-      Taxable_Drag: Math.round(dragAmt),
-      End_Taxable: Math.round(taxable),
-      End_TFSA: Math.round(tfsa),
-      End_RRSP: Math.round(rrsp),
-      End_Total: Math.round(endTotal)
-    });
+      rows.push({
+        Age: age,
+        From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0,
+        RRIF_Min_Pct: 0, OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
+        Tax_On_Taxable: 0, Tax_On_RRSP: 0,
+        Taxable_Drag: dragAmt,
+        End_Taxable: taxable, End_TFSA: tfsa, End_RRSP: rrsp, End_Total: endTotal
+      });
 
-    // 5) Grow next year's savings by the Top “Annual Saving Increase Rate (%)”
-    save *= (1 + (saving_increase_rate || 0));
-
-    age += 1;
+      save *= (1 + saving_increase_rate);
+      age += 1;
+    }
+    return { rows, taxable, rrsp, tfsa };
   }
-  return { rows, taxable, rrsp, tfsa };
-}
-
 
 
 
