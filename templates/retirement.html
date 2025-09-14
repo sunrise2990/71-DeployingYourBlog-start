@@ -4282,10 +4282,20 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     // safest way: reuse IDs already present
     const num = id => { const el=$(id); if(!el) return 0; const s=(el.value||"").replace(/,/g,"").trim(); const v=Number(s); return Number.isFinite(v)?v:0; };
     const bool = id => !!$(id)?.checked;
+
+    // robust retirement-age lookup: support id **or** name
     const current_age = num("litev1_start_age"), end_age=num("litev1_end_age");
+    const retEl = document.getElementById("retirement_age") || document.querySelector('[name="retirement_age"]');
+    const retirement_age = (() => {
+      const s = String(retEl?.value ?? current_age).replace(/,/g,"").trim();
+      const v = Number(s);
+      return (Number.isFinite(v) && v > 0) ? v : current_age;
+    })();
+
     const cfg = {
-      current_age, life_expectancy:end_age,
-      retirement_age: Number((document.getElementById("retirement_age")?.value || current_age).toString().replace(/,/g,"")) || current_age,
+      current_age,
+      life_expectancy: end_age,
+      retirement_age,
       start_year: new Date().getFullYear(),
       taxable0: num("litev1_taxable"), rrsp0: num("litev1_rrsp"), tfsa0: num("litev1_tfsa"),
       annual_saving: (num("litev1_monthly_saving")||0)*12,
@@ -4391,6 +4401,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (beta) =================================================== -->
+
 
 
 

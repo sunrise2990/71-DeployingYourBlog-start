@@ -594,23 +594,46 @@ def _rrif_min_pct_exact(age: int) -> float:
     return 1.0 / max(1, 90 - int(age))
 
 def _tax_from_brackets(income: float, br: Optional[Dict[str, Any]]) -> float:
-    if not br or not br.get("bands"): return 0.30 * max(0.0, income)  # fallback
+    """Total tax for 'income' using progressive bands. Safe against None/NaN/Infinity from JSON."""
+    if not br or not br.get("bands"):
+        return 0.30 * max(0.0, income)  # fallback
+
+    def sfloat(x, default=0.0):
+        try:
+            if x is None:
+                return default
+            v = float(x)
+            return v if math.isfinite(v) else default
+        except Exception:
+            return default
+
+    def limit_or_inf(x):
+        try:
+            if x is None:
+                return math.inf
+            v = float(x)
+            return v if math.isfinite(v) else math.inf
+        except Exception:
+            return math.inf
+
     y = max(0.0, float(income))
     tax = 0.0
     prev = 0.0
-    bands = br["bands"]
+    bands = br.get("bands", [])
+
     for b in bands:
-        limit = float(b.get("limit", math.inf))
-        rate = max(0.0, float(b.get("rate", 0.0)))
-        upto = min(y, limit)
+        limit = limit_or_inf(b.get("limit"))
+        rate  = max(0.0, sfloat(b.get("rate"), 0.0))
+        upto  = min(y, limit)
         if upto > prev:
             tax += (upto - prev) * rate
         if y <= limit:
             return tax
         prev = limit
-    # if income beyond last finite limit
-    last_rate = float(bands[-1].get("rate", 0.0))
+
+    last_rate = max(0.0, sfloat(bands[-1].get("rate"), 0.0)) if bands else 0.0
     return tax + max(0.0, y - prev) * last_rate
+
 
 def _incremental_tax(delta: float, base: float, br: Optional[Dict[str, Any]], flat_rate: float) -> float:
     d = max(0.0, float(delta))
