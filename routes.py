@@ -1780,6 +1780,33 @@ if not getattr(projects_bp, "_litev1_routes_attached", False):
         return jsonify({"ok": True, "tax_det_rrif": out})
 
 
+
+
+    # --- Tax-aware optimizer endpoint (append-only) ---------------------------
+    @projects_bp.route("/lite_v1/optimize", methods=["POST"])
+    @_csrf_exempt
+    def lite_v1_optimize():
+        """
+        Runs the Tax-Aware Withdrawal Optimizer v1.
+        Accepts the same cfg shape your front-end already builds (buildCfg()).
+        Returns rows mirroring the tax table fields, but for the optimized mix.
+        """
+        data = request.get_json(silent=True) or {}
+        try:
+            # Map incoming payload 1:1 into our OptimizerCfgV1 (missing keys use defaults)
+            from models.retirement.retirement_calc import optimize_withdrawals_v1  # type: ignore
+        except Exception:
+            # fallback import if module path differs (same file)
+            from .retirement_calc import optimize_withdrawals_v1  # type: ignore
+
+        try:
+            out = optimize_withdrawals_v1(dict(data))
+            return jsonify({"ok": True, "opt": out}), 200
+        except Exception as e:
+            current_app.logger.exception("optimize failed: %s", e)
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+
     # mark attached
     projects_bp._litev1_routes_attached = True
 # === END APPEND-ONLY ROUTES ===================================================
