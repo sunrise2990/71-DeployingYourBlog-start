@@ -2875,42 +2875,6 @@ function ensureLayout(layout, seriesForAxis){
 
 
 
-<!-- === Optimizer (beta) + Next-$1 Analyzer (append-only) ================== -->
-<div class="card mt-4" id="optimizer_card">
-  <div class="card-body">
-    <div class="d-flex align-items-center justify-content-between">
-      <h6 class="mb-2">Optimize withdrawals (beta)</h6>
-      <div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" id="opt_toggle">
-        <label class="form-check-label small" for="opt_toggle">Run optimizer after “Run plan”</label>
-      </div>
-    </div>
-
-    <div class="row g-3">
-      <div class="col-md-6">
-        <div class="p-2 rounded border">
-          <div class="small text-muted mb-1">Next-$1 Analyzer (first retirement year)</div>
-          <div class="small" id="n1_rrsp">RRSP marginal on next $1: —</div>
-          <div class="small" id="n1_taxable">Taxable marginal on next $1: —</div>
-          <div class="small" id="n1_oas">OAS headroom / status: —</div>
-          <div class="small text-muted mt-1" id="n1_hint"></div>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <div class="p-2 rounded border">
-          <div class="small text-muted mb-1">Optimizer result (summary)</div>
-          <div class="small" id="opt_summary">—</div>
-          <div class="small text-muted" id="opt_rationale"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-
-
-
 
     <!-- Results table -->
     <div class="table-responsive">
