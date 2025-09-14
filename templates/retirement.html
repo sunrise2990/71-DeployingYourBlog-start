@@ -4252,7 +4252,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 (function () {
   const $ = (id) => document.getElementById(id);
 
-  // ---------------- tax bracket helpers ----------------
+  // ---------- tax helpers ----------
   function readBracketsFromUI() {
     const v = (id) => {
       const el = $(id); if (!el) return NaN;
@@ -4260,11 +4260,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const n = Number(s);
       return Number.isFinite(n) ? n : NaN;
     };
-    const lim1 = v("tb_lim1"),
-          lim2 = v("tb_lim2"),
-          r1   = v("tb_rate1"),
-          r2   = v("tb_rate2"),
-          r3   = v("tb_rate3");
+    const lim1 = v("tb_lim1"), lim2 = v("tb_lim2"),
+          r1 = v("tb_rate1"), r2 = v("tb_rate2"), r3 = v("tb_rate3");
 
     const allZero = [lim1, lim2, r1, r2, r3].every(x => !Number.isFinite(x) || x === 0);
     if (allZero) return null;
@@ -4295,7 +4292,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return tax + Math.max(0, I - prev) * (last.rate || 0);
   };
 
-  // incremental tax for d dollars on top of base b
   const incrTax = (d, b, br, flat) => {
     d = Math.max(0, d || 0);
     b = Math.max(0, b || 0);
@@ -4303,7 +4299,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return d * Math.max(0, Math.min(0.90, flat || 0));
   };
 
-  // ---------------- small DOM helpers ----------------
+  // ---------- small DOM helpers ----------
   const readNumber = (el) => {
     if (!el) return 0;
     const s = String(el.value || "").replace(/,/g, "").trim();
@@ -4319,7 +4315,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return 0;
   };
 
-  // ---------------- config builder ----------------
+  // ---------- config ----------
   function buildCfgLight() {
     const num  = (id) => { const el = $(id); if (!el) return 0; const s = (el.value || "").replace(/,/g, "").trim(); const v = Number(s); return Number.isFinite(v) ? v : 0; };
     const bool = (id) => !!$(id)?.checked;
@@ -4334,7 +4330,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       return (Number.isFinite(v) && v > 0) ? v : current_age;
     })();
 
-    // read exactly what's in the UI (pre-retirement contributions)
     const pre_tfsa_annual = numMulti("pre_tfsa_annual", "tfsa_annual", "litev1_tfsa_annual");
     const pre_rrsp_annual = numMulti("pre_rrsp_annual", "rrsp_annual", "litev1_rrsp_annual");
 
@@ -4398,7 +4393,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     };
   }
 
-  // ---------------- tiny financial helpers ----------------
+  // ---------- tiny financial helpers ----------
   function rrifMinPct(age){
     const t = {
       71: 0.0528, 72: 0.0540, 73: 0.0553, 74: 0.0567, 75: 0.0582, 76: 0.0598, 77: 0.0617, 78: 0.0636, 79: 0.0658,
@@ -4430,7 +4425,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return base * Math.pow(1 + cfg.tfsa_cagr_after_2025, yrs);
   }
 
-  // OAS clawback based on income (includes OAS gross in the test)
   function oasClawback(cfg, age, grossTaxable, rrspGross, cpp) {
     if (!cfg.oas_monthly || !cfg.oas_start_age || age < cfg.oas_start_age) return 0;
     const gross = oasGrossAtAge(cfg, age);
@@ -4449,7 +4443,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return m;
   }
 
-  // ---------------- Pre-retirement series ----------------
+  // ---------- pre-retirement rows ----------
   function buildPreRetRows(cfg) {
     const rows = [];
     let age = cfg.current_age;
@@ -4460,8 +4454,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     let tfsa    = Number(cfg.tfsa0 || 0);
 
     const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const gN = 1 + (cfg.return_rate || 0);             // TFSA/RRSP gross
-    const gT = 1 + (cfg.return_rate || 0) * (1 - d);   // Taxable net of drag
+    const gN = 1 + (cfg.return_rate || 0);
+    const gT = 1 + (cfg.return_rate || 0) * (1 - d);
 
     let save = Number(cfg.annual_saving || 0);
     const lm  = liqMap(cfg.asset_liquidations);
@@ -4505,7 +4499,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return rows;
   }
 
-  // ---------------- CSV helper ----------------
+  // ---------- CSV ----------
   function toCSV(rows, cols) {
     if (!rows?.length) return "";
     const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
@@ -4524,7 +4518,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
   ];
 
-  // ---------------- Next-$1 analyzer ----------------
+  // ---------- Next-$1 ----------
   function nextDollar() {
     const cfg  = buildCfgLight();
     const age  = cfg.retirement_age;
@@ -4541,7 +4535,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const t_oas = Math.max(0, (claw(baseIncome + 1000) - claw(baseIncome)) / 1000);
 
     const rrsp_marg    = r_tax + t_oas;
-    const taxable_marg = t_oas; // OAS-only
+    const taxable_marg = t_oas;
 
     $("n1_rrsp").textContent    = `RRSP marginal ≈ ${(rrsp_marg*100).toFixed(1)}% (tax ${(r_tax*100).toFixed(1)}% + OAS ${(t_oas*100).toFixed(1)}%)`;
     $("n1_taxable").textContent = `Taxable marginal ≈ ${(taxable_marg*100).toFixed(1)}% (OAS-only)`;
@@ -4550,21 +4544,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     $("n1_oas").textContent  = headroom > 0 ? `OAS headroom ≈ $${headroom.toLocaleString()}` : `Already over OAS threshold by $${Math.abs(headroom).toLocaleString()}`;
     $("n1_hint").textContent = headroom > 0
       ? "Tip: Use RRSP inside headroom (soak high-penalty dollars), then Taxable within cheap room, then TFSA."
-      : "Tip: With no headroom, prefer TFSA, then Taxable; RRSP last (highest marginal).";
+      : "Tip: With no headroom, prefer TFSA, then Taxable; RRSP last.";
   }
 
-  // ---------------- Optimizer driver ----------------
+  // ---------- optimizer driver ----------
   async function runOptimizerIfEnabled() {
     try {
       if (!document.getElementById("opt_toggle")?.checked) return;
 
       const cfg = buildCfgLight();
 
-      // (1) pre-ret rows
       const preRows = buildPreRetRows(cfg);
       const preLast = preRows[preRows.length - 1] || null;
 
-      // (2) ask backend for retirement skeleton
       const res = await fetch("/lite_v1/optimize", {
         method: "POST",
         credentials: "same-origin",
@@ -4586,17 +4578,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         return;
       }
 
-      // (3) rebuild retirement path deterministically (WITHDRAW -> OVERLAY -> GROW)
       const br = cfg.tax_brackets;
       const bracketsOn = !!(br && (br.enabled || br.bands));
       const flatRate   = cfg.income_tax_rate || 0;
 
       const rAfter   = (cfg.return_rate_after || 0);
       const drag     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-      const gN = 1 + rAfter;                // TFSA/RRSP growth
-      const gT = 1 + rAfter * (1 - drag);   // Taxable net growth
+      const gN = 1 + rAfter;
+      const gT = 1 + rAfter * (1 - drag);
 
-      // balances at retirement start (from our pre-run)
       let tBal  = preLast ? Number(preLast.End_Taxable || 0) : Number(baseRows[0]?.End_Taxable || 0);
       let tfBal = preLast ? Number(preLast.End_TFSA || 0)    : Number(baseRows[0]?.End_TFSA || 0);
       let rrBal = preLast ? Number(preLast.End_RRSP || 0)    : Number(baseRows[0]?.End_RRSP || 0);
@@ -4607,71 +4597,86 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       for (const r of baseRows) {
         const age = Number(r.Age);
 
-        // --- opening balances
+        // opening balances
         const t0  = tBal, f0 = tfBal, rr0 = rrBal;
 
-        // --- backend suggestions (NET taxable, NET TFSA, GROSS RRSP)
-        let netTaxable     = Number(r.From_Taxable || 0);
-        let netTFSA        = Number(r.From_TFSA || 0);
+        // planned (from backend)
+        let netTaxable = Number(r.From_Taxable || 0);
+        let netTFSA    = Number(r.From_TFSA || 0);
         let rrspSpendGross = Number(r.From_RRSP_Gross || 0);
 
-        // --- TFSA-last dominance: spend Taxable before TFSA if any taxable exists
+        // TFSA-last dominance
         if (netTFSA > 0 && t0 > 0) {
           const shift = Math.min(netTFSA, t0);
           netTaxable += shift;
           netTFSA    -= shift;
         }
 
-        // --- base incomes
+        // incomes
         const cppIncome = cppAtAge(cfg, age);
         const oasGross  = oasGrossAtAge(cfg, age);
 
-        // --- taxable spending gross-up (flat mode ONLY)
+        // RRIF minimum (gross)
+        let rrspMinExtraGross = 0, rrspMinTax = 0;
+        let rrspMinNetToTaxable = 0;
+
+        if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age) {
+          const mustGross = rr0 * rrifMinPct(age);
+          if (rrspSpendGross < mustGross) {
+            rrspMinExtraGross = mustGross - rrspSpendGross;
+
+            // tax on the forced-min extra computed at the *current* base
+            const baseForTax = (bracketsOn ? (netTaxable) : 0) + cppIncome + oasGross + rrspSpendGross;
+            rrspMinTax = incrTax(rrspMinExtraGross, baseForTax, br, flatRate);
+            rrspMinNetToTaxable = Math.max(0, rrspMinExtraGross - rrspMinTax);
+
+            // -------- FIX: offset forced RRIF-net against planned withdrawals --------
+            // 1) reduce planned taxable withdrawal
+            const offTax = Math.min(netTaxable, rrspMinNetToTaxable);
+            netTaxable -= offTax;
+            rrspMinNetToTaxable -= offTax;
+
+            // 2) reduce planned TFSA withdrawal
+            const offTFSA = Math.min(netTFSA, rrspMinNetToTaxable);
+            netTFSA -= offTFSA;
+            rrspMinNetToTaxable -= offTFSA;
+            // Only any leftover rrspMinNetToTaxable will flow into Taxable below.
+            // ------------------------------------------------------------------------
+          }
+        }
+
+        // taxable gross-up (only when using flat rate, after offsets)
         const grossTaxableSpend = (bracketsOn || flatRate <= 0)
           ? netTaxable
           : (netTaxable > 0 ? (netTaxable / (1 - flatRate)) : 0);
 
-        // --- RRIF minimum enforcement
-        let rrspMinExtraGross = 0, rrspMinTax = 0, rrspMinNetToTaxable = 0;
-        if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age) {
-          const mustGross = rr0 * rrifMinPct(age);
-          if (rrspSpendGross < mustGross) {
-            rrspMinExtraGross   = mustGross - rrspSpendGross;
-            const baseForTax    = grossTaxableSpend + cppIncome + oasGross + rrspSpendGross;
-            rrspMinTax          = incrTax(rrspMinExtraGross, baseForTax, br, flatRate);
-            rrspMinNetToTaxable = Math.max(0, rrspMinExtraGross - rrspMinTax);
-          }
-        }
-
-        // --- OAS clawback (display)
+        // OAS clawback (display)
         const oasClaw = oasClawback(cfg, age, grossTaxableSpend, rrspSpendGross + rrspMinExtraGross, cppIncome);
         const oasNet  = Math.max(0, oasGross - oasClaw);
 
-        // --- RRSP tax on SPEND (not on the RRIF-min extra gross – that is handled above)
+        // RRSP tax on planned SPEND only
         const rrspTax = rrspSpendGross > 0 ? Math.round(incrTax(rrspSpendGross, grossTaxableSpend + cppIncome + oasGross, br, flatRate)) : 0;
 
-        // --- overlay to charge to Taxable this year
+        // overlay charged to Taxable
         const spendOverlayFlat = (!bracketsOn && flatRate > 0) ? Math.max(0, grossTaxableSpend - netTaxable) : 0;
         const rrifOverlayShown = bracketsOn ? ((drag === 0) ? rrspMinTax : 0) : rrspMinTax;
         const totalOverlay     = spendOverlayFlat + rrifOverlayShown;
 
-        // --- apply withdrawals BEFORE growth
-        let tAfter   = Math.max(0, t0 - netTaxable - totalOverlay + rrspMinNetToTaxable);
-        let fAfter   = Math.max(0, f0 - netTFSA);
-        let rrAfter  = Math.max(0, rr0 - rrspSpendGross - rrspMinExtraGross);
+        // apply withdrawals BEFORE growth
+        let tAfter  = Math.max(0, t0 - netTaxable - totalOverlay + rrspMinNetToTaxable);
+        let fAfter  = Math.max(0, f0 - netTFSA);
+        let rrAfter = Math.max(0, rr0 - rrspSpendGross - rrspMinExtraGross);
 
-        // --- taxable drag computed on post-withdraw, pre-growth taxable
+        // drag on post-withdraw pre-growth taxable
         const taxDragAmt = tAfter * rAfter * drag;
 
-        // --- grow to end-of-year
+        // grow to end-of-year
         tBal  = tAfter * gT;
         tfBal = fAfter * gN;
         rrBal = rrAfter * gN;
 
-        // --- accumulate overlay for reporting
         cumOverlay += totalOverlay;
 
-        // --- write row
         rows.push({
           Age: age,
           From_Taxable: Math.round(netTaxable),
@@ -4701,18 +4706,14 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         });
       }
 
-      // (4) stitch series and stash
       const full = [...preRows, ...rows];
       window.__optRows = full;
       window.__optCfg  = cfg;
 
-      // (5) summary
       const last = full[full.length - 1];
       $("opt_summary").textContent =
-        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} ` +
-        `(after tax-on-taxable overlay $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`;
+        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (overlay $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`;
 
-      // (6) small rationale: first 3 retirement years
       const firstRet = rows.slice(0, 3);
       const r0 = firstRet.map(r =>
         `Age ${r.Age}: TFSA $${r.From_TFSA.toLocaleString()}, RRSP(g) $${r.From_RRSP_Gross.toLocaleString()}, ` +
@@ -4720,7 +4721,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       ).join(" • ");
       $("opt_rationale").textContent = r0 || "See table for per-year mix.";
 
-      // (7) CSV button (once)
       if (!$("#opt_csv_btn")) {
         const btn = document.createElement("button");
         btn.id = "opt_csv_btn";
@@ -4744,7 +4744,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     }
   }
 
-  // ---------------- wiring ----------------
+  // ---------- wiring ----------
   $("litev1_run")?.addEventListener("click", () => {
     try { nextDollar(); } catch(_) {}
     setTimeout(runOptimizerIfEnabled, 120);
@@ -4760,6 +4760,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (beta) =================================================== -->
+
 
 
 
