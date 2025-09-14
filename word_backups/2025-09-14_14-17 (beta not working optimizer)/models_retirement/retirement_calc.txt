@@ -522,6 +522,427 @@ def run_lite_tax_det_rrif_v1(p: LiteV1TaxRrifParams) -> Dict[str, Any]:
 
 
 
+# === APPEND-ONLY: Tax-Aware Withdrawal Optimizer v1 ==========================
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+import math
+
+@dataclass
+class OptimizerCfgV1:
+    # Ages & timing
+    current_age: int
+    retirement_age: int
+    life_expectancy: int
+
+    # Calendar (for TFSA cap growth; optional)
+    start_year: int = field(default_factory=lambda: datetime.now().year)
+    tfsa_cagr_after_2025: float = 0.021  # 2.1% growth of cap from 2026+
+
+    # Balances at "today"
+    taxable0: float = 0.0
+    rrsp0: float = 0.0
+    tfsa0: float = 0.0
+
+    # Pre-retirement contributions (targets)
+    annual_saving: float = 0.0
+    saving_increase_rate: float = 0.0
+    pre_tfsa_annual: float = 7000.0
+    pre_rrsp_annual: float = 0.0
+
+    # Economics
+    annual_expense: float = 0.0
+    return_rate: float = 0.05
+    return_rate_after: float = 0.05
+    inflation_rate: float = 0.02
+
+    # Tax model (lite, bracket mode preferred)
+    tax_brackets: Optional[Dict[str, Any]] = None  # {"enabled":True,"bands":[{"limit":..,"rate":..},...]}
+    income_tax_rate: float = 0.25  # used only if brackets are OFF (flat)
+
+    # CPP / OAS
+    cpp_monthly: float = 0.0
+    cpp_start_age: int = 0
+    cpp_end_age: int = 0
+
+    oas_monthly: float = 0.0
+    oas_start_age: int = 0
+    oas_threshold: float = 0.0
+    oas_clawback_rate: float = 0.0
+    oas_index: bool = True  # index OAS with inflation from start age
+
+    rrif_start_age: int = 0
+
+    # Taxable friction on growth only (already in your UI)
+    taxable_drag: float = 0.0
+
+    # Allow UI payload key for lump-sum cash-ins
+    asset_liquidations: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Optimizer knobs
+    tfsa_penalty_rate: float = 0.01   # tiny "option value" penalty so TFSA isn't always first
+    step_net: float = 500.0           # net dollar step for greedy solver
+
+
+# ---------- helpers (mirror your JS semantics) ----------
+def _rrif_min_pct_exact(age: int) -> float:
+    t = {71:0.0528,72:0.0540,73:0.0553,74:0.0567,75:0.0582,76:0.0598,77:0.0617,78:0.0636,79:0.0658,
+         80:0.0682,81:0.0708,82:0.0738,83:0.0771,84:0.0808,85:0.0851,86:0.0899,87:0.0955,88:0.1021,
+         89:0.1099,90:0.1192,91:0.1306,92:0.1449,93:0.1634,94:0.1879}
+    if age >= 95: return 0.20
+    if age >= 71: return float(t.get(int(age), 0.0))
+    return 1.0 / max(1, 90 - int(age))
+
+def _tax_from_brackets(income: float, br: Optional[Dict[str, Any]]) -> float:
+    """Total tax for 'income' using progressive bands. Safe against None/NaN/Infinity from JSON."""
+    if not br or not br.get("bands"):
+        return 0.30 * max(0.0, income)  # fallback
+
+    def sfloat(x, default=0.0):
+        try:
+            if x is None:
+                return default
+            v = float(x)
+            return v if math.isfinite(v) else default
+        except Exception:
+            return default
+
+    def limit_or_inf(x):
+        try:
+            if x is None:
+                return math.inf
+            v = float(x)
+            return v if math.isfinite(v) else math.inf
+        except Exception:
+            return math.inf
+
+    y = max(0.0, float(income))
+    tax = 0.0
+    prev = 0.0
+    bands = br.get("bands", [])
+
+    for b in bands:
+        limit = limit_or_inf(b.get("limit"))
+        rate  = max(0.0, sfloat(b.get("rate"), 0.0))
+        upto  = min(y, limit)
+        if upto > prev:
+            tax += (upto - prev) * rate
+        if y <= limit:
+            return tax
+        prev = limit
+
+    last_rate = max(0.0, sfloat(bands[-1].get("rate"), 0.0)) if bands else 0.0
+    return tax + max(0.0, y - prev) * last_rate
+
+
+def _incremental_tax(delta: float, base: float, br: Optional[Dict[str, Any]], flat_rate: float) -> float:
+    d = max(0.0, float(delta))
+    b = max(0.0, float(base))
+    if br and (br.get("enabled") or br.get("bands")):
+        return max(0.0, _tax_from_brackets(b + d, br) - _tax_from_brackets(b, br))
+    # flat mode
+    return d * max(0.0, min(0.90, float(flat_rate)))
+
+def _oas_gross_at_age(cfg: OptimizerCfgV1, age: int) -> float:
+    if not cfg.oas_monthly or not cfg.oas_start_age or age < cfg.oas_start_age: return 0.0
+    years = max(0, age - int(cfg.oas_start_age))
+    factor = (1.0 + cfg.inflation_rate) ** years if cfg.oas_index else 1.0
+    return float(cfg.oas_monthly) * 12.0 * factor
+
+def _oas_claw(income: float, cfg: OptimizerCfgV1, age: int) -> float:
+    if cfg.oas_threshold <= 0 or cfg.oas_clawback_rate <= 0: return 0.0
+    oas_g = _oas_gross_at_age(cfg, age)
+    claw = max(0.0, float(income) - float(cfg.oas_threshold)) * float(cfg.oas_clawback_rate)
+    return min(claw, oas_g)
+
+def _living_expense(cfg: OptimizerCfgV1, age: int) -> float:
+    n = max(0, int(age) - int(cfg.current_age))
+    return float(cfg.annual_expense) * ((1.0 + float(cfg.inflation_rate)) ** n)
+
+def _cpp_at_age(cfg: OptimizerCfgV1, age: int) -> float:
+    if not cfg.cpp_monthly or age < cfg.cpp_start_age or age > cfg.cpp_end_age: return 0.0
+    n = max(0, int(age) - int(cfg.cpp_start_age))
+    return float(cfg.cpp_monthly) * 12.0 * ((1.0 + float(cfg.inflation_rate)) ** n)
+
+def _tfsa_cap_for_year(year: int, cfg: OptimizerCfgV1) -> float:
+    base = max(0.0, float(cfg.pre_tfsa_annual))
+    if year <= 2025: return base
+    yrs = max(0, int(year) - 2025)
+    return base * ((1.0 + float(cfg.tfsa_cagr_after_2025)) ** yrs)
+
+def _liq_map(liqs: List[Dict[str, Any]]) -> Dict[int, float]:
+    m: Dict[int, float] = {}
+    for x in liqs or []:
+        try:
+            a = int(x.get("age", -1)); amt = float(x.get("amount", 0.0))
+            if a >= 0 and amt:
+                m[a] = m.get(a, 0.0) + amt
+        except Exception:
+            pass
+    return m
+
+def _preroll_to_retirement_py(cfg: OptimizerCfgV1, liqs: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Mirror your JS pre-roll, including TFSA->RRSP->Taxable split and taxable drag on growth."""
+    age = int(cfg.current_age)
+    r_age = int(cfg.retirement_age)
+    taxable = float(cfg.taxable0)
+    rrsp = float(cfg.rrsp0)
+    tfsa = float(cfg.tfsa0)
+
+    lm = _liq_map(liqs)
+    d = max(0.0, min(1.0, float(cfg.taxable_drag)))
+    gN = 1.0 + float(cfg.return_rate)
+    gT = 1.0 + float(cfg.return_rate) * (1.0 - d)
+
+    save = float(cfg.annual_saving)
+    while age < r_age:
+        # grow start-of-year
+        taxable *= gT
+        rrsp *= gN
+        tfsa *= gN
+
+        # contribution split for this calendar year
+        year = int(cfg.start_year) + (age - int(cfg.current_age))
+        tfsa_cap = _tfsa_cap_for_year(year, cfg)
+        rrsp_cap = max(0.0, float(cfg.pre_rrsp_annual))
+        to_tfsa = min(save, tfsa_cap)
+        after_tfsa = max(0.0, save - to_tfsa)
+        to_rrsp = min(after_tfsa, rrsp_cap)
+        to_tax = max(0.0, after_tfsa - to_rrsp)
+
+        tfsa += to_tfsa
+        rrsp += to_rrsp
+        taxable += to_tax
+
+        # one-off liquidation
+        if age in lm:
+            taxable += lm[age]
+
+        # next year's savings growth
+        save *= (1.0 + float(cfg.saving_increase_rate))
+        age += 1
+
+    return {"taxable": taxable, "rrsp": rrsp, "tfsa": tfsa}
+
+# ---------- core: per-year greedy optimizer ----------
+def _optimize_year(need_net: float,
+                   balances: Dict[str, float],
+                   age: int,
+                   cfg: OptimizerCfgV1,
+                   base_income_prefix: float) -> Dict[str, Any]:
+    """
+    Choose RRSP/Taxable/TFSA in small steps to meet need_net while minimizing (tax + OAS clawback).
+    - Taxes on RRSP spending are *not* funded from assets in bracket mode (matches your table).
+    - Tax on taxable spend is ignored (your current bracket mode ignores it); but taxable draws
+      do increase 'income' for OAS purposes (matches your current JS).
+    """
+    step_net = max(50.0, float(cfg.step_net))
+    br = cfg.tax_brackets if (cfg.tax_brackets and (cfg.tax_brackets.get("enabled") or cfg.tax_brackets.get("bands"))) else None
+    flat = float(cfg.income_tax_rate)
+
+    t = float(balances.get("taxable", 0.0))
+    f = float(balances.get("tfsa", 0.0))
+    r = float(balances.get("rrsp", 0.0))
+
+    # results
+    draw_tax = draw_tfsa = draw_rrsp_g = 0.0
+    tax_rrsp_total = 0.0
+
+    # any forced RRIF minimum first (deposit net to taxable; tax on RRIF min computed via brackets/flat)
+    rrif_min_pct = _rrif_min_pct_exact(age) if (cfg.rrif_start_age and age >= int(cfg.rrif_start_age)) else 0.0
+    if rrif_min_pct > 0 and r > 0:
+        must_gross = r * rrif_min_pct
+        base_before = base_income_prefix  # CPP+OAS+previous draws (none yet)
+        extra_tax = _incremental_tax(must_gross, base_before, br, flat)
+        extra_oas = _oas_claw(base_before + must_gross, cfg, age) - _oas_claw(base_before, cfg, age)
+        # net from forced min goes to taxable
+        net = must_gross - extra_tax - max(0.0, extra_oas)
+        net = max(0.0, net)
+        r -= must_gross
+        t += net
+        tax_rrsp_total += extra_tax
+        # forced RRIF income also raises the 'income prefix' for subsequent choices
+        base_income_prefix += must_gross
+        # NOTE: OAS clawback from forced min is shown in per-year OAS section below
+
+    need = max(0.0, float(need_net))
+
+    while need > 1e-6 and (t + f + r) > 0:
+        # base income for marginal calculations = CPP + OAS + prior taxable/RRSP draws this year
+        base_inc = base_income_prefix + draw_tax + draw_rrsp_g
+
+        # candidate: RRSP small gross chunk that nets approx 'step_net' (cap by balance)
+        # do a small gross try; if rate is high it won't net step_net but that's ok
+        rrsp_g_try = min(r, max(step_net / (1.0 - max(0.0, flat if not br else 0.0)), 500.0))
+        tax_rrsp_inc = _incremental_tax(rrsp_g_try, base_inc, br, flat)
+        oas_inc_rrsp = _oas_claw(base_inc + rrsp_g_try, cfg, age) - _oas_claw(base_inc, cfg, age)
+        rrsp_net = max(0.0, rrsp_g_try - tax_rrsp_inc - max(0.0, oas_inc_rrsp))
+        rrsp_cost_per_net = (tax_rrsp_inc + max(0.0, oas_inc_rrsp)) / (rrsp_net + 1e-9) if rrsp_net > 0 else float("inf")
+
+        # candidate: Taxable step == step_net net, but OAS may rise
+        tax_g_try = min(t, step_net)
+        oas_inc_tax = _oas_claw(base_inc + tax_g_try, cfg, age) - _oas_claw(base_inc, cfg, age)
+        tax_net = tax_g_try  # no direct tax modeled on taxable spend in your table
+        tax_cost_per_net = (max(0.0, oas_inc_tax)) / (tax_net + 1e-9) if tax_net > 0 else float("inf")
+
+        # candidate: TFSA step
+        tfsa_net = min(f, step_net)
+        tfsa_cost_per_net = cfg.tfsa_penalty_rate  # tiny penalty to avoid burning TFSA unless helpful
+
+        # pick the cheapest marginal source
+        picks = [
+            ("rrsp", rrsp_cost_per_net, rrsp_net, rrsp_g_try),
+            ("taxable", tax_cost_per_net, tax_net, tax_g_try),
+            ("tfsa", tfsa_cost_per_net, tfsa_net, tfsa_net)
+        ]
+        picks.sort(key=lambda x: x[1])
+        src, _, net_take, gross_take = picks[0]
+
+        if net_take <= 1e-9:
+            # nothing useful from chosen source; break to avoid infinite loop
+            break
+
+        if src == "rrsp":
+            # commit RRSP chunk
+            r -= gross_take
+            draw_rrsp_g += gross_take
+            tax_rrsp_total += tax_rrsp_inc
+            need -= net_take
+            base_income_prefix += gross_take
+        elif src == "taxable":
+            t -= gross_take
+            draw_tax += gross_take
+            need -= net_take
+            base_income_prefix += gross_take
+        else:
+            # TFSA
+            f -= gross_take
+            draw_tfsa += gross_take
+            need -= net_take
+            # base income unchanged
+
+    # OAS bookkeeping for display
+    cpp_val = _cpp_at_age(cfg, age)
+    oas_g = _oas_gross_at_age(cfg, age)
+    income_for_oas = base_income_prefix  # includes CPP+OAS+draws (we already added CPP+OAS via prefix upstream)
+    oas_claw = _oas_claw(income_for_oas, cfg, age)
+    oas_net = max(0.0, oas_g - oas_claw)
+
+    # end-of-year growth
+    d = max(0.0, min(1.0, float(cfg.taxable_drag)))
+    gN = 1.0 + float(cfg.return_rate_after)
+    gT = 1.0 + float(cfg.return_rate_after) * (1.0 - d)
+
+    # (overlay tax: in bracket mode we do NOT fund RRSP tax from assets; parity with your table)
+    # Forced RRIF min tax already counted in tax_rrsp_total; in JS you optionally "overlay" that from taxable when drag==0.
+    # Here we simply report tax_rrsp_total; front-end can choose where to show it.
+
+    # liquidations at this age happen after withdrawals, before growth
+    # (handled in the driver which knows liq_map)
+    return {
+        "Age": age,
+        "From_Taxable": round(draw_tax),
+        "From_TFSA": round(draw_tfsa),
+        "From_RRSP_Gross": round(draw_rrsp_g),
+        "Tax_On_RRSP": round(tax_rrsp_total),
+        "OAS_Gross": round(oas_g),
+        "OAS_Clawback": round(oas_claw),
+        "OAS_Net": round(oas_net),
+        "EndBalancesBeforeGrowth": {"taxable": t, "tfsa": f, "rrsp": r}
+    }
+
+def optimize_withdrawals_v1(cfg_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Standalone runner:
+      - Pre-rolls to retirement using the same TFSA→RRSP→Taxable split and taxable-drag semantics
+      - Runs greedy per-year optimizer with RRIF/OAS/brackets awareness
+      - Returns rows that mirror your table fields, plus End_* after growth
+    """
+    cfg = OptimizerCfgV1(**cfg_dict)
+
+    # Prefer the dataclass field; accept legacy misspelling as fallback
+    liqs: List[Dict[str, Any]] = (
+        cfg.asset_liquidations
+        or cfg_dict.get("asset_liquidizations")
+        or []
+    )
+
+    # pre-roll to retirement (compute balances at retirement age start)
+    pre = _preroll_to_retirement_py(cfg, liqs)
+    taxable = pre["taxable"]; rrsp = pre["rrsp"]; tfsa = pre["tfsa"]
+
+    rows: List[Dict[str, Any]] = []
+    lm = _liq_map(liqs)
+
+    for age in range(int(cfg.retirement_age), int(cfg.life_expectancy) + 1):
+        expense = _living_expense(cfg, age)
+        cpp_val = _cpp_at_age(cfg, age)
+        oas_g = _oas_gross_at_age(cfg, age)
+
+        # baseline (CPP + OAS gross) counted in base_income_prefix for OAS/tax marginal math
+        base_income_prefix = (cpp_val or 0.0) + (oas_g or 0.0)
+
+        need_net = max(0.0, expense - cpp_val - oas_g)
+
+        # optimize this year
+        result = _optimize_year(
+            need_net=need_net,
+            balances={"taxable": taxable, "tfsa": tfsa, "rrsp": rrsp},
+            age=age,
+            cfg=cfg,
+            base_income_prefix=base_income_prefix
+        )
+
+        # apply one-off liquidation before growth
+        EB = result["EndBalancesBeforeGrowth"]
+        t = EB["taxable"]; f = EB["tfsa"]; r = EB["rrsp"]
+        if age in lm: t += lm[age]
+
+        # grow to end-of-year (taxable drag only on Taxable)
+        d = max(0.0, min(1.0, float(cfg.taxable_drag)))
+        gN = 1.0 + float(cfg.return_rate_after)
+        gT = 1.0 + float(cfg.return_rate_after) * (1.0 - d)
+        t0 = t
+        t = t0 * gT; f *= gN; r *= gN
+        end_total = t + f + r
+
+        row = {
+            "Age": age,
+            "From_Taxable": result["From_Taxable"],
+            "From_TFSA": result["From_TFSA"],
+            "From_RRSP_Gross": result["From_RRSP_Gross"],
+            "RRIF_Min_Pct": (f"{_rrif_min_pct_exact(age)*100:.2f}%" if cfg.rrif_start_age and age >= int(cfg.rrif_start_age) else "0.00%"),
+            "OAS_Gross": result["OAS_Gross"],
+            "OAS_Clawback": result["OAS_Clawback"],
+            "OAS_Net": result["OAS_Net"],
+            "Tax_On_Taxable": 0,  # you can overlay RRIF-min tax from taxable in UI if desired
+            "Tax_On_RRSP": result["Tax_On_RRSP"],
+            "Taxable_Drag": round((t0 * (cfg.return_rate_after) * d) if d > 0 else 0),
+            "End_Taxable": round(t),
+            "End_TFSA": round(f),
+            "End_RRSP": round(r),
+            "End_Total": round(end_total),
+        }
+        rows.append(row)
+
+        # carry balances forward
+        taxable, tfsa, rrsp = t, f, r
+
+    earliest = None
+    for r in rows:
+        if float(r["End_Total"]) <= 0:
+            earliest = int(r["Age"]); break
+
+    return {
+        "ok": True,
+        "rows": rows,
+        "earliest_depletion_age": earliest,
+        "notes": "v1 greedy optimizer; RRSP-tax via brackets/flat, OAS clawback aware; TFSA tiny penalty to preserve option value."
+    }
+# === END APPEND-ONLY: Tax-Aware Withdrawal Optimizer v1 ======================
+
+
+
 
 
 
