@@ -4399,6 +4399,17 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   }
 
   // ---------------- tiny financial helpers ----------------
+  function rrifMinPct(age){
+    const t = {
+      71: 0.0528, 72: 0.0540, 73: 0.0553, 74: 0.0567, 75: 0.0582, 76: 0.0598, 77: 0.0617, 78: 0.0636, 79: 0.0658,
+      80: 0.0682, 81: 0.0708, 82: 0.0738, 83: 0.0771, 84: 0.0808, 85: 0.0851, 86: 0.0899, 87: 0.0955, 88: 0.1021,
+      89: 0.1099, 90: 0.1192, 91: 0.1306, 92: 0.1449, 93: 0.1634, 94: 0.1879
+    };
+    if (age >= 95) return 0.20;
+    if (age >= 71) return t[age] || 0;
+    return 1 / (90 - age);
+  }
+
   function oasGrossAtAge(cfg, age) {
     if (!cfg.oas_monthly || !cfg.oas_start_age || age < cfg.oas_start_age) return 0;
     const years  = Math.max(0, age - cfg.oas_start_age);
@@ -4422,7 +4433,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   function oasClawback(cfg, age, grossTaxable, rrspGross, cpp) {
     if (!cfg.oas_monthly || !cfg.oas_start_age || age < cfg.oas_start_age) return 0;
     const gross = oasGrossAtAge(cfg, age);
-    const baseIncome = (grossTaxable || 0) + (rrspGross || 0) + (cpp || 0);
+    const baseIncome = (grossTaxable || 0) + (rrspGross || 0) + (cpp || 0) + gross;
     const thr = Number.isFinite(cfg.oas_threshold) ? cfg.oas_threshold : Infinity;
     const excess = Math.max(0, baseIncome - thr);
     return Math.min(gross, excess * (cfg.oas_clawback_rate || 0));
@@ -4574,14 +4585,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         return;
       }
 
-      // (3) rebuild each retirement year deterministically
-      const flatRate = Math.max(0, Math.min(0.90, (Number(document.getElementById("litev1_income_tax")?.value) || 0) / 100));
+      // (3) rebuild each retirement year deterministically (Withdraw -> overlay -> Grow)
+      const br = cfg.tax_brackets;
+      const bracketsOn = !!(br && (br.enabled || br.bands));
+      const flatRate   = cfg.income_tax_rate || 0;
+
       const rAfter   = (cfg.return_rate_after || 0);
       const drag     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-      const rTaxableNet = rAfter * (1 - drag);
-
-      const br = cfg.tax_brackets;
-      const flat = cfg.income_tax_rate;
+      const gN = 1 + rAfter;
+      const gT = 1 + rAfter * (1 - drag);
 
       // balances at retirement start (from our pre-run)
       let tBal  = preLast ? Number(preLast.End_Taxable || 0) : Number(baseRows[0]?.End_Taxable || 0);
@@ -4594,47 +4606,79 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       for (const r of baseRows) {
         const age = Number(r.Age);
 
-        // ---- grow balances at start of year
-        const taxDragAmt = tBal * rAfter * drag;
-        tBal  = tBal  * (1 + rTaxableNet);
-        tfBal = tfBal * (1 + rAfter);
-        rrBal = rrBal * (1 + rAfter);
+        // ----- opening balances BEFORE any withdrawals
+        const t0 = tBal, f0 = tfBal, rr0 = rrBal;
 
-        // ---- backend suggestions (NET taxable, NET tfsa, GROSS rrsp)
+        // ---- backend suggestions (NET taxable, NET TFSA, GROSS RRSP spend)
         let netTaxable = Number(r.From_Taxable || 0);
         let netTFSA    = Number(r.From_TFSA || 0);
-        const rrspGross= Number(r.From_RRSP_Gross || 0);
+        let rrspSpendGross = Number(r.From_RRSP_Gross || 0);
 
         // ---- TFSA-last dominance: if there's taxable balance, replace TFSA with extra taxable
-        if (netTFSA > 0 && tBal > 0) {
-          netTaxable += netTFSA;
-          netTFSA = 0;
+        if (netTFSA > 0 && t0 > 0) {
+          const shift = Math.min(netTFSA, t0);
+          netTaxable += shift;
+          netTFSA    -= shift;
         }
 
-        // ---- convert taxable to GROSS and compute overlay
-        const grossTaxable = (netTaxable > 0 && flatRate > 0) ? (netTaxable / (1 - flatRate)) : netTaxable;
-        const taxOnTaxable = Math.max(0, Math.round(grossTaxable - netTaxable));
-        cumOverlay += taxOnTaxable;
-
-        // ---- OAS/CPP and RRSP tax only when RRSP > 0
+        // ---- base incomes
         const cppIncome = cppAtAge(cfg, age);
         const oasGross  = oasGrossAtAge(cfg, age);
-        const oasClaw   = oasClawback(cfg, age, grossTaxable, rrspGross, cppIncome);
-        const oasNet    = Math.max(0, oasGross - oasClaw);
-        const rrspTax   = rrspGross > 0 ? Math.round(incrTax(rrspGross, grossTaxable + cppIncome + oasNet, br, flat)) : 0;
 
-        // ---- apply withdrawals
-        tBal  = Math.max(0, tBal  - grossTaxable);
-        tfBal = Math.max(0, tfBal - netTFSA);
-        rrBal = Math.max(0, rrBal - rrspGross);
+        // ---- taxable spending gross-up (flat mode only)
+        const grossTaxableSpend = (bracketsOn || flatRate <= 0)
+          ? netTaxable
+          : (netTaxable > 0 ? (netTaxable / (1 - flatRate)) : 0);
+        const spendOverlay = Math.max(0, grossTaxableSpend - netTaxable); // tax paid from Taxable in flat mode
 
-        // ---- end-of-year snapshot
+        // ---- RRIF minimum check (extra gross if spend < must)
+        let rrspMinExtraGross = 0, rrspMinTax = 0, rrspMinNetToTaxable = 0;
+        if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age) {
+          const mustGross = rr0 * rrifMinPct(age);
+          if (rrspSpendGross < mustGross) {
+            rrspMinExtraGross = mustGross - rrspSpendGross;
+            const baseForTax  = grossTaxableSpend + cppIncome + oasGross + rrspSpendGross;
+            rrspMinTax        = incrTax(rrspMinExtraGross, baseForTax, br, flatRate);
+            rrspMinNetToTaxable = rrspMinExtraGross - rrspMinTax;
+          }
+        }
+
+        // ---- OAS clawback (for display)
+        const oasClaw = oasClawback(cfg, age, grossTaxableSpend, rrspSpendGross + rrspMinExtraGross, cppIncome);
+        const oasNet  = Math.max(0, oasGross - oasClaw);
+
+        // ---- RRSP tax on SPEND only (not RRIF-min extra)
+        const rrspTax = rrspSpendGross > 0 ? Math.round(incrTax(rrspSpendGross, grossTaxableSpend + cppIncome + oasGross, br, flatRate)) : 0;
+
+        // ---- overlay to subtract from Taxable:
+        //      - flat mode: spend overlay + RRIF-min tax
+        //      - bracket mode: only RRIF-min tax, and only shown/charged when drag==0 (mirrors main engine display)
+        const rrifOverlay = bracketsOn ? ((drag === 0) ? rrspMinTax : 0) : rrspMinTax;
+        const totalOverlay = spendOverlay + rrifOverlay;
+
+        // ---- apply all withdrawals BEFORE growth
+        let tAfter = Math.max(0, t0 - netTaxable - totalOverlay + rrspMinNetToTaxable);
+        let fAfter = Math.max(0, f0 - netTFSA);
+        let rAfterWD = Math.max(0, rr0 - rrspSpendGross - rrspMinExtraGross);
+
+        // ---- drag computed on post-withdraw pre-growth Taxable
+        const taxDragAmt = tAfter * rAfter * drag;
+
+        // ---- grow to end-of-year
+        tBal  = tAfter * gT;
+        tfBal = fAfter * gN;
+        rrBal = rAfterWD * gN;
+
+        // ---- accumulate overlay
+        cumOverlay += totalOverlay;
+
+        // ---- end-of-year snapshot row
         rows.push({
           Age: age,
           From_Taxable: Math.round(netTaxable),
-          From_Taxable_Gross: Math.round(grossTaxable),
+          From_Taxable_Gross: Math.round(grossTaxableSpend),
           From_TFSA: Math.round(netTFSA),
-          From_RRSP_Gross: Math.round(rrspGross),
+          From_RRSP_Gross: Math.round(rrspSpendGross + rrspMinExtraGross),
 
           RRIF_Min_Pct: (cfg.rrif_start_age && age >= cfg.rrif_start_age) ? (r.RRIF_Min_Pct || "") : (r.RRIF_Min_Pct || "0.00%"),
           CPP: Math.round(cppIncome),
@@ -4642,7 +4686,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           OAS_Clawback: Math.round(oasClaw),
           OAS_Net: Math.round(oasNet),
 
-          Tax_On_Taxable: Math.round(taxOnTaxable),
+          Tax_On_Taxable: Math.round(totalOverlay),
           Tax_On_RRSP: Math.round(rrspTax),
 
           Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0, Liq_Added: 0,
@@ -4717,6 +4761,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (beta) =================================================== -->
+
 
 
 
