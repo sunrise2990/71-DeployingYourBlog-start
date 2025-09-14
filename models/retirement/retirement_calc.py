@@ -523,8 +523,9 @@ def run_lite_tax_det_rrif_v1(p: LiteV1TaxRrifParams) -> Dict[str, Any]:
 
 
 # === APPEND-ONLY: Tax-Aware Withdrawal Optimizer v1 ==========================
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
+from datetime import datetime
 import math
 
 @dataclass
@@ -535,7 +536,7 @@ class OptimizerCfgV1:
     life_expectancy: int
 
     # Calendar (for TFSA cap growth; optional)
-    start_year: int = datetime.now().year
+    start_year: int = field(default_factory=lambda: datetime.now().year)
     tfsa_cagr_after_2025: float = 0.021  # 2.1% growth of cap from 2026+
 
     # Balances at "today"
@@ -574,6 +575,9 @@ class OptimizerCfgV1:
 
     # Taxable friction on growth only (already in your UI)
     taxable_drag: float = 0.0
+
+    # Allow UI payload key for lump-sum cash-ins
+    asset_liquidations: List[Dict[str, Any]] = field(default_factory=list)
 
     # Optimizer knobs
     tfsa_penalty_rate: float = 0.01   # tiny "option value" penalty so TFSA isn't always first
@@ -832,7 +836,13 @@ def optimize_withdrawals_v1(cfg_dict: Dict[str, Any]) -> Dict[str, Any]:
       - Returns rows that mirror your table fields, plus End_* after growth
     """
     cfg = OptimizerCfgV1(**cfg_dict)
-    liqs: List[Dict[str, Any]] = cfg_dict.get("asset_liquidizations") or cfg_dict.get("asset_liquidations") or []
+
+    # Prefer the dataclass field; accept legacy misspelling as fallback
+    liqs: List[Dict[str, Any]] = (
+        cfg.asset_liquidations
+        or cfg_dict.get("asset_liquidizations")
+        or []
+    )
 
     # pre-roll to retirement (compute balances at retirement age start)
     pre = _preroll_to_retirement_py(cfg, liqs)
@@ -907,6 +917,7 @@ def optimize_withdrawals_v1(cfg_dict: Dict[str, Any]) -> Dict[str, Any]:
         "notes": "v1 greedy optimizer; RRSP-tax via brackets/flat, OAS clawback aware; TFSA tiny penalty to preserve option value."
     }
 # === END APPEND-ONLY: Tax-Aware Withdrawal Optimizer v1 ======================
+
 
 
 
