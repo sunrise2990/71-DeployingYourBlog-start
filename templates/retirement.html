@@ -4319,6 +4319,17 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const pre_tfsa_annual = numMulti("pre_tfsa_annual","tfsa_annual","litev1_tfsa_annual");
     const pre_rrsp_annual = numMulti("pre_rrsp_annual","rrsp_annual","litev1_rrsp_annual");
 
+    // collect one-off asset liquidations (correct key ONLY)
+    const asset_liquidations = (()=> {
+      const liqs = [];
+      for (let i=1;i<=3;i++){
+        const a = Number(document.getElementById(`asset_liquidation_age_${i}`)?.value||0);
+        const v = Number(document.getElementById(`asset_liquidation_${i}`)?.value||0);
+        if (a>0 && v) liqs.push({age:a, amount:v});
+      }
+      return liqs;
+    })();
+
     return {
       current_age,
       life_expectancy: end_age,
@@ -4365,19 +4376,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       step_net: 500,
       tfsa_penalty_rate: 0.01,
 
-      asset_liquidizations: (()=> { // accept either spelling
-        const liqs = [];
-        for (let i=1;i<=3;i++){
-          const a = Number(document.getElementById(`asset_liquidation_age_${i}`)?.value||0);
-          const v = Number(document.getElementById(`asset_liquidation_${i}`)?.value||0);
-          if (a>0 && v) liqs.push({age:a, amount:v});
-        }
-        return liqs;
-      })()
+      asset_liquidations // ✅ correct spelling only
     };
   }
 
-  // ---------- tiny financial helpers (mirror backend semantics) ----------
+  // ---------- tiny financial helpers ----------
   function oasGrossAtAge(cfg, age){
     if (!cfg.oas_monthly || !cfg.oas_start_age || age<cfg.oas_start_age) return 0;
     const years = Math.max(0, age - cfg.oas_start_age);
@@ -4395,8 +4398,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const yrs = Math.max(0, year - 2025);
     return base * Math.pow(1 + cfg.tfsa_cagr_after_2025, yrs);
   }
-
-  // Build a map of one-off liquidizations
   function liqMap(liqs){
     const m = {};
     (liqs||[]).forEach(x=>{
@@ -4406,7 +4407,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return m;
   }
 
-  // ---------- Pre-retirement series (year-by-year) ----------
+  // ---------- Pre-retirement series ----------
   function buildPreRetRows(cfg){
     const rows = [];
     let age = cfg.current_age;
@@ -4421,19 +4422,14 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const gT = 1 + (cfg.return_rate||0) * (1 - d);
 
     let save = Number(cfg.annual_saving||0);
-    const lm = liqMap(cfg.asset_liquidizations || cfg.asset_liquidizations || cfg.asset_liquidations);
+    const lm  = liqMap(cfg.asset_liquidations);
 
     while (age < rAge){
-      // tax drag (for visibility)
       const t_before = taxable;
       const taxDrag  = t_before * (cfg.return_rate||0) * d;
 
-      // grow start-of-year
-      taxable *= gT;
-      rrsp    *= gN;
-      tfsa    *= gN;
+      taxable *= gT; rrsp *= gN; tfsa *= gN;
 
-      // split contributions for this calendar year
       const year = Number(cfg.start_year) + (age - Number(cfg.current_age));
       const tfsa_cap = tfsaCapForYear(year, cfg);
       const rrsp_cap = Math.max(0, cfg.pre_rrsp_annual||0);
@@ -4442,41 +4438,25 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const to_rrsp  = Math.min(after_tf, rrsp_cap);
       const to_tax   = Math.max(0, after_tf - to_rrsp);
 
-      tfsa    += to_tfsa;
-      rrsp    += to_rrsp;
-      taxable += to_tax;
+      tfsa += to_tfsa; rrsp += to_rrsp; taxable += to_tax;
 
-      // one-off liquidation
       const liq = lm[age]||0;
       if (liq) taxable += liq;
 
-      // record row
       rows.push({
         Age: age,
-        From_Taxable: 0,
-        From_TFSA: 0,
-        From_RRSP_Gross: 0,
-        RRIF_Min_Pct: "0.00%",
-        CPP: 0,
-        OAS_Gross: 0,
-        OAS_Clawback: 0,
-        OAS_Net: 0,
-        Tax_On_Taxable: 0,
-        Tax_On_RRSP: 0,
-        Contrib_Taxable: Math.round(to_tax),
-        Contrib_TFSA: Math.round(to_tfsa),
-        Contrib_RRSP: Math.round(to_rrsp),
+        From_Taxable: 0, From_TFSA: 0, From_RRSP_Gross: 0,
+        Tax_On_Taxable: 0, Tax_On_RRSP: 0,
+        RRIF_Min_Pct: "0.00%", CPP: 0, OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
+        Contrib_Taxable: Math.round(to_tax), Contrib_TFSA: Math.round(to_tfsa), Contrib_RRSP: Math.round(to_rrsp),
         Liq_Added: Math.round(liq),
         Taxable_Drag: Math.round(taxDrag),
-        End_Taxable: Math.round(taxable),
-        End_TFSA: Math.round(tfsa),
-        End_RRSP: Math.round(rrsp),
-        End_Total_Raw: Math.round(taxable + tfsa + rrsp), // raw, no overlay concept pre-ret
+        End_Taxable: Math.round(taxable), End_TFSA: Math.round(tfsa), End_RRSP: Math.round(rrsp),
+        End_Total_Raw: Math.round(taxable + tfsa + rrsp),
         Cum_Tax_On_Taxable: 0,
-        End_Total: Math.round(taxable + tfsa + rrsp)       // for pre-ret, adjusted == raw
+        End_Total: Math.round(taxable + tfsa + rrsp)
       });
 
-      // next year
       save *= (1 + (cfg.saving_increase_rate||0));
       age += 1;
     }
@@ -4491,8 +4471,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const body = rows.map(r => cols.map(c => esc(r[c])).join(",")).join("\n");
     return header + "\n" + body;
   }
-
-  // CSV column order: end balances grouped at far right
   const CSV_COLS = [
     "Age",
     "From_Taxable","From_TFSA","From_RRSP_Gross",
@@ -4500,7 +4478,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "RRIF_Min_Pct","CPP","OAS_Gross","OAS_Clawback","OAS_Net",
     "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP","Liq_Added",
     "Taxable_Drag",
-    "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total" // End_Total (adjusted) last
+    "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
   ];
 
   // ---------- Next-$1 analyzer ----------
@@ -4548,7 +4526,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const res = await fetch("/lite_v1/optimize", {
         method:"POST", credentials:"same-origin",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify(cfg)
+        body: JSON.stringify(cfg) // contains asset_liquidations (correct)
       });
       const out = await res.json();
 
@@ -4565,8 +4543,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         return;
       }
 
-      // 3) augment retirement rows with overlay + visibility columns,
-      //    and compute adjusted End Totals that match the summary
+      // 3) augment retirement rows with overlay + visibility columns
       const flatOverlayRate = (Number(document.getElementById("litev1_income_tax")?.value)||0)/100;
       let cumOverlay = 0;
 
@@ -4576,7 +4553,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const oasG= Number(r.OAS_Gross||oasGrossAtAge(cfg, age));
         const oasC= Number(r.OAS_Clawback||0);
         const oasN= Number(r.OAS_Net||Math.max(0, oasG - oasC));
-        const rrspMin = (cfg.rrif_start_age && age>=cfg.rrif_start_age) ? r.RRIF_Min_Pct || "" : (r.RRIF_Min_Pct||"0.00%");
+        const rrspMin = (cfg.rrif_start_age && age>=cfg.rrif_start_age) ? (r.RRIF_Min_Pct||"") : (r.RRIF_Min_Pct||"0.00%");
 
         const taxOnTaxable = Math.round(Number(r.From_Taxable||0) * flatOverlayRate);
         cumOverlay += taxOnTaxable;
@@ -4596,10 +4573,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           OAS_Net: Math.round(oasN),
           Tax_On_Taxable: taxOnTaxable,
           Tax_On_RRSP: Number(r.Tax_On_RRSP||0),
-          Contrib_Taxable: 0,
-          Contrib_TFSA: 0,
-          Contrib_RRSP: 0,
-          Liq_Added: 0,
+          Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0, Liq_Added: 0,
           Taxable_Drag: Number(r.Taxable_Drag||0),
           End_Taxable: Number(r.End_Taxable||0),
           End_TFSA: Number(r.End_TFSA||0),
@@ -4632,7 +4606,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           : `(no OAS clawback)`)).join(" • ");
       $("opt_rationale").textContent = r0 || "See table for per-year mix.";
 
-      // 6) one-click CSV (pretty, fixed column order, includes pre-ret)
+      // 6) one-click CSV
       if (!$("opt_csv_btn")) {
         const btn = document.createElement("button");
         btn.id = "opt_csv_btn";
@@ -4651,7 +4625,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         $("opt_summary")?.parentElement?.appendChild(btn);
       }
     }catch(e){
-      $("opt_summary").textContent = "Optimizer error (network/JS).";
+      $("opt_summary").textContent = "Optimizer error: " + (e?.message || "network/JS").toString();
       $("opt_rationale").textContent = "";
     }
   }
@@ -4672,6 +4646,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (beta) =================================================== -->
+
 
 
 
