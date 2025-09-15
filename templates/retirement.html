@@ -4556,19 +4556,20 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
         const cppIncome   = cppAtAge(cfg, age);
         const oasGross    = oasGrossAtAge(cfg, age);
-        let netNeed       = Math.max(0, Number(cfg.annual_expense || 0)); // cash needed
+
+        // *** KEY FIX: inflate the annual expense from CURRENT AGE to this age ***
+        const inflFactor = Math.pow(1 + (cfg.inflation_rate || 0), Math.max(0, age - cfg.current_age));
+        let netNeed = Math.max(0, (Number(cfg.annual_expense || 0)) * inflFactor); // cash needed this year in nominal terms
 
         // In this fixed-order mirror mode we assume OAS/CPP not in play (as in your screenshots).
-        // We simply apply the withdrawal order with correct gross-up for taxes where applicable.
 
         let fromTaxableNet = 0, fromTaxableGross = 0, taxOnTaxable = 0;
         let fromTFSA = 0;
         let fromRRSPGross = 0, taxOnRRSP = 0;
 
-        // 1) TAXABLE first (gross-up if flat rate is used and brackets are OFF)
+        // 1) TAXABLE first
         if (netNeed > 0 && openTaxable > 0) {
           if (!bracketsOn) {
-            // closed-form: net = gross * (1 - flat). Limit by available gross.
             const grossNeeded = flat >= 1 ? Infinity : (netNeed / (1 - flat));
             const grossUsed   = Math.min(openTaxable, grossNeeded);
             const netGot      = grossUsed * (1 - flat);
@@ -4580,10 +4581,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
             netNeed -= netGot;
           } else {
-            // bracketed mode: simple small step loop (still taxable-first)
             let grossAvail = openTaxable;
-            let base = 0; // no other ordinary income in your screenshots
-            const step = Math.min(5000, Math.max(500, netNeed)); // coarse but deterministic
+            let base = 0;
+            const step = Math.min(5000, Math.max(500, netNeed));
             while (netNeed > 1 && grossAvail > 0) {
               const d = Math.min(step, grossAvail);
               const tax = incrTax(d, base, br, flat);
@@ -4594,7 +4594,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
               fromTaxableNet   += net;
               taxOnTaxable     += tax;
               grossAvail       -= d;
-              base             += d;  // taxable withdrawals count as ordinary income in bracketed mode
+              base             += d;
               netNeed          -= net;
             }
           }
@@ -4607,7 +4607,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           netNeed -= take;
         }
 
-        // 3) RRSP last (gross-up exactly like taxable when brackets OFF)
+        // 3) RRSP last
         if (netNeed > 0 && openRRSP > 0) {
           if (!bracketsOn) {
             const grossNeeded = flat >= 1 ? Infinity : (netNeed / (1 - flat));
@@ -4620,7 +4620,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
             netNeed      -= netGot;
           } else {
             let grossAvail = openRRSP;
-            let base = (fromTaxableGross); // already ordinary income taken
+            let base = (fromTaxableGross);
             const step = Math.min(5000, Math.max(500, netNeed));
             while (netNeed > 1 && grossAvail > 0) {
               const d = Math.min(step, grossAvail);
@@ -4646,7 +4646,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const taxDragAmt = tAfter * rAfter * drag;
 
         // Grow to end-of-year
-        tBal  = tAfter * (1 + rAfter * (1 - drag));
+        tBal  = tAfter * gT;
         tfBal = fAfter * gN;
         rrBal = rrAfter * gN;
 
@@ -4714,7 +4714,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         $("opt_summary")?.parentElement?.appendChild(btn);
       }
     } catch (e) {
-      $("opt_summary").textContent = "Optimizer error: " + (e?.message || "JS");
+      $("opt_summary").textContent = "Optimizer error: " + (e?.message || "JS") ;
       $("opt_rationale").textContent = "";
     }
   }
@@ -4735,6 +4735,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
 
 
 
