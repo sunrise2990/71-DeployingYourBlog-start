@@ -4247,239 +4247,210 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!-- === Optimizer (beta) — Fixed order: Taxable → TFSA → RRSP (no overlays) === -->
+<!-- === Deterministic mirror: strict order Taxable -> TFSA -> RRSP =============== -->
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
 
-  // ---------- tax brackets (kept for future use) ----------
-  function readBracketsFromUI() {
-    const v = (id) => {
-      const el = $(id); if (!el) return NaN;
-      const s = (el.value || "").replace(/,/g, "");
-      const n = Number(s);
-      return Number.isFinite(n) ? n : NaN;
-    };
-    const lim1 = v("tb_lim1"), lim2 = v("tb_lim2"),
-          r1 = v("tb_rate1"), r2 = v("tb_rate2"), r3 = v("tb_rate3");
-
-    const allZero = [lim1, lim2, r1, r2, r3].every(x => !Number.isFinite(x) || x === 0);
-    if (allZero) return null;
-
-    const L1 = Number.isFinite(lim1) && lim1 > 0 ? lim1 : 50_000;
-    const L2 = Math.max(L1, Number.isFinite(lim2) && lim2 > 0 ? lim2 : 100_000);
-
-    return {
-      enabled: true,
-      bands: [
-        { limit: L1,       rate: ((Number.isFinite(r1) ? r1 : 10) / 100) },
-        { limit: L2,       rate: ((Number.isFinite(r2) ? r2 : 20) / 100) },
-        { limit: Infinity, rate: ((Number.isFinite(r3) ? r3 : 30) / 100) },
-      ],
-    };
-  }
-
-  // ---------- tiny DOM helpers ----------
-  const readNumber = (el) => {
-    if (!el) return 0;
-    const s = String(el.value || "").replace(/,/g, "").trim();
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  };
-  const numMulti = (...selectors) => {
-    for (const sel of selectors) {
-      let el = document.getElementById(sel);
-      if (!el) el = document.querySelector(sel.startsWith("#") || sel.startsWith("[") ? sel : `#${sel},[name="${sel}"]`);
-      if (el) return readNumber(el);
-    }
-    return 0;
+  // ---------- small helpers ----------
+  const readNum = (id, def=0) => {
+    const el = $(id) || document.querySelector(`#${id},[name="${id}"]`);
+    if (!el) return def;
+    const n = Number(String(el.value||"").replace(/,/g,"").trim());
+    return Number.isFinite(n) ? n : def;
   };
 
   // ---------- config ----------
-  function buildCfgLight() {
-    const num  = (id) => { const el = $(id); if (!el) return 0; const s = (el.value || "").replace(/,/g, "").trim(); const v = Number(s); return Number.isFinite(v) ? v : 0; };
-    const bool = (id) => !!$(id)?.checked;
-
-    const current_age = num("litev1_start_age");
-    const end_age     = num("litev1_end_age");
-
-    const retEl = document.getElementById("retirement_age") || document.querySelector('[name="retirement_age"]');
-    const retirement_age = (() => {
-      const raw = (retEl?.value ?? "").toString().replace(/,/g, "").trim();
-      const v   = Number(raw);
-      return (Number.isFinite(v) && v > 0) ? v : current_age;
+  function buildCfg() {
+    // inputs shown in your screenshots
+    const current_age   = readNum("litev1_start_age");
+    const end_age       = readNum("litev1_end_age");
+    const retirementAge = (() => {
+      const el = document.getElementById("retirement_age") || document.querySelector('[name="retirement_age"]');
+      const v = Number(String(el?.value ?? "").replace(/,/g,""));
+      return Number.isFinite(v) && v>0 ? v : current_age;
     })();
 
-    // Optional effective taxable inclusion to OAS income (0..1). Default = 1.0
-    const taxable_oas_inclusion = (() => {
-      const el = document.getElementById("taxable_oas_inclusion");
-      const v = el ? Number(String(el.value||"").replace(/,/g,""))/100 : NaN;
-      return Number.isFinite(v) ? v : 1.0;
-    })();
-
-    const asset_liquidations = (() => {
-      const liqs = [];
-      for (let i = 1; i <= 3; i++) {
-        const a = Number(document.getElementById(`asset_liquidation_age_${i}`)?.value || 0);
-        const v = Number(document.getElementById(`asset_liquidation_${i}`)?.value || 0);
-        if (a > 0 && v) liqs.push({ age: a, amount: v });
-      }
-      return liqs;
-    })();
+    // pre-ret contribution targets (we only use the auto taxable = 12 x monthly savings minus tfsa/rrsp caps)
+    const pre_tfsa_annual = readNum("litev1_tfsa_annual");
+    const pre_rrsp_annual = readNum("litev1_rrsp_annual");
 
     return {
-      current_age,
-      life_expectancy: end_age,
-      retirement_age,
-      start_year: new Date().getFullYear(),
+      // horizon
+      start_age: current_age,
+      retire_age: retirementAge,
+      end_age: end_age,
 
-      taxable0: num("litev1_taxable"),
-      rrsp0:    num("litev1_rrsp"),
-      tfsa0:    num("litev1_tfsa"),
+      // balances
+      t0: readNum("litev1_taxable"),
+      r0: readNum("litev1_rrsp"),
+      f0: readNum("litev1_tfsa"),
 
-      // Pre-retirement saving/returns
-      annual_saving: (num("litev1_monthly_saving") || 0) * 12,
-      saving_increase_rate: ((Number(document.getElementById("saving_increase_rate")?.value) || 0) / 100),
-      pre_tfsa_annual: numMulti("pre_tfsa_annual", "tfsa_annual", "litev1_tfsa_annual"),
-      pre_rrsp_annual: numMulti("pre_rrsp_annual", "rrsp_annual", "litev1_rrsp_annual"),
-      return_rate: (num("litev1_return") || 0) / 100,
-      inflation_rate: (Number(document.getElementById("inflation_rate")?.value) || 2) / 100,
+      // saving / spending
+      monthly_save: readNum("litev1_monthly_saving"),
+      saving_increase: (readNum("saving_increase_rate")/100),
+      annual_expense_0: readNum("litev1_spend") * 12, // base, inflated from retirement age
+      inflation: (readNum("inflation_rate",2)/100),
 
-      // Retirement return/tax drag
-      return_rate_after:
-        (Number(document.getElementsByName("return_rate_after")?.[0]?.value
-          || document.getElementById("return_rate_after")?.value
-          || num("litev1_return")) || 0) / 100,
-      taxable_drag: (Number(document.getElementById("litev1_taxable_drag")?.value) || 0) / 100,
+      // returns
+      r_pre: (readNum("litev1_return")/100),
+      r_post: (Number(document.getElementsByName("return_rate_after")?.[0]?.value
+                     || document.getElementById("return_rate_after")?.value
+                     || readNum("litev1_return"))/100),
 
-      // Social benefits & brackets (brackets unused for overlays in this fixed-order version)
-      tax_brackets: readBracketsFromUI(),
-      income_tax_rate: (num("litev1_income_tax") || 0) / 100,
+      // simple flat income tax used only to gross-up withdrawals
+      flat_tax: (readNum("litev1_income_tax")/100),
 
-      cpp_monthly: Number(document.getElementById("cpp_monthly")?.value
-        || document.getElementById("cpp_support")?.value || 0),
-      cpp_start_age: Number(document.getElementById("cpp_start_age")?.value || current_age),
-      cpp_end_age:   Number(document.getElementById("cpp_end_age")?.value   || end_age),
+      // taxable drag (percentage of return lost each year on taxable)
+      taxable_drag: (readNum("litev1_taxable_drag")/100),
 
-      oas_monthly: num("oas_mo"),
-      oas_start_age: num("oas_start_age"),
-      oas_threshold: num("oas_threshold"),
-      oas_clawback_rate: (Number(document.getElementById("oas_rate")?.value) || 0) / 100,
-      oas_index: bool("oas_index"),
+      // pre-ret caps for split calc (to reproduce your “auto $85,200 to taxable”)
+      pre_tfsa_annual,
+      pre_rrsp_annual,
 
-      rrif_start_age: num("rrif_start_age"),
-
-      // spending
-      annual_expense: (num("litev1_spend") || 0) * 12,
-
-      // misc
-      taxable_oas_inclusion,
-      step_net: Math.max(50, num("step_net") || 500),   // used only for the iteration resolution
-      asset_liquidations
+      start_year: new Date().getFullYear()
     };
   }
 
-  // ---------- helpers ----------
-  function rrifMinPct(age){
-    const t = {
-      71: 0.0528, 72: 0.0540, 73: 0.0553, 74: 0.0567, 75: 0.0582, 76: 0.0598, 77: 0.0617, 78: 0.0636, 79: 0.0658,
-      80: 0.0682, 81: 0.0708, 82: 0.0738, 83: 0.0771, 84: 0.0808, 85: 0.0851, 86: 0.0899, 87: 0.0955, 88: 0.1021,
-      89: 0.1099, 90: 0.1192, 91: 0.1306, 92: 0.1449, 93: 0.1634, 94: 0.1879
-    };
-    if (age >= 95) return 0.20;
-    if (age >= 71) return t[age] || 0;
-    return 1 / (90 - age);
-  }
-  function oasGrossAtAge(cfg, age) {
-    if (!cfg.oas_monthly || !cfg.oas_start_age || age < cfg.oas_start_age) return 0;
-    const years  = Math.max(0, age - cfg.oas_start_age);
-    const factor = cfg.oas_index ? Math.pow(1 + cfg.inflation_rate, years) : 1;
-    return cfg.oas_monthly * 12 * factor;
-  }
-  function cppAtAge(cfg, age) {
-    if (!cfg.cpp_monthly || age < cfg.cpp_start_age || age > cfg.cpp_end_age) return 0;
-    const n = Math.max(0, age - cfg.cpp_start_age);
-    return cfg.cpp_monthly * 12 * Math.pow(1 + cfg.inflation_rate, n);
-  }
-  function tfsaCapForYear(year, cfg) {
-    const base = Math.max(0, cfg.pre_tfsa_annual || 0);
-    if (year <= 2025) return base;
-    const yrs = Math.max(0, year - 2025);
-    return base * Math.pow(1 + 0.021, yrs);
-  }
-  function liqMap(liqs) {
-    const m = {};
-    (liqs || []).forEach(x => {
-      const a = Number(x.age || -1), v = Number(x.amount || 0);
-      if (a >= 0 && v) m[a] = (m[a] || 0) + v;
-    });
-    return m;
-  }
-
-  // ---------- pre-retirement roll-forward ----------
-  function buildPreRetRows(cfg) {
+  // ---------- pre-ret rows (exactly like the deterministic sheet) ----------
+  function buildPreRet(cfg) {
     const rows = [];
-    let age = cfg.current_age;
-    const rAge = cfg.retirement_age;
+    let age = cfg.start_age;
+    let t = cfg.t0, r = cfg.r0, f = cfg.f0;
 
-    let taxable = Number(cfg.taxable0 || 0);
-    let rrsp    = Number(cfg.rrsp0 || 0);
-    let tfsa    = Number(cfg.tfsa0 || 0);
+    const gT = (rr) => 1 + rr * (1 - Math.max(0, Math.min(1, cfg.taxable_drag)));
+    const gN = (rr) => 1 + rr;
 
-    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const gN = 1 + (cfg.return_rate || 0);
-    const gT = 1 + (cfg.return_rate || 0) * (1 - d);
+    let save = cfg.monthly_save * 12;
 
-    let save = Number(cfg.annual_saving || 0);
-    const lm  = liqMap(cfg.asset_liquidations);
+    while (age < cfg.retire_age) {
+      // grow first (sheet does growth first, then adds contributions)
+      t *= gT(cfg.r_pre);
+      r *= gN(cfg.r_pre);
+      f *= gN(cfg.r_pre);
 
-    while (age < rAge) {
-      const t_before = taxable;
-      const taxDrag  = t_before * (cfg.return_rate || 0) * d;
+      // split annual savings in order TFSA -> RRSP -> Taxable
+      const toTFSA = Math.min(save, cfg.pre_tfsa_annual || 0);
+      const afterTFSA = Math.max(0, save - toTFSA);
+      const toRRSP = Math.min(afterTFSA, cfg.pre_rrsp_annual || 0);
+      const toTax = Math.max(0, afterTFSA - toRRSP);
 
-      taxable *= gT; rrsp *= gN; tfsa *= gN;
-
-      const year     = Number(cfg.start_year) + (age - Number(cfg.current_age));
-      const tfsa_cap = tfsaCapForYear(year, cfg);
-      const rrsp_cap = Math.max(0, cfg.pre_rrsp_annual || 0);
-      const to_tfsa  = Math.min(save, tfsa_cap);
-      const after_tf = Math.max(0, save - to_tfsa);
-      const to_rrsp  = Math.min(after_tf, rrsp_cap);
-      const to_tax   = Math.max(0, after_tf - to_rrsp);
-
-      tfsa += to_tfsa; rrsp += to_rrsp; taxable += to_tax;
-
-      const liq = lm[age] || 0;
-      if (liq) taxable += liq;
+      f += toTFSA; r += toRRSP; t += toTax;
 
       rows.push({
         Age: age,
         From_Taxable: 0, From_Taxable_Gross: 0, From_TFSA: 0, From_RRSP_Gross: 0,
         Tax_On_Taxable: 0, Tax_On_RRSP: 0,
         RRIF_Min_Pct: "0.00%", CPP: 0, OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
-        Contrib_Taxable: Math.round(to_tax), Contrib_TFSA: Math.round(to_tfsa), Contrib_RRSP: Math.round(to_rrsp),
-        Liq_Added: Math.round(liq),
-        Taxable_Drag: Math.round(taxDrag),
-        End_Taxable: Math.round(taxable), End_TFSA: Math.round(tfsa), End_RRSP: Math.round(rrsp),
-        End_Total_Raw: Math.round(taxable + tfsa + rrsp),
+        Contrib_Taxable: Math.round(toTax), Contrib_TFSA: Math.round(toTFSA), Contrib_RRSP: Math.round(toRRSP),
+        Liq_Added: 0,
+        Taxable_Drag: 0, // already netted via gT()
+        End_Taxable: Math.round(t), End_TFSA: Math.round(f), End_RRSP: Math.round(r),
+        End_Total_Raw: Math.round(t + f + r),
         Cum_Tax_On_Taxable: 0,
-        End_Total: Math.round(taxable + tfsa + rrsp)
+        End_Total: Math.round(t + f + r)
       });
 
-      save *= (1 + (cfg.saving_increase_rate || 0));
-      age += 1;
+      save *= (1 + cfg.saving_increase);
+      age++;
     }
+
+    return { rows, t, f, r, lastAge: age-1 };
+  }
+
+  // ---------- retirement rows: strict order Taxable -> TFSA -> RRSP ----------
+  function buildRet(cfg, openT, openF, openR, startAge) {
+    const rows = [];
+    let t = openT, f = openF, r = openR;
+    let cumOverlay = 0;
+
+    const gT = (rr) => 1 + rr * (1 - Math.max(0, Math.min(1, cfg.taxable_drag)));
+    const gN = (rr) => 1 + rr;
+
+    for (let age = startAge; age <= cfg.end_age; age++) {
+      // grow first (to mirror deterministic sheet)
+      const tBefore = t, fBefore = f, rBefore = r;
+      t *= gT(cfg.r_post);
+      f *= gN(cfg.r_post);
+      r *= gN(cfg.r_post);
+
+      // inflation on the base expense from *retirement* age
+      const yearsIntoRet = Math.max(0, age - cfg.retire_age);
+      let need = cfg.annual_expense_0 * Math.pow(1 + cfg.inflation, yearsIntoRet);
+
+      // withdrawals in strict order
+
+      // 1) Taxable (grossed up)
+      let fromTaxGross = 0, taxOnTaxable = 0, fromTaxNet = 0;
+      if (need > 0 && t > 0) {
+        const canNetFromTaxable = t * (1 - cfg.flat_tax);               // if we drained taxable entirely
+        const takeNet = Math.min(need, canNetFromTaxable);
+        fromTaxGross = takeNet / (1 - cfg.flat_tax);
+        taxOnTaxable = fromTaxGross - takeNet;
+        fromTaxNet   = takeNet;
+        t -= fromTaxGross;
+        need -= takeNet;
+      }
+
+      // 2) TFSA (no tax)
+      let fromTFSA = 0;
+      if (need > 0 && f > 0) {
+        fromTFSA = Math.min(need, f);
+        f -= fromTFSA;
+        need -= fromTFSA;
+      }
+
+      // 3) RRSP (grossed up)
+      let fromRRSPGross = 0, taxOnRRSP = 0;
+      if (need > 0 && r > 0) {
+        const gross = Math.min(r, need / (1 - cfg.flat_tax));
+        fromRRSPGross = gross;
+        taxOnRRSP = gross * cfg.flat_tax;
+        r -= gross;
+        need -= gross * (1 - cfg.flat_tax);
+      }
+
+      // overlay shown only for taxable (so it matches the “Income Tax Payment” column)
+      cumOverlay += Math.round(taxOnTaxable);
+
+      rows.push({
+        Age: age,
+
+        From_Taxable: Math.round(fromTaxGross),        // this column is *gross* in the deterministic table
+        From_Taxable_Gross: Math.round(fromTaxGross),  // duplicate so CSV stays compatible
+        From_TFSA: Math.round(fromTFSA),
+        From_RRSP_Gross: Math.round(fromRRSPGross),
+
+        Tax_On_Taxable: Math.round(taxOnTaxable),
+        Tax_On_RRSP: Math.round(taxOnRRSP),
+
+        RRIF_Min_Pct: "0.00%",
+        CPP: 0, OAS_Gross: 0, OAS_Clawback: 0, OAS_Net: 0,
+
+        Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0, Liq_Added: 0,
+        Taxable_Drag: 0,
+
+        End_Taxable: Math.round(t),
+        End_TFSA: Math.round(f),
+        End_RRSP: Math.round(r),
+
+        End_Total_Raw: Math.round(t + f + r),
+        Cum_Tax_On_Taxable: Math.round(cumOverlay),
+        End_Total: Math.round(t + f + r)
+      });
+    }
+
     return rows;
   }
 
   // ---------- CSV ----------
   function toCSV(rows, cols) {
     if (!rows?.length) return "";
-    const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
-    const header = cols.join(",");
-    const body = rows.map((r) => cols.map((c) => esc(r[c])).join(",")).join("\n");
-    return header + "\n" + body;
+    const esc = (s) => `"${String(s ?? "").replace(/"/g,'""')}"`;
+    return cols.join(",") + "\n" +
+           rows.map(r => cols.map(c => esc(r[c])).join(",")).join("\n");
   }
+
   const CSV_COLS = [
     "Age",
     "From_Taxable","From_Taxable_Gross","From_TFSA","From_RRSP_Gross",
@@ -4490,209 +4461,58 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
   ];
 
-  // ---------- Next-$1 (display only) ----------
-  function nextDollar() {
-    // UI only; kept minimal for this fixed-order version
-    const cfg  = buildCfgLight();
-    const age  = cfg.retirement_age;
-    const cpp  = cfg.cpp_monthly ? cfg.cpp_monthly * 12 : 0;
-    const oas  = (cfg.oas_start_age && age >= cfg.oas_start_age) ? cfg.oas_monthly * 12 : 0;
-    $("n1_rrsp").textContent    = `RRSP marginal (not used in fixed order)`;
-    $("n1_taxable").textContent = `Taxable first, TFSA second, RRSP last`;
-    const headroom = Math.max(0, (Number.isFinite(cfg.oas_threshold) ? cfg.oas_threshold : 0) - (cpp + oas));
-    $("n1_oas").textContent  = headroom > 0 ? `OAS headroom ≈ $${headroom.toLocaleString()}` : `Already over OAS threshold`;
-    $("n1_hint").textContent = "This run uses a strict Taxable → TFSA → RRSP order with zero tax overlays.";
-  }
+  // ---------- driver ----------
+  function runDeterministicStrict() {
+    const cfg = buildCfg();
 
-  // ---------- Optimizer (fixed order) ----------
-  async function runOptimizerIfEnabled() {
-    try {
-      if (!document.getElementById("opt_toggle")?.checked) return;
+    // pre-ret years
+    const pre = buildPreRet(cfg);
 
-      const cfg = buildCfgLight();
+    // retirement years (strict order Taxable -> TFSA -> RRSP)
+    const ret = buildRet(cfg, pre.t, pre.f, pre.r, cfg.retire_age);
 
-      // Pre-retirement roll-up to get opening balances
-      const preRows = buildPreRetRows(cfg);
-      const preLast = preRows[preRows.length - 1] || null;
+    const rows = [...pre.rows, ...ret];
 
-      let tBal  = preLast ? Number(preLast.End_Taxable || 0) : Number(cfg.taxable0 || 0);
-      let tfBal = preLast ? Number(preLast.End_TFSA || 0)    : Number(cfg.tfsa0 || 0);
-      let rrBal = preLast ? Number(preLast.End_RRSP || 0)    : Number(cfg.rrsp0 || 0);
+    // expose CSV
+    window.__optRows = rows;
+    window.__optCfg  = cfg;
 
-      const rAfter = (cfg.return_rate_after || 0);
-      const drag   = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-      const gN     = 1 + rAfter;               // RRSP/TFSA growth
-      const gT     = 1 + rAfter * (1 - drag);  // Taxable growth net of drag
-      const incl   = Math.max(0, Math.min(1, cfg.taxable_oas_inclusion || 0));
+    const last = rows[rows.length - 1] || { Age: "—", End_Total: 0 };
+    const msg  = `End Total at age ${last.Age}: $${Number(last.End_Total||0).toLocaleString()}`;
+    const holder = $("opt_summary") || (function(){
+      const p = document.createElement("p"); p.id="opt_summary"; document.body.appendChild(p); return p;
+    })();
+    holder.textContent = msg;
 
-      const rows = [];
-      let cumOverlay = 0; // will remain 0 (no overlays)
-
-      for (let age = cfg.retirement_age; age <= cfg.life_expectancy; age++) {
-        // Opening balances
-        const T0 = tBal, F0 = tfBal, R0 = rrBal;
-
-        const cppIncome = cppAtAge(cfg, age);
-        const oasGross  = oasGrossAtAge(cfg, age);
-
-        // RRIF minimum (modeled as gross sweep to Taxable; no income-tax overlay)
-        let rrspMinPct = (cfg.rrif_start_age && age >= cfg.rrif_start_age) ? rrifMinPct(age) : 0;
-        let rrspMinGross = rrspMinPct > 0 ? (R0 * rrspMinPct) : 0;
-
-        // We count RRSP-min gross as income for OAS purposes
-        let rrspGrossIncome = rrspMinGross;
-
-        // First guess: OAS with only CPP + RRSP-min + (taxable withdrawals we will choose)
-        // We do a short fixed-point iteration because OAS clawback depends on taxable withdrawals,
-        // and the taxable withdrawals depend on OAS net.
-        let takeTaxable = 0, takeTFSA = 0, takeRRSPgross = 0;
-        let taxableCountsForOAS = 0;
-        let oasClaw = 0, oasNet = 0;
-
-        const spend = Math.max(0, Number(cfg.annual_expense || 0));
-        const maxIters = 8;
-        for (let it = 0; it < maxIters; it++) {
-          // compute OAS given current guess of taxableCountsForOAS (+ RRSP income + CPP)
-          const incomeForOAS = taxableCountsForOAS + rrspGrossIncome + cppIncome + oasGross;
-          const over = Math.max(0, incomeForOAS - (Number.isFinite(cfg.oas_threshold) ? cfg.oas_threshold : Infinity));
-          oasClaw = Math.min(oasGross, over * (cfg.oas_clawback_rate || 0));
-          oasNet  = Math.max(0, oasGross - oasClaw);
-
-          // net need after CPP+OAS
-          let netNeed = Math.max(0, spend - (cppIncome + oasNet));
-
-          // Strict order: Taxable → TFSA → RRSP
-          const availTaxable = T0 + rrspMinGross; // RRIF-min gross lands as cash in taxable
-          takeTaxable = Math.min(netNeed, availTaxable);
-          taxableCountsForOAS = takeTaxable * incl; // portion of taxable withdrawals that counts to OAS income
-          netNeed -= takeTaxable;
-
-          takeTFSA = Math.min(netNeed, F0);
-          netNeed -= takeTFSA;
-
-          // RRSP for spending only if still needed (rare with your inputs)
-          takeRRSPgross = netNeed;  // no overlay modeled; treat gross == net for this fixed order
-          // (we still count it to OAS income if this happens:)
-          rrspGrossIncome = rrspMinGross + takeRRSPgross;
-          netNeed = 0;
-
-          // The only thing that can change across iterations is OAS (via taxableCountsForOAS).
-          // If the OAS clawback stabilizes, break early.
-          if (maxIters === 1 || it > 0) {
-            const incomeForOAS2 = takeTaxable * incl + rrspGrossIncome + cppIncome + oasGross;
-            const over2 = Math.max(0, incomeForOAS2 - (Number.isFinite(cfg.oas_threshold) ? cfg.oas_threshold : Infinity));
-            const claw2 = Math.min(oasGross, over2 * (cfg.oas_clawback_rate || 0));
-            if (Math.abs(claw2 - oasClaw) < Math.max(1, cfg.step_net || 500)) { oasClaw = claw2; oasNet = Math.max(0, oasGross - oasClaw); break; }
-            oasClaw = claw2; oasNet = Math.max(0, oasGross - oasClaw);
-          }
-        }
-
-        // Apply withdrawals & RRIF-min sweep BEFORE growth
-        const sweepToTaxable = rrspMinGross; // gross sweep (no tax modeled)
-        let T1  = Math.max(0, T0 + sweepToTaxable - takeTaxable);
-        let F1  = Math.max(0, F0 - takeTFSA);
-        let R1  = Math.max(0, R0 - (rrspMinGross + takeRRSPgross));
-
-        // Taxable drag on post-withdraw pre-growth balance
-        const taxDragAmt = T1 * rAfter * drag;
-
-        // Grow to end-of-year
-        tBal  = T1 * gT;
-        tfBal = F1 * gN;
-        rrBal = R1 * gN;
-
-        rows.push({
-          Age: age,
-          From_Taxable: Math.round(takeTaxable),         // net (same as gross in this fixed-order model)
-          From_Taxable_Gross: Math.round(takeTaxable),   // for visibility
-          From_TFSA: Math.round(takeTFSA),
-          From_RRSP_Gross: Math.round(takeRRSPgross + rrspMinGross), // total gross leaving RRSP
-
-          Tax_On_Taxable: 0,
-          Tax_On_RRSP: 0,
-
-          RRIF_Min_Pct: rrspMinPct ? (rrspMinPct*100).toFixed(2) + "%" : "0.00%",
-          CPP: Math.round(cppIncome),
-          OAS_Gross: Math.round(oasGross),
-          OAS_Clawback: Math.round(oasClaw),
-          OAS_Net: Math.round(oasNet),
-
-          Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0,
-          Liq_Added: Math.round(sweepToTaxable),
-
-          Taxable_Drag: Math.round(taxDragAmt),
-
-          End_Taxable: Math.round(tBal),
-          End_TFSA: Math.round(tfBal),
-          End_RRSP: Math.round(rrBal),
-
-          End_Total_Raw: Math.round(T1 + F1 + R1),
-          Cum_Tax_On_Taxable: Math.round(cumOverlay),   // remains 0 here
-          End_Total: Math.round(tBal + tfBal + rrBal)
-        });
-      }
-
-      // Stitch with pre-ret rows and expose to CSV
-      const full = [...preRows, ...rows];
-      window.__optRows = full;
-      window.__optCfg  = cfg;
-
-      const last = full[full.length - 1] || { Age: "—", End_Total: 0 };
-      $("opt_summary").textContent =
-        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (order: Taxable → TFSA → RRSP).`;
-
-      const firstRet = rows.slice(0, 3);
-      const r0 = firstRet.map(r =>
-        `Age ${r.Age}: Taxable $${r.From_Taxable.toLocaleString()}, TFSA $${r.From_TFSA.toLocaleString()}, RRSP(g) $${r.From_RRSP_Gross.toLocaleString()}`
-      ).join(" • ");
-      $("opt_rationale").textContent = r0 || "See table for per-year mix.";
-
-      if (!$("#opt_csv_btn")) {
-        const btn = document.createElement("button");
-        btn.id = "opt_csv_btn";
-        btn.className = "btn btn-sm";
-        btn.style.marginLeft = "8px";
-        btn.textContent = "Download optimizer CSV";
-        btn.onclick = () => {
-          const csv = toCSV(window.__optRows || [], [
-            "Age","From_Taxable","From_Taxable_Gross","From_TFSA","From_RRSP_Gross",
-            "Tax_On_Taxable","Tax_On_RRSP",
-            "RRIF_Min_Pct","CPP","OAS_Gross","OAS_Clawback","OAS_Net",
-            "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP","Liq_Added",
-            "Taxable_Drag","End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
-          ]);
-          const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url; a.download = "optimizer_fixed_order.csv";
-          document.body.appendChild(a); a.click(); a.remove();
-          URL.revokeObjectURL(url);
-        };
-        $("opt_summary")?.parentElement?.appendChild(btn);
-      }
-    } catch (e) {
-      $("opt_summary").textContent = "Optimizer error: " + (e?.message || "JS");
-      $("opt_rationale").textContent = "";
+    // quick CSV button (kept same id so your UI doesn’t duplicate it)
+    if (!$("#opt_csv_btn")) {
+      const btn = document.createElement("button");
+      btn.id = "opt_csv_btn";
+      btn.className = "btn btn-sm";
+      btn.style.marginLeft = "8px";
+      btn.textContent = "Download optimizer CSV";
+      btn.onclick = () => {
+        const csv = toCSV(window.__optRows || [], CSV_COLS);
+        const blob = new Blob([csv], { type:"text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "deterministic_strict_order.csv";
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      };
+      holder.parentElement?.appendChild(btn);
     }
   }
 
-  // ---------- wiring ----------
+  // hook: use your existing “Run” button
   $("litev1_run")?.addEventListener("click", () => {
-    try { nextDollar(); } catch(_) {}
-    setTimeout(runOptimizerIfEnabled, 100);
+    runDeterministicStrict();
   });
-
-  [
-    "oas_mo","oas_start_age","oas_threshold","oas_rate","rrif_start_age",
-    "litev1_start_age","litev1_end_age","retirement_age",
-    "litev1_spend","litev1_return","return_rate_after","litev1_taxable_drag",
-    "cpp_monthly","cpp_start_age","cpp_end_age","taxable_oas_inclusion"
-  ].forEach(id => document.getElementById(id)?.addEventListener("input", nextDollar));
-
-  document.addEventListener("DOMContentLoaded", nextDollar);
+  document.addEventListener("DOMContentLoaded", runDeterministicStrict);
 })();
 </script>
-<!-- === /Optimizer (fixed-order) =========================================== -->
+<!-- === /Deterministic mirror =============================================== -->
+
 
 
 
