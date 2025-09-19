@@ -4599,14 +4599,17 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-  // ---------------- Optimizer (fixed order: Taxable → TFSA → RRSP) ----------------
+// ---------------- Optimizer (fixed order: Taxable → TFSA → RRSP) ----------------
 async function runOptimizerIfEnabled() {
+  // safe writer (no-throw if element missing)
+  const put = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+
   try {
     const toggle = document.getElementById("opt_toggle");
     if (toggle && !toggle.checked) return;
 
     const cfg     = buildCfgLight();
-    const preRows = buildPreRetRows(cfg);                 // pre-retirement rows (for CSV and continuity)
+    const preRows = buildPreRetRows(cfg);
     const preLast = preRows[preRows.length - 1] || null;
 
     // opening balances at retirement
@@ -4651,7 +4654,7 @@ async function runOptimizerIfEnabled() {
         } else {
           const take = Math.min(netNeed, openT);
           fromTax_NET             = take;
-          fromTax_GROSS_FOR_TABLE = take; // table shows NET draw when drag>0
+          fromTax_GROSS_FOR_TABLE = take; // NET shown when drag>0
           netNeed -= take;
           taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0; // display-only unless drag==0
         }
@@ -4669,7 +4672,7 @@ async function runOptimizerIfEnabled() {
       let fromRRSP_GROSS = 0, taxOnRRSP = 0;
       if (netNeed > 0 && openR > 0) {
         if (bracketsOn) {
-          const base = 0; // match working table: don't stack taxable base here
+          const base = 0; // match working table
           const g = grossForNet(netNeed, base, br, flatRate, openR);
           fromRRSP_GROSS = g.gross;
           taxOnRRSP      = g.tax;
@@ -4703,7 +4706,7 @@ async function runOptimizerIfEnabled() {
         }
       }
 
-      // ---- Pre-growth balances: apply NET only
+      // ---- Pre-growth balances (apply NET only) ----
       let tAfter = openT - fromTax_NET;
       let fAfter = openF - fromTFSA;
       let rAfterBal = openR - fromRRSP_GROSS;
@@ -4721,19 +4724,18 @@ async function runOptimizerIfEnabled() {
       const liq = Number(lmRet[age] || 0);
       if (liq) tAfter += liq;
 
-      // ---- Growth
+      // ---- Growth ----
       const taxDragAmt = Math.max(0, tAfter) * rAfter * drag; // display only
       tBal  = Math.max(0, tAfter) * gT;
       fBal  = Math.max(0, fAfter) * gN;
       rBal  = Math.max(0, rAfterBal) * gN;
 
-      // ---- Output row
+      // ---- Output row ----
       const incomeTaxPayment = Math.round(taxOnTaxable + taxOnRRSP);
       cumTaxOnTaxable += Math.round(taxOnTaxable);
 
       rows.push({
         Age: age,
-
         From_Taxable_Gross: Math.round(fromTax_GROSS_FOR_TABLE),
         From_TFSA: Math.round(fromTFSA),
         From_RRSP_Gross: Math.round(fromRRSP_GROSS),
@@ -4746,7 +4748,7 @@ async function runOptimizerIfEnabled() {
         Tax_On_Taxable: Math.round(taxOnTaxable),
         Tax_On_RRSP: Math.round(taxOnRRSP),
 
-        Liq_Added: Math.round(liq),               // <-- 500 at age 59
+        Liq_Added: Math.round(liq),               // 500 at age 59
         Taxable_Drag: Math.round(taxDragAmt),
 
         End_Taxable: Math.round(tBal),
@@ -4760,7 +4762,6 @@ async function runOptimizerIfEnabled() {
         Living_Expense: Math.round(living),
         Income_Tax_Payment: incomeTaxPayment,
         Living_Exp_Ret: Math.round(Math.max(0, living - cppInc - oasNet) + incomeTaxPayment),
-
         Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0
       });
     }
@@ -4770,14 +4771,15 @@ async function runOptimizerIfEnabled() {
     window.__optCfg  = cfg;
 
     const last = full[full.length - 1] || { Age: "—", End_Total: 0, Cum_Tax_On_Taxable: 0 };
-    $("opt_summary").textContent =
-      `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`;
+    put("opt_summary",
+      `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`
+    );
 
     const firstRet = rows.slice(0, 3);
     const r0 = firstRet.map(r =>
       `Age ${r.Age}: Taxable $${r.From_Taxable_Gross.toLocaleString()}, TFSA $${r.From_TFSA.toLocaleString()}, RRSP(g) $${r.From_RRSP_Gross.toLocaleString()}`
     ).join(" • ");
-    $("opt_rationale").textContent = r0 || "See table for per-year mix.";
+    put("opt_rationale", r0 || "See table for per-year mix.");
 
     if (!document.getElementById("opt_csv_btn")) {
       const btn = document.createElement("button");
@@ -4794,17 +4796,23 @@ async function runOptimizerIfEnabled() {
         document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
       };
-      $("opt_summary")?.parentElement?.appendChild(btn);
+      // parent exists? if not, skip
+      const host = document.getElementById("opt_summary");
+      if (host?.parentElement) host.parentElement.appendChild(btn);
     }
   } catch (e) {
-    // $ exists inside the IIFE (from Part I); safe to use here
-    $("opt_summary").textContent = "Optimizer error: " + (e?.message || "JS");
-    $("opt_rationale").textContent = "";
+    // never throw here — just write if present
+    const msg = "Optimizer error: " + (e?.message || "JS");
+    const r   = ""; // clear rationale
+    const sEl = document.getElementById("opt_summary");
+    const rEl = document.getElementById("opt_rationale");
+    if (sEl) sEl.textContent = msg;
+    if (rEl) rEl.textContent = r;
   }
 }
 
-// ---------------- wiring (still inside the IIFE) ----------------
-$("litev1_run")?.addEventListener("click", () => {
+// ---------------- wiring ----------------
+document.getElementById("litev1_run")?.addEventListener("click", () => {
   try { nextDollar(); } catch(_) {}
   setTimeout(runOptimizerIfEnabled, 60);
 });
@@ -4829,6 +4837,8 @@ document.addEventListener("DOMContentLoaded", () => {
   runOptimizerIfEnabled();
 });
 
+</script>
+<!-- === /Optimizer (fixed order) =========================================== -->
 
 
 
