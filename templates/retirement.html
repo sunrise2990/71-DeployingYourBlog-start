@@ -4601,23 +4601,23 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 // ---------------- Optimizer (fixed order: Taxable → TFSA → RRSP) ----------------
 async function runOptimizerIfEnabled() {
-  // safe writer (no-throw if element missing)
-  const put = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  // Safe writer so a missing node doesn't crash the whole block
+  const write = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
   try {
     const toggle = document.getElementById("opt_toggle");
     if (toggle && !toggle.checked) return;
 
     const cfg     = buildCfgLight();
-    const preRows = buildPreRetRows(cfg);
+    const preRows = buildPreRetRows(cfg);                // pre-retirement rows (for CSV and continuity)
     const preLast = preRows[preRows.length - 1] || null;
 
     // opening balances at retirement
-    let tBal = preLast ? Number(preLast.End_Taxable || 0) : Number(cfg.taxable0 || 0);
-    let fBal = preLast ? Number(preLast.End_TFSA    || 0) : Number(cfg.tfsa0    || 0);
-    let rBal = preLast ? Number(preLast.End_RRSP    || 0) : Number(cfg.rrsp0    || 0);
+    let tBal  = preLast ? Number(preLast.End_Taxable || 0) : Number(cfg.taxable0 || 0);
+    let fBal  = preLast ? Number(preLast.End_TFSA    || 0) : Number(cfg.tfsa0    || 0);
+    let rBal  = preLast ? Number(preLast.End_RRSP    || 0) : Number(cfg.rrsp0    || 0);
 
-    const rows = [];
+    const rows   = [];
     let cumTaxOnTaxable = 0;
 
     // environment
@@ -4629,7 +4629,7 @@ async function runOptimizerIfEnabled() {
     const br       = cfg.tax_brackets;
     const bracketsOn = !!(br && (br.enabled || br.bands));
 
-    // retirement-year liquidations map (apply BEFORE growth)
+    // retirement-year liquidations map (apply in retire loop, BEFORE growth)
     const lmRet = liqMap(cfg.asset_liquidations);
 
     for (let age = cfg.retirement_age; age <= cfg.life_expectancy; age++) {
@@ -4638,7 +4638,7 @@ async function runOptimizerIfEnabled() {
       const living   = livingExpenseAtAge(cfg, age);
       const cppInc   = cppAtAge(cfg, age);
       const oasGross = oasGrossAtAge(cfg, age);
-      const oasNet   = oasGross; // fixed-order: no headroom logic
+      const oasNet   = oasGross;                 // fixed-order: no OAS headroom logic
       let netNeed    = Math.max(0, living - cppInc - oasNet);
 
       // ---- Taxable first ----
@@ -4646,17 +4646,19 @@ async function runOptimizerIfEnabled() {
 
       if (netNeed > 0 && openT > 0) {
         if (bracketsOn) {
+          // compute gross needed for the required net (table shows gross; overlay tax column stays 0)
           const g = grossForNet(netNeed, /*base*/0, br, flatRate, openT);
           fromTax_NET               = Math.min(netNeed, g.net);
           taxOnTaxable              = 0;
           fromTax_GROSS_FOR_TABLE   = Math.min(openT, g.gross);
           netNeed                   = Math.max(0, netNeed - g.net);
         } else {
+          // flat: draw NET from taxable; overlay E is display-only unless drag==0
           const take = Math.min(netNeed, openT);
           fromTax_NET             = take;
-          fromTax_GROSS_FOR_TABLE = take; // NET shown when drag>0
+          fromTax_GROSS_FOR_TABLE = take;              // table shows NET from taxable (drag>0)
           netNeed -= take;
-          taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0; // display-only unless drag==0
+          taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0;
         }
       }
 
@@ -4688,7 +4690,7 @@ async function runOptimizerIfEnabled() {
         }
       }
 
-      // ---- RRIF minimum (gross forced; net to taxable) ----
+      // ---- RRIF minimum (force extra gross; net flows into taxable) ----
       let rrifPct = 0, extraTaxFromRRIFMin = 0, extraNetFromRRIFMin = 0;
       if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age && openR > 0) {
         rrifPct = rrifMinPct(age);
@@ -4715,12 +4717,12 @@ async function runOptimizerIfEnabled() {
       tAfter += extraNetFromRRIFMin;
       taxOnRRSP += extraTaxFromRRIFMin;
 
-      // Flat overlay rule
+      // Flat overlay rule: only subtract E from assets when drag==0 and no brackets
       if (!bracketsOn && drag === 0 && taxOnTaxable > 0) {
         tAfter -= Math.min(tAfter, taxOnTaxable);
       }
 
-      // ---- Asset liquidation BEFORE growth ----
+      // ---- Asset liquidation (RETIREMENT years) BEFORE growth ----
       const liq = Number(lmRet[age] || 0);
       if (liq) tAfter += liq;
 
@@ -4736,6 +4738,7 @@ async function runOptimizerIfEnabled() {
 
       rows.push({
         Age: age,
+
         From_Taxable_Gross: Math.round(fromTax_GROSS_FOR_TABLE),
         From_TFSA: Math.round(fromTFSA),
         From_RRSP_Gross: Math.round(fromRRSP_GROSS),
@@ -4748,7 +4751,7 @@ async function runOptimizerIfEnabled() {
         Tax_On_Taxable: Math.round(taxOnTaxable),
         Tax_On_RRSP: Math.round(taxOnRRSP),
 
-        Liq_Added: Math.round(liq),               // 500 at age 59
+        Liq_Added: Math.round(liq),                 // 500 at age 59
         Taxable_Drag: Math.round(taxDragAmt),
 
         End_Taxable: Math.round(tBal),
@@ -4771,7 +4774,8 @@ async function runOptimizerIfEnabled() {
     window.__optCfg  = cfg;
 
     const last = full[full.length - 1] || { Age: "—", End_Total: 0, Cum_Tax_On_Taxable: 0 };
-    put("opt_summary",
+    write(
+      "opt_summary",
       `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`
     );
 
@@ -4779,8 +4783,9 @@ async function runOptimizerIfEnabled() {
     const r0 = firstRet.map(r =>
       `Age ${r.Age}: Taxable $${r.From_Taxable_Gross.toLocaleString()}, TFSA $${r.From_TFSA.toLocaleString()}, RRSP(g) $${r.From_RRSP_Gross.toLocaleString()}`
     ).join(" • ");
-    put("opt_rationale", r0 || "See table for per-year mix.");
+    write("opt_rationale", r0 || "See table for per-year mix.");
 
+    // CSV button (once)
     if (!document.getElementById("opt_csv_btn")) {
       const btn = document.createElement("button");
       btn.id = "opt_csv_btn";
@@ -4796,18 +4801,12 @@ async function runOptimizerIfEnabled() {
         document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
       };
-      // parent exists? if not, skip
       const host = document.getElementById("opt_summary");
       if (host?.parentElement) host.parentElement.appendChild(btn);
     }
   } catch (e) {
-    // never throw here — just write if present
-    const msg = "Optimizer error: " + (e?.message || "JS");
-    const r   = ""; // clear rationale
-    const sEl = document.getElementById("opt_summary");
-    const rEl = document.getElementById("opt_rationale");
-    if (sEl) sEl.textContent = msg;
-    if (rEl) rEl.textContent = r;
+    write("opt_summary", "Optimizer error: " + (e?.message || "JS"));
+    write("opt_rationale", "");
   }
 }
 
