@@ -4379,6 +4379,29 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return 0;
   };
 
+  // ---------- CPP reader with correct precedence (avoids hidden 65/85 defaults) ----------
+  function readCppRangeFromUI(end_age_default) {
+    // Prefer the explicit “…_age” inputs; do NOT read generic extended_year_from/to.
+    const start = firstNum([
+      '#extended_year_from_age','[name="extended_year_from_age"]',
+      '#ext_year_from_age','[name="ext_year_from_age"]',
+      '#extended_from_age','[name="extended_from_age"]',
+      '#ext_from_age','[name="ext_from_age"]',
+      '#cpp_start_age','[name="cpp_start_age"]'
+    ]);
+    const end = firstNum([
+      '#extended_year_to_age','[name="extended_year_to_age"]',
+      '#ext_year_to_age','[name="ext_year_to_age"]',
+      '#extended_to_age','[name="extended_to_age"]',
+      '#ext_to_age','[name="ext_to_age"]',
+      '#cpp_end_age','[name="cpp_end_age"]'
+    ]);
+    const cpp_start_age = (Number.isFinite(start) && start > 0) ? start : 65;
+    let cpp_end_age     = (Number.isFinite(end)   && end   > 0) ? end   : end_age_default;
+    if (cpp_end_age < cpp_start_age) cpp_end_age = cpp_start_age;
+    return { cpp_start_age, cpp_end_age };
+  }
+
   // ---------------- config ----------------
   function buildCfgLight() {
     const num  = (id) => { const el = $(id); if (!el) return 0; const s = (el.value || "").replace(/,/g, "").trim(); const v = Number(s); return Number.isFinite(v) ? v : 0; };
@@ -4401,43 +4424,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     // SINGLE SOURCE OF TRUTH for liquidations (prevents double counting)
     const asset_liquidations = readAssetLiquidationsStrict();
 
-    // --- CPP wiring: prefer Extended Year From/To (Age) fields; robust selector set ---
+    // CPP amounts & range
     const cppMonthly = firstNum([
       '#cpp_monthly','[name="cpp_monthly"]',
       '#cpp_support','[name="cpp_support"]',
       '#support_cpp','[name="support_cpp"]',
       '#support_monthly','[name="support_monthly"]',
       '#living_expense_support','[name="living_expense_support"]'
-    ]);
+    ]) || 0;
 
-    // Start age – look first at “Extended Year From (Age)” style inputs, then fall back
-    const cppStartIn = firstNum([
-      '#extended_year_from','[name="extended_year_from"]',
-      '#extended_from_age','[name="extended_from_age"]',
-      '#extended_year_from_age','[name="extended_year_from_age"]',
-      '#ext_year_from_age','[name="ext_year_from_age"]',
-      '#ext_from_age','[name="ext_from_age"]',
-      '#support_year_from','[name="support_year_from"]',
-      '#support_from_age','[name="support_from_age"]',
-      '#cpp_start_age','[name="cpp_start_age"]'
-    ]);
-
-    // End age – same idea
-    const cppEndIn = firstNum([
-      '#extended_year_to','[name="extended_year_to"]',
-      '#extended_to_age','[name="extended_to_age"]',
-      '#extended_year_to_age','[name="extended_year_to_age"]',
-      '#ext_year_to_age','[name="ext_year_to_age"]',
-      '#ext_to_age','[name="ext_to_age"]',
-      '#support_year_to','[name="support_year_to"]',
-      '#support_to_age','[name="support_to_age"]',
-      '#cpp_end_age','[name="cpp_end_age"]'
-    ]);
-
-    const cpp_start_age = (Number.isFinite(cppStartIn) && cppStartIn > 0) ? cppStartIn : 65;
-    let   cpp_end_age   = (Number.isFinite(cppEndIn)   && cppEndIn   > 0) ? cppEndIn   : end_age;
-    // Guard: end must be ≥ start
-    if (cpp_end_age < cpp_start_age) cpp_end_age = cpp_start_age;
+    const { cpp_start_age, cpp_end_age } = readCppRangeFromUI(end_age);
 
     return {
       current_age,
@@ -4810,7 +4806,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Tax_On_Taxable: Math.round(taxOnTaxable),
           Tax_On_RRSP: Math.round(taxOnRRSP),
 
-          Liq_Added: Math.round(liq),                 // shows the 500 (etc) in table/CSV
+          Liq_Added: Math.round(liq),
           Taxable_Drag: Math.round(taxDragAmt),
 
           End_Taxable: Math.round(tBal),
@@ -4883,7 +4879,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "litev1_start_age","litev1_end_age","retirement_age",
     "cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support",
     "cpp_start_age","cpp_end_age","extended_from_age","extended_to_age","ext_from_age","ext_to_age",
-    "extended_year_from","extended_year_to","ext_year_from_age","ext_year_to_age",
+    "extended_year_from","extended_year_to","ext_year_from_age","ext_year_to_age","extended_year_from_age","extended_year_to_age",
     "litev1_taxable","litev1_rrsp","litev1_tfsa","litev1_monthly_saving","saving_increase_rate",
     "pre_tfsa_annual","pre_rrsp_annual","return_rate_after","inflation_rate","litev1_taxable_drag",
     "opt_toggle"
@@ -4899,6 +4895,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
 
 
 
