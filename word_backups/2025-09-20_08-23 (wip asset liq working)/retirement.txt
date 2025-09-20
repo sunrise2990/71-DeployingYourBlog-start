@@ -4252,6 +4252,25 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 (function () {
   const $ = (id) => document.getElementById(id);
 
+  // ---------- generic numeric helpers ----------
+  const toNum = (x) => Number(String(x ?? "").replace(/[^0-9.\-]/g, "")) || 0;
+  const readNumber = (el) => (el ? toNum(el.value) : 0);
+
+  // Return the first numeric value found among several selectors (0 if none)
+  const firstNum = (selectors) => {
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const v =
+        el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA"
+          ? el.value
+          : (el.getAttribute("value") ?? el.textContent);
+      const n = toNum(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return 0;
+  };
+
   // ---------------- tax helpers ----------------
   function readBracketsFromUI() {
     const v = (id) => {
@@ -4325,13 +4344,32 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return { gross, tax, net };
   }
 
+  // ---------- STRICT asset-liquidation reader (no generic DOM scan, no duplicates) ----------
+  function readAssetLiquidationsStrict() {
+    const liqs = [];
+    // support a few safe aliases but only read ONE pair per index
+    const ageKeys = (i) => [
+      `#asset_liquidation_age_${i}`, `[name="asset_liquidation_age_${i}"]`,
+      `#asset_liquidation_age${i}`,   `[name="asset_liquidation_age${i}"]`,
+      `#asset_liq_age_${i}`,          `[name="asset_liq_age_${i}"]`,
+      `#asset_liq_age${i}`,           `[name="asset_liq_age${i}"]`,
+    ];
+    const amtKeys = (i) => [
+      `#asset_liquidation_${i}`, `[name="asset_liquidation_${i}"]`,
+      `#asset_liquidation${i}`,  `[name="asset_liquidation${i}"]`,
+      `#asset_liq_${i}`,         `[name="asset_liq_${i}"]`,
+      `#asset_liq${i}`,          `[name="asset_liq${i}"]`,
+    ];
+
+    for (let i = 1; i <= 6; i++) {
+      const age = firstNum(ageKeys(i));
+      const amt = firstNum(amtKeys(i));
+      if (age > 0 && amt !== 0) liqs.push({ age, amount: amt });
+    }
+    return liqs;
+  }
+
   // ---------------- DOM helpers ----------------
-  const readNumber = (el) => {
-    if (!el) return 0;
-    const s = String(el.value || "").replace(/,/g, "").trim();
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  };
   const numMulti = (...selectors) => {
     for (const sel of selectors) {
       let el = document.getElementById(sel);
@@ -4360,15 +4398,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const pre_tfsa_annual = numMulti("pre_tfsa_annual", "tfsa_annual", "litev1_tfsa_annual");
     const pre_rrsp_annual = numMulti("pre_rrsp_annual", "rrsp_annual", "litev1_rrsp_annual");
 
-    const asset_liquidations = (() => {
-      const liqs = [];
-      for (let i = 1; i <= 3; i++) {
-        const a = Number(document.getElementById(`asset_liquidation_age_${i}`)?.value || 0);
-        const v = Number(document.getElementById(`asset_liquidation_${i}`)?.value || 0);
-        if (a > 0 && v) liqs.push({ age: a, amount: v });
-      }
-      return liqs;
-    })();
+    // SINGLE SOURCE OF TRUTH for liquidations (prevents double counting)
+    const asset_liquidations = readAssetLiquidationsStrict();
 
     // CPP wiring (explicit → Extended From/To take priority; default to 65 only if nothing set)
     const cppMonthly = numMulti("cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support") || 0;
@@ -4598,6 +4629,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
   // ---------------- Optimizer (fixed order: Taxable → TFSA → RRSP) ----------------
   async function runOptimizerIfEnabled() {
+    const write = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+
     try {
       const toggle = document.getElementById("opt_toggle");
       if (toggle && !toggle.checked) return;
@@ -4623,16 +4656,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const br       = cfg.tax_brackets;
       const bracketsOn = !!(br && (br.enabled || br.bands));
 
-      // retirement-year liquidations map (ADD this in retire loop, before growth)
+      // retirement-year liquidations map (ADDED before growth)
       const lmRet = liqMap(cfg.asset_liquidations);
 
-      for (let age = cfg.retirement_age; age <= cfg.life_expectancy; age++) {
+      const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
+      const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
+
+      for (let age = rAge; age <= endAge; age++) {
         const openT = tBal, openF = fBal, openR = rBal;
 
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const oasGross = oasGrossAtAge(cfg, age);
-        const oasNet   = oasGross;                 // no headroom logic in fixed-order mode
+        const oasNet   = oasGross;                 // fixed-order: no headroom logic
         let netNeed    = Math.max(0, living - cppInc - oasNet);
 
         // ---- Taxable first ----
@@ -4715,7 +4751,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         }
 
         // ---- Asset liquidation (RETIREMENT years) BEFORE growth ----
-        const liq = lmRet[age] || 0;
+        const liq = Number(lmRet[age] || lmRet[String(age)] || 0);
         if (liq) tAfter += liq;
 
         // ---- Growth ----
@@ -4743,7 +4779,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Tax_On_Taxable: Math.round(taxOnTaxable),
           Tax_On_RRSP: Math.round(taxOnRRSP),
 
-          Liq_Added: Math.round(liq),                 // <<< added to table/CSV
+          Liq_Added: Math.round(liq),                 // shows the 500 (etc) in table/CSV
           Taxable_Drag: Math.round(taxDragAmt),
 
           End_Taxable: Math.round(tBal),
@@ -4766,14 +4802,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       window.__optCfg  = cfg;
 
       const last = full[full.length - 1] || { Age: "—", End_Total: 0, Cum_Tax_On_Taxable: 0 };
-      $("opt_summary").textContent =
-        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`;
+      write(
+        "opt_summary",
+        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`
+      );
 
       const firstRet = rows.slice(0, 3);
       const r0 = firstRet.map(r =>
-        `Age ${r.Age}: Taxable $${r.From_Taxable_Gross.toLocaleString()}, TFSA $${r.From_TFSA.toLocaleString()}, RRSP(g) $${r.From_RRSP_Gross.toLocaleString()}`
+        `Age ${r.Age}: Taxable $${(r.From_Taxable_Gross ?? 0).toLocaleString()}, TFSA $${(r.From_TFSA ?? 0).toLocaleString()}, RRSP(g) $${(r.From_RRSP_Gross ?? 0).toLocaleString()}`
       ).join(" • ");
-      $("opt_rationale").textContent = r0 || "See table for per-year mix.";
+      write("opt_rationale", r0 || "See table for per-year mix.");
 
       // CSV button (once)
       if (!document.getElementById("opt_csv_btn")) {
@@ -4791,11 +4829,14 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           document.body.appendChild(a); a.click(); a.remove();
           URL.revokeObjectURL(url);
         };
-        $("opt_summary")?.parentElement?.appendChild(btn);
+        const host = document.getElementById("opt_summary");
+        if (host?.parentElement) host.parentElement.appendChild(btn);
       }
     } catch (e) {
-      $("opt_summary").textContent = "Optimizer error: " + (e?.message || "JS");
-      $("opt_rationale").textContent = "";
+      const msg = (e && e.message) ? e.message : "JS";
+      const write = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+      write("opt_summary", "Optimizer error: " + msg);
+      write("opt_rationale", "");
     }
   }
 
@@ -4827,6 +4868,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
+
 
 
 
