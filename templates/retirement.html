@@ -4401,12 +4401,43 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     // SINGLE SOURCE OF TRUTH for liquidations (prevents double counting)
     const asset_liquidations = readAssetLiquidationsStrict();
 
-    // CPP wiring (explicit → Extended From/To take priority; default to 65 only if nothing set)
-    const cppMonthly = numMulti("cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support") || 0;
-    const cppStartIn = numMulti("extended_year_from","extended_from_age","ext_year_from_age","ext_from_age","cpp_start_age");
-    const cppEndIn   = numMulti("extended_year_to","extended_to_age","ext_year_to_age","ext_to_age","cpp_end_age");
+    // --- CPP wiring: prefer Extended Year From/To (Age) fields; robust selector set ---
+    const cppMonthly = firstNum([
+      '#cpp_monthly','[name="cpp_monthly"]',
+      '#cpp_support','[name="cpp_support"]',
+      '#support_cpp','[name="support_cpp"]',
+      '#support_monthly','[name="support_monthly"]',
+      '#living_expense_support','[name="living_expense_support"]'
+    ]);
+
+    // Start age – look first at “Extended Year From (Age)” style inputs, then fall back
+    const cppStartIn = firstNum([
+      '#extended_year_from','[name="extended_year_from"]',
+      '#extended_from_age','[name="extended_from_age"]',
+      '#extended_year_from_age','[name="extended_year_from_age"]',
+      '#ext_year_from_age','[name="ext_year_from_age"]',
+      '#ext_from_age','[name="ext_from_age"]',
+      '#support_year_from','[name="support_year_from"]',
+      '#support_from_age','[name="support_from_age"]',
+      '#cpp_start_age','[name="cpp_start_age"]'
+    ]);
+
+    // End age – same idea
+    const cppEndIn = firstNum([
+      '#extended_year_to','[name="extended_year_to"]',
+      '#extended_to_age','[name="extended_to_age"]',
+      '#extended_year_to_age','[name="extended_year_to_age"]',
+      '#ext_year_to_age','[name="ext_year_to_age"]',
+      '#ext_to_age','[name="ext_to_age"]',
+      '#support_year_to','[name="support_year_to"]',
+      '#support_to_age','[name="support_to_age"]',
+      '#cpp_end_age','[name="cpp_end_age"]'
+    ]);
+
     const cpp_start_age = (Number.isFinite(cppStartIn) && cppStartIn > 0) ? cppStartIn : 65;
-    const cpp_end_age   = (Number.isFinite(cppEndIn)   && cppEndIn   > 0) ? cppEndIn   : end_age;
+    let   cpp_end_age   = (Number.isFinite(cppEndIn)   && cppEndIn   > 0) ? cppEndIn   : end_age;
+    // Guard: end must be ≥ start
+    if (cpp_end_age < cpp_start_age) cpp_end_age = cpp_start_age;
 
     return {
       current_age,
