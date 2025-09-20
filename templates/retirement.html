@@ -4256,8 +4256,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   const toNum = (x) => Number(String(x ?? "").replace(/[^0-9.\-]/g, "")) || 0;
   const readNumber = (el) => (el ? toNum(el.value) : 0);
 
-  // Query any of several selectors and return the first numeric value found
-  const getBySelNum = (selectors) => {
+  // Return the first numeric value found among several selectors (0 if none)
+  const firstNum = (selectors) => {
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (!el) continue;
@@ -4266,7 +4266,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           ? el.value
           : (el.getAttribute("value") ?? el.textContent);
       const n = toNum(v);
-      if (Number.isFinite(n) && n !== 0) return n;
+      if (Number.isFinite(n)) return n;
     }
     return 0;
   };
@@ -4344,62 +4344,29 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return { gross, tax, net };
   }
 
-  // ---------- Robust collector for asset liquidations regardless of field naming ----------
-  function collectAssetLiquidationsFromDOM() {
+  // ---------- STRICT asset-liquidation reader (no generic DOM scan, no duplicates) ----------
+  function readAssetLiquidationsStrict() {
     const liqs = [];
+    // support a few safe aliases but only read ONE pair per index
+    const ageKeys = (i) => [
+      `#asset_liquidation_age_${i}`, `[name="asset_liquidation_age_${i}"]`,
+      `#asset_liquidation_age${i}`,   `[name="asset_liquidation_age${i}"]`,
+      `#asset_liq_age_${i}`,          `[name="asset_liq_age_${i}"]`,
+      `#asset_liq_age${i}`,           `[name="asset_liq_age${i}"]`,
+    ];
+    const amtKeys = (i) => [
+      `#asset_liquidation_${i}`, `[name="asset_liquidation_${i}"]`,
+      `#asset_liquidation${i}`,  `[name="asset_liquidation${i}"]`,
+      `#asset_liq_${i}`,         `[name="asset_liq_${i}"]`,
+      `#asset_liq${i}`,          `[name="asset_liq${i}"]`,
+    ];
 
-    // 1) Common explicit patterns (both id and name)
     for (let i = 1; i <= 6; i++) {
-      const age = getBySelNum([
-        `#asset_liquidation_age_${i}`, `[name="asset_liquidation_age_${i}"]`,
-        `#asset_liquidation_age${i}`,   `[name="asset_liquidation_age${i}"]`,
-        `#asset_liq_age_${i}`,          `[name="asset_liq_age_${i}"]`,
-        `#asset_liq_age${i}`,           `[name="asset_liq_age${i}"]`,
-        `#liquidation_age_${i}`,        `[name="liquidation_age_${i}"]`,
-        `#liq_age_${i}`,                `[name="liq_age_${i}"]`,
-      ]);
-
-      const amt = getBySelNum([
-        `#asset_liquidation_${i}`, `[name="asset_liquidation_${i}"]`,
-        `#asset_liquidation${i}`,  `[name="asset_liquidation${i}"]`,
-        `#asset_liq_${i}`,         `[name="asset_liq_${i}"]`,
-        `#asset_liq${i}`,          `[name="asset_liq${i}"]`,
-        `#liquidation_${i}`,       `[name="liquidation_${i}"]`,
-        `#liq_${i}`,               `[name="liq_${i}"]`,
-      ]);
-
-      if (age > 0 && amt) liqs.push({ age, amount: amt });
+      const age = firstNum(ageKeys(i));
+      const amt = firstNum(amtKeys(i));
+      if (age > 0 && amt !== 0) liqs.push({ age, amount: amt });
     }
-
-    // 2) Generic fallback: catch pairs like (...age...), (...amount...) sitting next to each other
-    const allInputs = Array.from(document.querySelectorAll('input,select,textarea'));
-    for (let i = 0; i < allInputs.length; i++) {
-      const el = allInputs[i];
-      const idn = (el.id || el.name || "").toLowerCase();
-      if (!/age/.test(idn)) continue;
-      const age = toNum(el.value);
-      if (!(age > 0)) continue;
-
-      // try to find a sibling amount input near it
-      for (let j = Math.max(0, i - 3); j <= Math.min(allInputs.length - 1, i + 3); j++) {
-        if (j === i) continue;
-        const el2 = allInputs[j];
-        const idn2 = (el2.id || el2.name || "").toLowerCase();
-        if (!/(amount|value|liq|liquidation)/.test(idn2)) continue;
-        const amt = toNum(el2.value);
-        if (amt) {
-          liqs.push({ age, amount: amt });
-          break;
-        }
-      }
-    }
-
-    // de-duplicate (sum amounts by age)
-    const m = {};
-    for (const {age, amount} of liqs) {
-      if (age > 0 && amount) m[age] = (m[age] || 0) + amount;
-    }
-    return Object.entries(m).map(([age, amount]) => ({ age: Number(age), amount }));
+    return liqs;
   }
 
   // ---------------- DOM helpers ----------------
@@ -4431,8 +4398,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const pre_tfsa_annual = numMulti("pre_tfsa_annual", "tfsa_annual", "litev1_tfsa_annual");
     const pre_rrsp_annual = numMulti("pre_rrsp_annual", "rrsp_annual", "litev1_rrsp_annual");
 
-    // >>> robust, multi-pattern collector <<<
-    const asset_liquidations = collectAssetLiquidationsFromDOM();
+    // SINGLE SOURCE OF TRUTH for liquidations (prevents double counting)
+    const asset_liquidations = readAssetLiquidationsStrict();
 
     // CPP wiring (explicit → Extended From/To take priority; default to 65 only if nothing set)
     const cppMonthly = numMulti("cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support") || 0;
@@ -4901,6 +4868,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
 
 
 
