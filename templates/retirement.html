@@ -4252,6 +4252,25 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 (function () {
   const $ = (id) => document.getElementById(id);
 
+  // ---------- generic numeric helpers ----------
+  const toNum = (x) => Number(String(x ?? "").replace(/[^0-9.\-]/g, "")) || 0;
+  const readNumber = (el) => (el ? toNum(el.value) : 0);
+
+  // Return the first numeric value found among several selectors (0 if none)
+  const firstNum = (selectors) => {
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const v =
+        el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA"
+          ? el.value
+          : (el.getAttribute("value") ?? el.textContent);
+      const n = toNum(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return 0;
+  };
+
   // ---------------- tax helpers ----------------
   function readBracketsFromUI() {
     const v = (id) => {
@@ -4325,13 +4344,75 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return { gross, tax, net };
   }
 
+  // ---------- STRICT asset-liquidation reader ----------
+  function readAssetLiquidationsStrict() {
+    const liqs = [];
+    const ageKeys = (i) => [
+      `#asset_liquidation_age_${i}`, `[name="asset_liquidation_age_${i}"]`,
+      `#asset_liquidation_age${i}`,   `[name="asset_liquidation_age${i}"]`,
+      `#asset_liq_age_${i}`,          `[name="asset_liq_age_${i}"]`,
+      `#asset_liq_age${i}`,           `[name="asset_liq_age${i}"]`,
+    ];
+    const amtKeys = (i) => [
+      `#asset_liquidation_${i}`, `[name="asset_liquidation_${i}"]`,
+      `#asset_liquidation${i}`,  `[name="asset_liquidation${i}"]`,
+      `#asset_liq_${i}`,         `[name="asset_liq_${i}"]`,
+      `#asset_liq${i}`,          `[name="asset_liq${i}"]`,
+    ];
+
+    for (let i = 1; i <= 6; i++) {
+      const age = firstNum(ageKeys(i));
+      const amt = firstNum(amtKeys(i));
+      if (age > 0 && amt !== 0) liqs.push({ age, amount: amt });
+    }
+    return liqs;
+  }
+
+  // ---------- STRICT CPP reader (robust like asset reader) ----------
+  function readCPPStrict(defaultEndAge) {
+    // Amount (monthly) aliases
+    const amountSelectors = [
+      '#cpp_monthly','[name="cpp_monthly"]',
+      '#cpp_support','[name="cpp_support"]',
+      '#support_cpp','[name="support_cpp"]',
+      '#support_monthly','[name="support_monthly"]',
+      '#living_expense_support','[name="living_expense_support"]',
+      '#cpp_mo','[name="cpp_mo"]',
+      '#cpp','[name="cpp"]'
+    ];
+    // Start age aliases
+    const startSelectors = [
+      '#cpp_start_age','[name="cpp_start_age"]',
+      '#cpp_age_start','[name="cpp_age_start"]',
+      '#cpp_age','[name="cpp_age"]',
+      '#cpp_from_age','[name="cpp_from_age"]',
+      '#extended_year_from','[name="extended_year_from"]',
+      '#extended_from_age','[name="extended_from_age"]',
+      '#ext_year_from_age','[name="ext_year_from_age"]',
+      '#ext_from_age','[name="ext_from_age"]'
+    ];
+    // End age aliases
+    const endSelectors = [
+      '#cpp_end_age','[name="cpp_end_age"]',
+      '#cpp_age_end','[name="cpp_age_end"]',
+      '#cpp_to_age','[name="cpp_to_age"]',
+      '#extended_year_to','[name="extended_year_to"]',
+      '#extended_to_age','[name="extended_to_age"]',
+      '#ext_year_to_age','[name="ext_year_to_age"]',
+      '#ext_to_age','[name="ext_to_age"]'
+    ];
+
+    const monthly = firstNum(amountSelectors) || 0;
+    const startIn = firstNum(startSelectors);
+    const endIn   = firstNum(endSelectors);
+
+    const startAge = (Number.isFinite(startIn) && startIn > 0) ? startIn : 65;                 // only fallback if truly missing
+    const endAge   = (Number.isFinite(endIn)   && endIn   > 0) ? endIn   : (defaultEndAge||startAge);
+
+    return { cpp_monthly: monthly, cpp_start_age: startAge, cpp_end_age: endAge };
+  }
+
   // ---------------- DOM helpers ----------------
-  const readNumber = (el) => {
-    if (!el) return 0;
-    const s = String(el.value || "").replace(/,/g, "").trim();
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  };
   const numMulti = (...selectors) => {
     for (const sel of selectors) {
       let el = document.getElementById(sel);
@@ -4360,22 +4441,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const pre_tfsa_annual = numMulti("pre_tfsa_annual", "tfsa_annual", "litev1_tfsa_annual");
     const pre_rrsp_annual = numMulti("pre_rrsp_annual", "rrsp_annual", "litev1_rrsp_annual");
 
-    const asset_liquidations = (() => {
-      const liqs = [];
-      for (let i = 1; i <= 3; i++) {
-        const a = Number(document.getElementById(`asset_liquidation_age_${i}`)?.value || 0);
-        const v = Number(document.getElementById(`asset_liquidation_${i}`)?.value || 0);
-        if (a > 0 && v) liqs.push({ age: a, amount: v });
-      }
-      return liqs;
-    })();
+    // SINGLE SOURCE OF TRUTH for liquidations (prevents double counting)
+    const asset_liquidations = readAssetLiquidationsStrict();
 
-    // CPP wiring (explicit → Extended From/To take priority; default to 65 only if nothing set)
-    const cppMonthly = numMulti("cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support") || 0;
-    const cppStartIn = numMulti("extended_year_from","extended_from_age","ext_year_from_age","ext_from_age","cpp_start_age");
-    const cppEndIn   = numMulti("extended_year_to","extended_to_age","ext_year_to_age","ext_to_age","cpp_end_age");
-    const cpp_start_age = (Number.isFinite(cppStartIn) && cppStartIn > 0) ? cppStartIn : 65;
-    const cpp_end_age   = (Number.isFinite(cppEndIn)   && cppEndIn   > 0) ? cppEndIn   : end_age;
+    // CPP (strict, alias-aware; mirrors asset strict style)
+    const { cpp_monthly, cpp_start_age, cpp_end_age } = readCPPStrict(end_age);
 
     return {
       current_age,
@@ -4406,7 +4476,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       income_tax_rate: (num("litev1_income_tax") || 0) / 100,
 
       // CPP support (inflated between start & end ages)
-      cpp_monthly: cppMonthly,
+      cpp_monthly,
       cpp_start_age,
       cpp_end_age,
 
@@ -4598,12 +4668,14 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
   // ---------------- Optimizer (fixed order: Taxable → TFSA → RRSP) ----------------
   async function runOptimizerIfEnabled() {
+    const write = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+
     try {
       const toggle = document.getElementById("opt_toggle");
       if (toggle && !toggle.checked) return;
 
       const cfg     = buildCfgLight();
-      const preRows = buildPreRetRows(cfg);                // pre-retirement rows (for CSV and continuity)
+      const preRows = buildPreRetRows(cfg);
       const preLast = preRows[preRows.length - 1] || null;
 
       // opening balances at retirement
@@ -4623,16 +4695,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const br       = cfg.tax_brackets;
       const bracketsOn = !!(br && (br.enabled || br.bands));
 
-      // retirement-year liquidations map (ADD this in retire loop, before growth)
+      // retirement-year liquidations map (ADDED before growth)
       const lmRet = liqMap(cfg.asset_liquidations);
 
-      for (let age = cfg.retirement_age; age <= cfg.life_expectancy; age++) {
+      const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
+      const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
+
+      for (let age = rAge; age <= endAge; age++) {
         const openT = tBal, openF = fBal, openR = rBal;
 
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const oasGross = oasGrossAtAge(cfg, age);
-        const oasNet   = oasGross;                 // no headroom logic in fixed-order mode
+        const oasNet   = oasGross;                 // fixed-order: no headroom logic
         let netNeed    = Math.max(0, living - cppInc - oasNet);
 
         // ---- Taxable first ----
@@ -4642,15 +4717,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           if (bracketsOn) {
             const g = grossForNet(netNeed, /*base*/0, br, flatRate, openT);
             fromTax_NET               = Math.min(netNeed, g.net);
-            taxOnTaxable              = 0;                // overlay only in brackets mode
+            taxOnTaxable              = 0;
             fromTax_GROSS_FOR_TABLE   = Math.min(openT, g.gross);
             netNeed                   = Math.max(0, netNeed - g.net);
           } else {
             const take = Math.min(netNeed, openT);
             fromTax_NET             = take;
-            fromTax_GROSS_FOR_TABLE = take;              // table shows NET from taxable (drag>0)
+            fromTax_GROSS_FOR_TABLE = take;
             netNeed -= take;
-            taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0; // display-only unless drag==0
+            taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0;
           }
         }
 
@@ -4666,7 +4741,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         let fromRRSP_GROSS = 0, taxOnRRSP = 0;
         if (netNeed > 0 && openR > 0) {
           if (bracketsOn) {
-            const base = 0; // match working table: don't stack taxable draw into base here
+            const base = 0; // match working table
             const g = grossForNet(netNeed, base, br, flatRate, openR);
             fromRRSP_GROSS = g.gross;
             taxOnRRSP      = g.tax;
@@ -4709,13 +4784,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         tAfter += extraNetFromRRIFMin;
         taxOnRRSP += extraTaxFromRRIFMin;
 
-        // Flat overlay rule: only subtract E from assets when drag==0 and no brackets
         if (!bracketsOn && drag === 0 && taxOnTaxable > 0) {
           tAfter -= Math.min(tAfter, taxOnTaxable);
         }
 
         // ---- Asset liquidation (RETIREMENT years) BEFORE growth ----
-        const liq = lmRet[age] || 0;
+        const liq = Number(lmRet[age] || lmRet[String(age)] || 0);
         if (liq) tAfter += liq;
 
         // ---- Growth ----
@@ -4743,7 +4817,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Tax_On_Taxable: Math.round(taxOnTaxable),
           Tax_On_RRSP: Math.round(taxOnRRSP),
 
-          Liq_Added: Math.round(liq),                 // <<< added to table/CSV
+          Liq_Added: Math.round(liq),
           Taxable_Drag: Math.round(taxDragAmt),
 
           End_Taxable: Math.round(tBal),
@@ -4766,14 +4840,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       window.__optCfg  = cfg;
 
       const last = full[full.length - 1] || { Age: "—", End_Total: 0, Cum_Tax_On_Taxable: 0 };
-      $("opt_summary").textContent =
-        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`;
+      write(
+        "opt_summary",
+        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`
+      );
 
       const firstRet = rows.slice(0, 3);
       const r0 = firstRet.map(r =>
-        `Age ${r.Age}: Taxable $${r.From_Taxable_Gross.toLocaleString()}, TFSA $${r.From_TFSA.toLocaleString()}, RRSP(g) $${r.From_RRSP_Gross.toLocaleString()}`
+        `Age ${r.Age}: Taxable $${(r.From_Taxable_Gross ?? 0).toLocaleString()}, TFSA $${(r.From_TFSA ?? 0).toLocaleString()}, RRSP(g) $${(r.From_RRSP_Gross ?? 0).toLocaleString()}`
       ).join(" • ");
-      $("opt_rationale").textContent = r0 || "See table for per-year mix.";
+      write("opt_rationale", r0 || "See table for per-year mix.");
 
       // CSV button (once)
       if (!document.getElementById("opt_csv_btn")) {
@@ -4791,11 +4867,14 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           document.body.appendChild(a); a.click(); a.remove();
           URL.revokeObjectURL(url);
         };
-        $("opt_summary")?.parentElement?.appendChild(btn);
+        const host = document.getElementById("opt_summary");
+        if (host?.parentElement) host.parentElement.appendChild(btn);
       }
     } catch (e) {
-      $("opt_summary").textContent = "Optimizer error: " + (e?.message || "JS");
-      $("opt_rationale").textContent = "";
+      const msg = (e && e.message) ? e.message : "JS";
+      const write = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+      write("opt_summary", "Optimizer error: " + msg);
+      write("opt_rationale", "");
     }
   }
 
@@ -4809,9 +4888,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "oas_mo","oas_start_age","oas_threshold","oas_rate","rrif_start_age","litev1_income_tax",
     "tb_lim1","tb_lim2","tb_rate1","tb_rate2","tb_rate3","litev1_spend","litev1_return",
     "litev1_start_age","litev1_end_age","retirement_age",
-    "cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support",
-    "cpp_start_age","cpp_end_age","extended_from_age","extended_to_age","ext_from_age","ext_to_age",
-    "extended_year_from","extended_year_to","ext_year_from_age","ext_year_to_age",
+
+    // CPP aliases to catch changes anywhere
+    "cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support","cpp_mo","cpp",
+    "cpp_start_age","cpp_end_age","cpp_age_start","cpp_age_end","cpp_age","cpp_from_age","cpp_to_age",
+    "extended_from_age","extended_to_age","ext_from_age","ext_to_age","extended_year_from","extended_year_to","ext_year_from_age","ext_year_to_age",
+
     "litev1_taxable","litev1_rrsp","litev1_tfsa","litev1_monthly_saving","saving_increase_rate",
     "pre_tfsa_annual","pre_rrsp_annual","return_rate_after","inflation_rate","litev1_taxable_drag",
     "opt_toggle"
@@ -4827,6 +4909,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
+
+
 
 
 
