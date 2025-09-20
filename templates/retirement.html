@@ -4252,6 +4252,25 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 (function () {
   const $ = (id) => document.getElementById(id);
 
+  // ---------- generic numeric helpers ----------
+  const toNum = (x) => Number(String(x ?? "").replace(/[^0-9.\-]/g, "")) || 0;
+  const readNumber = (el) => (el ? toNum(el.value) : 0);
+
+  // Query any of several selectors and return the first numeric value found
+  const getBySelNum = (selectors) => {
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const v =
+        el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA"
+          ? el.value
+          : (el.getAttribute("value") ?? el.textContent);
+      const n = toNum(v);
+      if (Number.isFinite(n) && n !== 0) return n;
+    }
+    return 0;
+  };
+
   // ---------------- tax helpers ----------------
   function readBracketsFromUI() {
     const v = (id) => {
@@ -4325,13 +4344,65 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return { gross, tax, net };
   }
 
+  // ---------- Robust collector for asset liquidations regardless of field naming ----------
+  function collectAssetLiquidationsFromDOM() {
+    const liqs = [];
+
+    // 1) Common explicit patterns (both id and name)
+    for (let i = 1; i <= 6; i++) {
+      const age = getBySelNum([
+        `#asset_liquidation_age_${i}`, `[name="asset_liquidation_age_${i}"]`,
+        `#asset_liquidation_age${i}`,   `[name="asset_liquidation_age${i}"]`,
+        `#asset_liq_age_${i}`,          `[name="asset_liq_age_${i}"]`,
+        `#asset_liq_age${i}`,           `[name="asset_liq_age${i}"]`,
+        `#liquidation_age_${i}`,        `[name="liquidation_age_${i}"]`,
+        `#liq_age_${i}`,                `[name="liq_age_${i}"]`,
+      ]);
+
+      const amt = getBySelNum([
+        `#asset_liquidation_${i}`, `[name="asset_liquidation_${i}"]`,
+        `#asset_liquidation${i}`,  `[name="asset_liquidation${i}"]`,
+        `#asset_liq_${i}`,         `[name="asset_liq_${i}"]`,
+        `#asset_liq${i}`,          `[name="asset_liq${i}"]`,
+        `#liquidation_${i}`,       `[name="liquidation_${i}"]`,
+        `#liq_${i}`,               `[name="liq_${i}"]`,
+      ]);
+
+      if (age > 0 && amt) liqs.push({ age, amount: amt });
+    }
+
+    // 2) Generic fallback: catch pairs like (...age...), (...amount...) sitting next to each other
+    const allInputs = Array.from(document.querySelectorAll('input,select,textarea'));
+    for (let i = 0; i < allInputs.length; i++) {
+      const el = allInputs[i];
+      const idn = (el.id || el.name || "").toLowerCase();
+      if (!/age/.test(idn)) continue;
+      const age = toNum(el.value);
+      if (!(age > 0)) continue;
+
+      // try to find a sibling amount input near it
+      for (let j = Math.max(0, i - 3); j <= Math.min(allInputs.length - 1, i + 3); j++) {
+        if (j === i) continue;
+        const el2 = allInputs[j];
+        const idn2 = (el2.id || el2.name || "").toLowerCase();
+        if (!/(amount|value|liq|liquidation)/.test(idn2)) continue;
+        const amt = toNum(el2.value);
+        if (amt) {
+          liqs.push({ age, amount: amt });
+          break;
+        }
+      }
+    }
+
+    // de-duplicate (sum amounts by age)
+    const m = {};
+    for (const {age, amount} of liqs) {
+      if (age > 0 && amount) m[age] = (m[age] || 0) + amount;
+    }
+    return Object.entries(m).map(([age, amount]) => ({ age: Number(age), amount }));
+  }
+
   // ---------------- DOM helpers ----------------
-  const readNumber = (el) => {
-    if (!el) return 0;
-    const s = String(el.value || "").replace(/,/g, "").trim();
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  };
   const numMulti = (...selectors) => {
     for (const sel of selectors) {
       let el = document.getElementById(sel);
@@ -4360,15 +4431,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const pre_tfsa_annual = numMulti("pre_tfsa_annual", "tfsa_annual", "litev1_tfsa_annual");
     const pre_rrsp_annual = numMulti("pre_rrsp_annual", "rrsp_annual", "litev1_rrsp_annual");
 
-    const asset_liquidations = (() => {
-      const liqs = [];
-      for (let i = 1; i <= 3; i++) {
-        const a = Number(document.getElementById(`asset_liquidation_age_${i}`)?.value || 0);
-        const v = Number(document.getElementById(`asset_liquidation_${i}`)?.value || 0);
-        if (a > 0 && v) liqs.push({ age: a, amount: v });
-      }
-      return liqs;
-    })();
+    // >>> robust, multi-pattern collector <<<
+    const asset_liquidations = collectAssetLiquidationsFromDOM();
 
     // CPP wiring (explicit → Extended From/To take priority; default to 65 only if nothing set)
     const cppMonthly = numMulti("cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support") || 0;
@@ -4596,301 +4660,248 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     $("n1_hint").textContent    = "Fixed order (Taxable → TFSA → RRSP). Expenses, CPP & OAS are indexed; CPP applies only between its start/end ages.";
   }
 
+  // ---------------- Optimizer (fixed order: Taxable → TFSA → RRSP) ----------------
+  async function runOptimizerIfEnabled() {
+    const write = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
 
+    try {
+      const toggle = document.getElementById("opt_toggle");
+      if (toggle && !toggle.checked) return;
 
+      const cfg     = buildCfgLight();
+      const preRows = buildPreRetRows(cfg);                // pre-retirement rows (for CSV and continuity)
+      const preLast = preRows[preRows.length - 1] || null;
 
-// ---------------- Optimizer (fixed order: Taxable → TFSA → RRSP) ----------------
-async function runOptimizerIfEnabled() {
-  // Safe writers
-  const write = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+      // opening balances at retirement
+      let tBal  = preLast ? Number(preLast.End_Taxable || 0) : Number(cfg.taxable0 || 0);
+      let fBal  = preLast ? Number(preLast.End_TFSA    || 0) : Number(cfg.tfsa0    || 0);
+      let rBal  = preLast ? Number(preLast.End_RRSP    || 0) : Number(cfg.rrsp0    || 0);
 
-  // Small helpers (local to this block)
-  const parseMoney = (v) => {
-    if (v == null) return 0;
-    const s = String(v).replace(/[$,\s]/g, "");
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  };
-  const readVal = (id) => parseMoney(document.getElementById(id)?.value);
-  const readLiquidationsRobust = (cfg) => {
-    // If cfg already has a valid list, use it
-    if (Array.isArray(cfg?.asset_liquidations) && cfg.asset_liquidations.length) {
-      const good = cfg.asset_liquidations
-        .map(x => ({ age: parseMoney(x.age), amount: parseMoney(x.amount) }))
-        .filter(x => x.age > 0 && x.amount);
-      if (good.length) return good;
-    }
+      const rows   = [];
+      let cumTaxOnTaxable = 0;
 
-    // Otherwise probe a handful of common id patterns
-    const patterns = [
-      // primary
-      (i) => [`asset_liquidation_age_${i}`, `asset_liquidation_${i}`],
-      // variants seen in older sheets
-      (i) => [`asset_liquidation_age${i}`,  `asset_liquidation${i}`],
-      (i) => [`asset_liq_age_${i}`,         `asset_liq_${i}`],
-      (i) => [`asset_liq_age${i}`,          `asset_liq${i}`],
-      (i) => [`liq_age_${i}`,               `liq_amount_${i}`],
-      (i) => [`liq_age${i}`,                `liq_amount${i}`],
-    ];
+      // environment
+      const rAfter   = Math.max(0, cfg.return_rate_after || 0);
+      const drag     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+      const gN       = 1 + rAfter;               // RRSP/TFSA growth
+      const gT       = 1 + rAfter * (1 - drag);  // taxable growth net of drag
+      const flatRate = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
+      const br       = cfg.tax_brackets;
+      const bracketsOn = !!(br && (br.enabled || br.bands));
 
-    const liqs = [];
-    for (let i = 1; i <= 5; i++) {
-      let age = 0, amt = 0;
-      for (const f of patterns) {
-        const [aId, vId] = f(i);
-        age = Math.max(age, readVal(aId));
-        amt = Math.max(amt, readVal(vId));
-      }
-      if (age > 0 && amt) liqs.push({ age, amount: amt });
-    }
-    return liqs;
-  };
-  const makeLiqMap = (list) => {
-    const m = {};
-    (list || []).forEach(({age, amount}) => {
-      const a = parseMoney(age), v = parseMoney(amount);
-      if (a > 0 && v) m[a] = (m[a] || 0) + v;
-    });
-    return m;
-  };
+      // retirement-year liquidations map (ADDED before growth)
+      const lmRet = liqMap(cfg.asset_liquidations);
 
-  try {
-    const toggle = document.getElementById("opt_toggle");
-    if (toggle && !toggle.checked) return;
+      const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
+      const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
 
-    const cfg     = buildCfgLight();
-    const preRows = buildPreRetRows(cfg);
-    const preLast = preRows[preRows.length - 1] || null;
+      for (let age = rAge; age <= endAge; age++) {
+        const openT = tBal, openF = fBal, openR = rBal;
 
-    // Opening balances at retirement
-    let tBal  = preLast ? parseMoney(preLast.End_Taxable) : parseMoney(cfg.taxable0);
-    let fBal  = preLast ? parseMoney(preLast.End_TFSA)    : parseMoney(cfg.tfsa0);
-    let rBal  = preLast ? parseMoney(preLast.End_RRSP)    : parseMoney(cfg.rrsp0);
+        const living   = livingExpenseAtAge(cfg, age);
+        const cppInc   = cppAtAge(cfg, age);
+        const oasGross = oasGrossAtAge(cfg, age);
+        const oasNet   = oasGross;                 // fixed-order: no headroom logic
+        let netNeed    = Math.max(0, living - cppInc - oasNet);
 
-    const rows   = [];
-    let cumTaxOnTaxable = 0;
+        // ---- Taxable first ----
+        let fromTax_NET = 0, taxOnTaxable = 0, fromTax_GROSS_FOR_TABLE = 0;
 
-    // Environment
-    const rAfter   = Math.max(0, cfg.return_rate_after || 0);
-    const drag     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const gN       = 1 + rAfter;               // RRSP/TFSA growth
-    const gT       = 1 + rAfter * (1 - drag);  // Taxable growth net of drag
-    const flatRate = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
-    const br       = cfg.tax_brackets;
-    const bracketsOn = !!(br && (br.enabled || br.bands));
-
-    // Liquidations for retirement years (robust)
-    const liqList = readLiquidationsRobust(cfg);
-    const lmRet   = makeLiqMap(liqList);
-
-    // Guard ages
-    const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
-    const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
-
-    for (let age = rAge; age <= endAge; age++) {
-      const openT = tBal, openF = fBal, openR = rBal;
-
-      const living   = livingExpenseAtAge(cfg, age);
-      const cppInc   = cppAtAge(cfg, age);
-      const oasGross = oasGrossAtAge(cfg, age);
-      const oasNet   = oasGross; // fixed-order (no OAS headroom)
-      let   netNeed  = Math.max(0, living - cppInc - oasNet);
-
-      // ---- Taxable first ----
-      let fromTax_NET = 0, taxOnTaxable = 0, fromTax_GROSS_FOR_TABLE = 0;
-      if (netNeed > 0 && openT > 0) {
-        if (bracketsOn) {
-          const g = grossForNet(netNeed, /*base*/0, br, flatRate, openT);
-          fromTax_NET             = Math.min(netNeed, g.net);
-          taxOnTaxable            = 0; // overlay E shown as 0 in brackets mode
-          fromTax_GROSS_FOR_TABLE = Math.min(openT, g.gross);
-          netNeed -= g.net;
-        } else {
-          const take = Math.min(netNeed, openT);
-          fromTax_NET             = take;
-          fromTax_GROSS_FOR_TABLE = take; // table shows NET when drag>0
-          netNeed -= take;
-          taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0; // display-only unless drag==0
-        }
-      }
-
-      // ---- TFSA next ----
-      let fromTFSA = 0;
-      if (netNeed > 0 && openF > 0) {
-        const take = Math.min(netNeed, openF);
-        fromTFSA = take; netNeed -= take;
-      }
-
-      // ---- RRSP last ----
-      let fromRRSP_GROSS = 0, taxOnRRSP = 0;
-      if (netNeed > 0 && openR > 0) {
-        if (bracketsOn) {
-          const g = grossForNet(netNeed, /*base*/0, br, flatRate, openR);
-          fromRRSP_GROSS = g.gross;
-          taxOnRRSP      = g.tax;
-          netNeed       -= g.net;
-        } else {
-          const f = flatRate;
-          const netPossible = openR * (1 - f);
-          const netTake     = Math.min(netNeed, Math.max(0, netPossible));
-          const gross       = netTake > 0 ? netTake / (1 - f) : 0;
-          fromRRSP_GROSS    = Math.min(openR, gross);
-          taxOnRRSP         = fromRRSP_GROSS * f;
-          netNeed          -= netTake;
-        }
-      }
-
-      // ---- RRIF minimum (force extra gross; net → taxable) ----
-      let rrifPct = 0, extraTaxFromRRIFMin = 0, extraNetFromRRIFMin = 0;
-      if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age && openR > 0) {
-        rrifPct = rrifMinPct(age);
-        const rrspLeftBeforeGrowth = Math.max(0, openR - fromRRSP_GROSS);
-        const mustGross = rrspLeftBeforeGrowth * rrifPct;
-        if (mustGross > 0) {
+        if (netNeed > 0 && openT > 0) {
           if (bracketsOn) {
-            extraTaxFromRRIFMin = incrTax(mustGross, /*base*/0, br, flatRate);
-            extraNetFromRRIFMin = Math.max(0, mustGross - extraTaxFromRRIFMin);
+            const g = grossForNet(netNeed, /*base*/0, br, flatRate, openT);
+            fromTax_NET               = Math.min(netNeed, g.net);
+            taxOnTaxable              = 0;                // overlay only in brackets mode
+            fromTax_GROSS_FOR_TABLE   = Math.min(openT, g.gross);
+            netNeed                   = Math.max(0, netNeed - g.net);
           } else {
-            extraTaxFromRRIFMin = mustGross * flatRate;
-            extraNetFromRRIFMin = mustGross - extraTaxFromRRIFMin;
+            const take = Math.min(netNeed, openT);
+            fromTax_NET             = take;
+            fromTax_GROSS_FOR_TABLE = take;              // table shows NET from taxable (drag>0)
+            netNeed -= take;
+            taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0; // display-only unless drag==0
           }
-          fromRRSP_GROSS += mustGross;
         }
+
+        // ---- TFSA next ----
+        let fromTFSA = 0;
+        if (netNeed > 0 && openF > 0) {
+          const take = Math.min(netNeed, openF);
+          fromTFSA = take;
+          netNeed -= take;
+        }
+
+        // ---- RRSP last ----
+        let fromRRSP_GROSS = 0, taxOnRRSP = 0;
+        if (netNeed > 0 && openR > 0) {
+          if (bracketsOn) {
+            const base = 0; // match working table: don't stack taxable draw into base here
+            const g = grossForNet(netNeed, base, br, flatRate, openR);
+            fromRRSP_GROSS = g.gross;
+            taxOnRRSP      = g.tax;
+            netNeed        = Math.max(0, netNeed - g.net);
+          } else {
+            const flat = flatRate;
+            const netPossible = openR * (1 - flat);
+            const netTake     = Math.min(netNeed, Math.max(0, netPossible));
+            const gross       = netTake > 0 ? netTake / (1 - flat) : 0;
+            fromRRSP_GROSS    = Math.min(openR, gross);
+            taxOnRRSP         = fromRRSP_GROSS * flat;
+            netNeed          -= netTake;
+          }
+        }
+
+        // ---- RRIF minimum (force extra gross; net flows into taxable) ----
+        let rrifPct = 0, extraTaxFromRRIFMin = 0, extraNetFromRRIFMin = 0;
+        if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age && openR > 0) {
+          rrifPct = rrifMinPct(age);
+          const rrspLeftBeforeGrowth = Math.max(0, openR - fromRRSP_GROSS);
+          const mustGross = rrspLeftBeforeGrowth * rrifPct;
+          if (mustGross > 0) {
+            if (bracketsOn) {
+              extraTaxFromRRIFMin = incrTax(mustGross, /*base*/0, br, flatRate);
+              extraNetFromRRIFMin = Math.max(0, mustGross - extraTaxFromRRIFMin);
+            } else {
+              extraTaxFromRRIFMin = mustGross * flatRate;
+              extraNetFromRRIFMin = mustGross - extraTaxFromRRIFMin;
+            }
+            fromRRSP_GROSS += mustGross;
+          }
+        }
+
+        // ---- Pre-growth balances (apply NET only) ----
+        let tAfter = openT - fromTax_NET;
+        let fAfter = openF - fromTFSA;
+        let rAfterBal = openR - fromRRSP_GROSS;
+
+        // RRIF-min net lands in taxable (pre-growth)
+        tAfter += extraNetFromRRIFMin;
+        taxOnRRSP += extraTaxFromRRIFMin;
+
+        // Flat overlay rule: only subtract E from assets when drag==0 and no brackets
+        if (!bracketsOn && drag === 0 && taxOnTaxable > 0) {
+          tAfter -= Math.min(tAfter, taxOnTaxable);
+        }
+
+        // ---- Asset liquidation (RETIREMENT years) BEFORE growth ----
+        const liq = Number(lmRet[age] || lmRet[String(age)] || 0);
+        if (liq) tAfter += liq;
+
+        // ---- Growth ----
+        const taxDragAmt = Math.max(0, tAfter) * rAfter * drag; // display only
+        tBal  = Math.max(0, tAfter) * gT;
+        fBal  = Math.max(0, fAfter) * gN;
+        rBal  = Math.max(0, rAfterBal) * gN;
+
+        // ---- Output row ----
+        const incomeTaxPayment = Math.round(taxOnTaxable + taxOnRRSP);
+        cumTaxOnTaxable += Math.round(taxOnTaxable);
+
+        rows.push({
+          Age: age,
+
+          From_Taxable_Gross: Math.round(fromTax_GROSS_FOR_TABLE),
+          From_TFSA: Math.round(fromTFSA),
+          From_RRSP_Gross: Math.round(fromRRSP_GROSS),
+          RRIF_Min_Pct: (rrifPct * 100).toFixed(2) + "%",
+
+          OAS_Gross: Math.round(oasGross),
+          OAS_Clawback: 0,
+          OAS_Net: Math.round(oasNet),
+
+          Tax_On_Taxable: Math.round(taxOnTaxable),
+          Tax_On_RRSP: Math.round(taxOnRRSP),
+
+          Liq_Added: Math.round(liq),                 // shows the 500 (etc) in table/CSV
+          Taxable_Drag: Math.round(taxDragAmt),
+
+          End_Taxable: Math.round(tBal),
+          End_TFSA: Math.round(fBal),
+          End_RRSP: Math.round(rBal),
+          End_Total_Raw: Math.round(Math.max(0, tAfter) + Math.max(0, fAfter) + Math.max(0, rAfterBal)),
+          Cum_Tax_On_Taxable: Math.round(cumTaxOnTaxable),
+          End_Total: Math.round(tBal + fBal + rBal),
+
+          CPP: Math.round(cppInc),
+          Living_Expense: Math.round(living),
+          Income_Tax_Payment: incomeTaxPayment,
+          Living_Exp_Ret: Math.round(Math.max(0, living - cppInc - oasNet) + incomeTaxPayment),
+          Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0
+        });
       }
 
-      // ---- Pre-growth balances (apply NET only) ----
-      let tAfter    = openT - fromTax_NET;
-      const fAfter  = openF - fromTFSA;
-      const rAfterB = openR - fromRRSP_GROSS;
+      const full = [...preRows, ...rows];
+      window.__optRows = full;
+      window.__optCfg  = cfg;
 
-      // RRIF-min net → taxable
-      tAfter    += extraNetFromRRIFMin;
-      taxOnRRSP += extraTaxFromRRIFMin;
+      const last = full[full.length - 1] || { Age: "—", End_Total: 0, Cum_Tax_On_Taxable: 0 };
+      write(
+        "opt_summary",
+        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`
+      );
 
-      // Flat overlay: only subtract E from assets when drag==0 (no brackets)
-      if (!bracketsOn && drag === 0 && taxOnTaxable > 0) {
-        tAfter -= Math.min(tAfter, taxOnTaxable);
+      const firstRet = rows.slice(0, 3);
+      const r0 = firstRet.map(r =>
+        `Age ${r.Age}: Taxable $${(r.From_Taxable_Gross ?? 0).toLocaleString()}, TFSA $${(r.From_TFSA ?? 0).toLocaleString()}, RRSP(g) $${(r.From_RRSP_Gross ?? 0).toLocaleString()}`
+      ).join(" • ");
+      write("opt_rationale", r0 || "See table for per-year mix.");
+
+      // CSV button (once)
+      if (!document.getElementById("opt_csv_btn")) {
+        const btn = document.createElement("button");
+        btn.id = "opt_csv_btn";
+        btn.className = "btn btn-sm";
+        btn.style.marginLeft = "8px";
+        btn.textContent = "Download optimizer CSV";
+        btn.onclick = () => {
+          const csv = toCSV(window.__optRows || [], CSV_COLS);
+          const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "optimized_withdrawals.csv";
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        };
+        const host = document.getElementById("opt_summary");
+        if (host?.parentElement) host.parentElement.appendChild(btn);
       }
-
-      // ---- Retirement-year liquidation BEFORE growth ----
-      // (Accept both numeric and string keys)
-      const liq = parseMoney(lmRet[age] ?? lmRet[String(age)] ?? 0);
-      if (liq) tAfter += liq;
-
-      // ---- Growth ----
-      const taxDragAmt = Math.max(0, tAfter) * rAfter * drag; // display only
-      tBal = Math.max(0, tAfter)   * gT;
-      fBal = Math.max(0, fAfter)   * gN;
-      rBal = Math.max(0, rAfterB)  * gN;
-
-      // ---- Output row ----
-      const incomeTaxPayment = Math.round(taxOnTaxable + taxOnRRSP);
-      cumTaxOnTaxable += Math.round(taxOnTaxable);
-
-      rows.push({
-        Age: age,
-
-        From_Taxable_Gross: Math.round(fromTax_GROSS_FOR_TABLE),
-        From_TFSA: Math.round(fromTFSA),
-        From_RRSP_Gross: Math.round(fromRRSP_GROSS),
-        RRIF_Min_Pct: (rrifPct * 100).toFixed(2) + "%",
-
-        OAS_Gross: Math.round(oasGross),
-        OAS_Clawback: 0,
-        OAS_Net: Math.round(oasNet),
-
-        Tax_On_Taxable: Math.round(taxOnTaxable),
-        Tax_On_RRSP: Math.round(taxOnRRSP),
-
-        Liq_Added: Math.round(liq),                 // visible & in CSV
-        Taxable_Drag: Math.round(taxDragAmt),
-
-        End_Taxable: Math.round(tBal),
-        End_TFSA: Math.round(fBal),
-        End_RRSP: Math.round(rBal),
-        End_Total_Raw: Math.round(Math.max(0, tAfter) + Math.max(0, fAfter) + Math.max(0, rAfterB)),
-        Cum_Tax_On_Taxable: Math.round(cumTaxOnTaxable),
-        End_Total: Math.round(tBal + fBal + rBal),
-
-        CPP: Math.round(cppInc),
-        Living_Expense: Math.round(living),
-        Income_Tax_Payment: incomeTaxPayment,
-        Living_Exp_Ret: Math.round(Math.max(0, living - cppInc - oasNet) + incomeTaxPayment),
-        Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0
-      });
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : "JS";
+      const write = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+      write("opt_summary", "Optimizer error: " + msg);
+      write("opt_rationale", "");
     }
-
-    const full = [...preRows, ...rows];
-    window.__optRows = full;
-    window.__optCfg  = cfg;
-
-    const last = full[full.length - 1] || { Age: "—", End_Total: 0, Cum_Tax_On_Taxable: 0 };
-    write(
-      "opt_summary",
-      `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`
-    );
-
-    const firstRet = rows.slice(0, 3);
-    const r0 = firstRet.map(r =>
-      `Age ${r.Age}: Taxable $${(r.From_Taxable_Gross ?? 0).toLocaleString()}, TFSA $${(r.From_TFSA ?? 0).toLocaleString()}, RRSP(g) $${(r.From_RRSP_Gross ?? 0).toLocaleString()}`
-    ).join(" • ");
-    write("opt_rationale", r0 || "See table for per-year mix.");
-
-    // CSV button (once)
-    if (!document.getElementById("opt_csv_btn")) {
-      const btn = document.createElement("button");
-      btn.id = "opt_csv_btn";
-      btn.className = "btn btn-sm";
-      btn.style.marginLeft = "8px";
-      btn.textContent = "Download optimizer CSV";
-      btn.onclick = () => {
-        const csv = toCSV(window.__optRows || [], CSV_COLS);
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "optimized_withdrawals.csv";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-      };
-      const host = document.getElementById("opt_summary");
-      if (host?.parentElement) host.parentElement.appendChild(btn);
-    }
-  } catch (e) {
-    write("opt_summary", "Optimizer error: " + (e?.message || "JS"));
-    write("opt_rationale", "");
   }
-}
 
-// ---------------- wiring (unchanged) ----------------
-document.getElementById("litev1_run")?.addEventListener("click", () => {
-  try { nextDollar(); } catch(_) {}
-  setTimeout(runOptimizerIfEnabled, 60);
-});
+  // ---------------- wiring ----------------
+  $("litev1_run")?.addEventListener("click", () => {
+    try { nextDollar(); } catch(_) {}
+    setTimeout(runOptimizerIfEnabled, 60);
+  });
 
-[
-  "oas_mo","oas_start_age","oas_threshold","oas_rate","rrif_start_age","litev1_income_tax",
-  "tb_lim1","tb_lim2","tb_rate1","tb_rate2","tb_rate3","litev1_spend","litev1_return",
-  "litev1_start_age","litev1_end_age","retirement_age",
-  "cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support",
-  "cpp_start_age","cpp_end_age","extended_from_age","extended_to_age","ext_from_age","ext_to_age",
-  "extended_year_from","extended_year_to","ext_year_from_age","ext_year_to_age",
-  "litev1_taxable","litev1_rrsp","litev1_tfsa","litev1_monthly_saving","saving_increase_rate",
-  "pre_tfsa_annual","pre_rrsp_annual","return_rate_after","inflation_rate","litev1_taxable_drag",
-  "opt_toggle"
-].forEach(id => document.getElementById(id)?.addEventListener("input", () => {
-  try { nextDollar(); } catch(_) {}
-  runOptimizerIfEnabled();
-}));
+  [
+    "oas_mo","oas_start_age","oas_threshold","oas_rate","rrif_start_age","litev1_income_tax",
+    "tb_lim1","tb_lim2","tb_rate1","tb_rate2","tb_rate3","litev1_spend","litev1_return",
+    "litev1_start_age","litev1_end_age","retirement_age",
+    "cpp_monthly","cpp_support","support_cpp","support_monthly","living_expense_support",
+    "cpp_start_age","cpp_end_age","extended_from_age","extended_to_age","ext_from_age","ext_to_age",
+    "extended_year_from","extended_year_to","ext_year_from_age","ext_year_to_age",
+    "litev1_taxable","litev1_rrsp","litev1_tfsa","litev1_monthly_saving","saving_increase_rate",
+    "pre_tfsa_annual","pre_rrsp_annual","return_rate_after","inflation_rate","litev1_taxable_drag",
+    "opt_toggle"
+  ].forEach(id => document.getElementById(id)?.addEventListener("input", () => {
+    try { nextDollar(); } catch(_) {}
+    runOptimizerIfEnabled();
+  }));
 
-document.addEventListener("DOMContentLoaded", () => {
-  try { nextDollar(); } catch(_) {}
-  runOptimizerIfEnabled();
-});
-
-
+  document.addEventListener("DOMContentLoaded", () => {
+    try { nextDollar(); } catch(_) {}
+    runOptimizerIfEnabled();
+  });
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
 
 
 
