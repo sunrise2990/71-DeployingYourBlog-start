@@ -4256,32 +4256,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   const toNum = (x) => Number(String(x ?? "").replace(/[^0-9.\-]/g, "")) || 0;
   const readNumber = (el) => (el ? toNum(el.value) : 0);
 
-  // Visibility helpers (ignore hidden/legacy defaults)
-  function isVisible(el){
-    if (!el) return false;
-    if (el.type === "hidden") return false;
-    if (el.hasAttribute("hidden")) return false;
-    const cs = window.getComputedStyle ? getComputedStyle(el) : null;
-    if (cs && (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0)) return false;
-    if ((el.offsetWidth === 0 && el.offsetHeight === 0) && !(cs && cs.position === "fixed")) return false;
-    if (el.closest("[hidden], [aria-hidden='true']")) return false;
-    return true;
-  }
-  function firstVisibleNum(selectors){
-    for (const sel of selectors) {
-      const nodes = document.querySelectorAll(sel);
-      for (const el of nodes) {
-        if (!isVisible(el)) continue;
-        const v = (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA")
-          ? el.value
-          : (el.getAttribute("value") ?? el.textContent);
-        const n = toNum(v);
-        if (Number.isFinite(n) && n !== 0) return n;
-      }
-    }
-    return 0;
-  }
-
   // Return the first numeric value found among several selectors (0 if none)
   const firstNum = (selectors) => {
     for (const sel of selectors) {
@@ -4335,7 +4309,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const last = br.bands[br.bands.length - 1];
     return tax + Math.max(0, I - prev) * (last.rate || 0);
   }
-  function incrTax(d, b, br, flat) {
+  function incrTax(d, b, br, flat) {               // incremental tax on delta d at base b
     d = Math.max(0, d || 0);
     b = Math.max(0, b || 0);
     if (br && (br.enabled || br.bands)) return Math.max(0, taxFromBr(b + d, br) - taxFromBr(b, br));
@@ -4348,6 +4322,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const netFn = (g) => Math.max(0, g - incrTax(g, base, br, flat));
     if (netNeed <= 0) return {gross:0, tax:0, net:0};
 
+    // grow guess until net(hi) >= netNeed or cap reached
     let lo = 0, hi = Math.min(Math.max(1, netNeed * 1.3), maxGross || Infinity);
     let nHi = netFn(hi);
     while (nHi < netNeed - 0.01 && hi < (maxGross || Infinity)) {
@@ -4357,6 +4332,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       if (hi <= lo + 1) { nHi = n; break; }
       nHi = n;
     }
+    // bisection
     for (let i = 0; i < 30; i++) {
       const mid = (lo + hi) / 2;
       const n = netFn(mid);
@@ -4371,6 +4347,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   // ---------- STRICT asset-liquidation reader (no generic DOM scan, no duplicates) ----------
   function readAssetLiquidationsStrict() {
     const liqs = [];
+    // support a few safe aliases but only read ONE pair per index
     const ageKeys = (i) => [
       `#asset_liquidation_age_${i}`, `[name="asset_liquidation_age_${i}"]`,
       `#asset_liquidation_age${i}`,   `[name="asset_liquidation_age${i}"]`,
@@ -4385,8 +4362,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     ];
 
     for (let i = 1; i <= 6; i++) {
-      const age = firstVisibleNum(ageKeys(i));
-      const amt = firstVisibleNum(amtKeys(i));
+      const age = firstNum(ageKeys(i));
+      const amt = firstNum(amtKeys(i));
       if (age > 0 && amt !== 0) liqs.push({ age, amount: amt });
     }
     return liqs;
@@ -4401,31 +4378,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     }
     return 0;
   };
-
-  // CPP reader: prefer *visible* Extended Year From/To; fall back to hidden only if nothing visible
-  function readCppRange(end_age_default) {
-    const startVis = firstVisibleNum([
-      '#extended_year_from_age','[name="extended_year_from_age"]',
-      '#extended_year_from','[name="extended_year_from"]',
-      '#ext_year_from_age','[name="ext_year_from_age"]',
-      '#extended_from_age','[name="extended_from_age"]',
-      '#ext_from_age','[name="ext_from_age"]',
-      '#cpp_start_age','[name="cpp_start_age"]'
-    ]);
-    const endVis = firstVisibleNum([
-      '#extended_year_to_age','[name="extended_year_to_age"]',
-      '#extended_year_to','[name="extended_year_to"]',
-      '#ext_year_to_age','[name="ext_year_to_age"]',
-      '#extended_to_age','[name="extended_to_age"]',
-      '#ext_to_age','[name="ext_to_age"]',
-      '#cpp_end_age','[name="cpp_end_age"]'
-    ]);
-
-    const start = (Number.isFinite(startVis) && startVis > 0) ? startVis : 65;
-    let end = (Number.isFinite(endVis) && endVis > 0) ? endVis : end_age_default;
-    if (end < start) end = start;
-    return { start, end };
-  }
 
   // ---------------- config ----------------
   function buildCfgLight() {
@@ -4449,8 +4401,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     // SINGLE SOURCE OF TRUTH for liquidations (prevents double counting)
     const asset_liquidations = readAssetLiquidationsStrict();
 
-    // CPP monthly (visible fields preferred)
-    const cppMonthly = firstVisibleNum([
+    // ---- CPP: read exactly like asset acquisition, with aliases in priority order ----
+    const cppMonthly = firstNum([
       '#cpp_monthly','[name="cpp_monthly"]',
       '#cpp_support','[name="cpp_support"]',
       '#support_cpp','[name="support_cpp"]',
@@ -4458,8 +4410,25 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       '#living_expense_support','[name="living_expense_support"]'
     ]) || 0;
 
-    // CPP start/end ages (visible Extended Year fields take priority)
-    const { start: cpp_start_age, end: cpp_end_age } = readCppRange(end_age);
+    const cppStartIn = firstNum([
+      '#extended_year_from_age','[name="extended_year_from_age"]',
+      '#extended_year_from','[name="extended_year_from"]',
+      '#extended_from_age','[name="extended_from_age"]',
+      '#ext_year_from_age','[name="ext_year_from_age"]',
+      '#ext_from_age','[name="ext_from_age"]',
+      '#cpp_start_age','[name="cpp_start_age"]'
+    ]);
+    const cppEndIn = firstNum([
+      '#extended_year_to_age','[name="extended_year_to_age"]',
+      '#extended_year_to','[name="extended_year_to"]',
+      '#extended_to_age','[name="extended_to_age"]',
+      '#ext_year_to_age','[name="ext_year_to_age"]',
+      '#ext_to_age','[name="ext_to_age"]',
+      '#cpp_end_age','[name="cpp_end_age"]'
+    ]);
+
+    const cpp_start_age = (Number.isFinite(cppStartIn) && cppStartIn > 0) ? cppStartIn : 65;
+    const cpp_end_age   = (Number.isFinite(cppEndIn)   && cppEndIn   > 0) ? cppEndIn   : end_age;
 
     return {
       current_age,
@@ -4673,7 +4642,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const oas = oasGrossAtAge(cfg, age);
     const baseIncome = cpp + oas;
 
-    const rr_tax = incrTax(1000, baseIncome, br, cfg.income_tax_rate) / 1000;
+    const rr_tax = incrTax(1000, baseIncome, br, cfg.income_tax_rate) / 1000;  // ordinary marginal
     $("n1_rrsp").textContent    = `RRSP marginal ≈ ${(rr_tax*100).toFixed(1)}%`;
     $("n1_taxable").textContent = `Taxable effective ≈ ${(cfg.income_tax_rate*100).toFixed(1)}% (flat)`;
     $("n1_oas").textContent     = (cfg.oas_monthly>0) ? `OAS headroom logic off in fixed-order mode` : `OAS not in play`;
@@ -4689,9 +4658,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       if (toggle && !toggle.checked) return;
 
       const cfg     = buildCfgLight();
-      const preRows = buildPreRetRows(cfg);
+      const preRows = buildPreRetRows(cfg);                // pre-retirement rows (for CSV and continuity)
       const preLast = preRows[preRows.length - 1] || null;
 
+      // opening balances at retirement
       let tBal  = preLast ? Number(preLast.End_Taxable || 0) : Number(cfg.taxable0 || 0);
       let fBal  = preLast ? Number(preLast.End_TFSA    || 0) : Number(cfg.tfsa0    || 0);
       let rBal  = preLast ? Number(preLast.End_RRSP    || 0) : Number(cfg.rrsp0    || 0);
@@ -4699,14 +4669,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const rows   = [];
       let cumTaxOnTaxable = 0;
 
+      // environment
       const rAfter   = Math.max(0, cfg.return_rate_after || 0);
       const drag     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-      const gN       = 1 + rAfter;
-      const gT       = 1 + rAfter * (1 - drag);
+      const gN       = 1 + rAfter;               // RRSP/TFSA growth
+      const gT       = 1 + rAfter * (1 - drag);  // taxable growth net of drag
       const flatRate = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
       const br       = cfg.tax_brackets;
       const bracketsOn = !!(br && (br.enabled || br.bands));
 
+      // retirement-year liquidations map (ADDED before growth)
       const lmRet = liqMap(cfg.asset_liquidations);
 
       const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
@@ -4718,7 +4690,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const oasGross = oasGrossAtAge(cfg, age);
-        const oasNet   = oasGross;
+        const oasNet   = oasGross;                 // fixed-order: no headroom logic
         let netNeed    = Math.max(0, living - cppInc - oasNet);
 
         // ---- Taxable first ----
@@ -4728,15 +4700,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           if (bracketsOn) {
             const g = grossForNet(netNeed, /*base*/0, br, flatRate, openT);
             fromTax_NET               = Math.min(netNeed, g.net);
-            taxOnTaxable              = 0;
+            taxOnTaxable              = 0;                // overlay only in brackets mode
             fromTax_GROSS_FOR_TABLE   = Math.min(openT, g.gross);
             netNeed                   = Math.max(0, netNeed - g.net);
           } else {
             const take = Math.min(netNeed, openT);
             fromTax_NET             = take;
-            fromTax_GROSS_FOR_TABLE = take;
+            fromTax_GROSS_FOR_TABLE = take;              // table shows NET from taxable (drag>0)
             netNeed -= take;
-            taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0;
+            taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0; // display-only unless drag==0
           }
         }
 
@@ -4752,7 +4724,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         let fromRRSP_GROSS = 0, taxOnRRSP = 0;
         if (netNeed > 0 && openR > 0) {
           if (bracketsOn) {
-            const base = 0;
+            const base = 0; // match working table: don't stack taxable draw into base here
             const g = grossForNet(netNeed, base, br, flatRate, openR);
             fromRRSP_GROSS = g.gross;
             taxOnRRSP      = g.tax;
@@ -4805,7 +4777,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         if (liq) tAfter += liq;
 
         // ---- Growth ----
-        const taxDragAmt = Math.max(0, tAfter) * rAfter * drag;
+        const taxDragAmt = Math.max(0, tAfter) * rAfter * drag; // display only
         tBal  = Math.max(0, tAfter) * gT;
         fBal  = Math.max(0, fAfter) * gN;
         rBal  = Math.max(0, rAfterBal) * gN;
@@ -4829,7 +4801,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Tax_On_Taxable: Math.round(taxOnTaxable),
           Tax_On_RRSP: Math.round(taxOnRRSP),
 
-          Liq_Added: Math.round(liq),
+          Liq_Added: Math.round(liq),                 // shows the 500 (etc) in table/CSV
           Taxable_Drag: Math.round(taxDragAmt),
 
           End_Taxable: Math.round(tBal),
@@ -4841,8 +4813,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
           CPP: Math.round(cppInc),
           Living_Expense: Math.round(living),
-          Income_Tax_Payment: incomeTaxPayment,
-          Living_Exp_Ret: Math.round(Math.max(0, living - cppInc - oasNet) + incomeTaxPayment),
+          Income_Tax_Payment: Math.round(taxOnTaxable + taxOnRRSP),
+          Living_Exp_Ret: Math.round(Math.max(0, living - cppInc - oasNet) + Math.round(taxOnTaxable + taxOnRRSP)),
           Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0
         });
       }
