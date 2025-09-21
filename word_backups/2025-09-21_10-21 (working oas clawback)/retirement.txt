@@ -4271,18 +4271,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return 0;
   };
 
-  // read a percentage (0–100) from any of several ids/names and return decimal (0–1)
-  function readPctMulti(candidates){
-    for (const key of candidates){
-      let el = document.getElementById(key);
-      if (!el) el = document.querySelector(`#${key},[name="${key}"]`);
-      if (!el) continue;
-      const v = Number(String(el.value ?? "").replace(/,/g, ""));
-      if (Number.isFinite(v)) return Math.max(0, v) / 100;
-    }
-    return 0;
-  }
-
   // ---------------- tax helpers ----------------
   function readBracketsFromUI() {
     const v = (id) => {
@@ -4456,19 +4444,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     // CPP
     const { cpp_monthly, cpp_start_age, cpp_end_age } = readCPPStrict(end_age);
 
-    // read saving increase rate from multiple possible fields (decimal)
-    const saving_increase_rate = readPctMulti([
-      "saving_increase_rate",
-      "annual_saving_increase_rate",
-      "annual_savings_increase_rate",
-      "savings_increase_rate",
-      "saving_increase",
-      "savings_increase",
-      "saving_rate_increase",
-      "monthly_saving_increase_rate",
-      "msaving_increase_rate"
-    ]);
-
     return {
       current_age,
       life_expectancy: end_age,
@@ -4480,7 +4455,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       tfsa0:    num("litev1_tfsa"),
 
       annual_saving: (num("litev1_monthly_saving") || 0) * 12,
-      saving_increase_rate,   // ← now reliably wired from UI
+      saving_increase_rate: ((Number(document.getElementById("saving_increase_rate")?.value) || 0) / 100),
 
       pre_tfsa_annual,
       pre_rrsp_annual,
@@ -4559,7 +4534,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const flat = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
     const taxDollars = openTaxable * r * d;  // dollars lost to tax (drag)
     if (flat <= 0) return 0;
-    return Math.max(0, taxDollars / flat);   // ≈ taxable income that caused that tax
+    return Math.max(0, taxDollars / flat);  // ≈ taxable income that caused that tax
   }
 
   // ---------------- pre-retirement build ----------------
@@ -4618,7 +4593,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         End_Total: Math.round(taxable + tfsa + rrsp)
       });
 
-      // <-- THIS is the key: saving grows each year and now the field is correctly wired
       save *= (1 + (cfg.saving_increase_rate || 0));
       age += 1;
     }
@@ -4824,10 +4798,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         // Use opening taxable to estimate taxable *income* for OAS
         const taxableIncomeForOAS = estTaxableIncomeForOAS(openT, cfg);
         for (let it = 0; it < 3; it++) {
-          if (oasGross > 0) {
+          if (oasGross > 0) { // <-- FIX: only compute clawback when OAS is in play
             const baseIncomeForOAS = Math.max(0, cppAtAge(cfg, age) + guessRRSPGross + taxableIncomeForOAS);
             oasClaw = Math.max(0, (baseIncomeForOAS - (cfg.oas_threshold || 0)) * (cfg.oas_clawback_rate || 0));
-            oasClaw = Math.min(oasClaw, oasGross);
+            oasClaw = Math.min(oasClaw, oasGross); // cannot claw back more than gross
             oasNet  = Math.max(0, oasGross - oasClaw);
           } else {
             oasClaw = 0;
@@ -4947,9 +4921,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "cpp_start_age","cpp_end_age","cpp_age_start","cpp_age_end","cpp_age","cpp_from_age","cpp_to_age",
     "extended_from_age","extended_to_age","ext_from_age","ext_to_age","extended_year_from","extended_year_to","ext_year_from_age","ext_year_to_age",
 
-    "litev1_taxable","litev1_rrsp","litev1_tfsa","litev1_monthly_saving",
-    // saving increase rate: listen to all common aliases
-    "saving_increase_rate","annual_saving_increase_rate","annual_savings_increase_rate","savings_increase_rate","saving_increase","savings_increase",
+    "litev1_taxable","litev1_rrsp","litev1_tfsa","litev1_monthly_saving","saving_increase_rate",
     "pre_tfsa_annual","pre_rrsp_annual","return_rate_after","inflation_rate","litev1_taxable_drag",
     "opt_toggle"
   ].forEach(id => document.getElementById(id)?.addEventListener("input", () => {
@@ -4964,6 +4936,22 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
