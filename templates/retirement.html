@@ -4528,15 +4528,13 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   }
 
   // Estimate taxable *income* (not tax paid) from taxable account to feed OAS base.
-  // We infer income from the "tax drag dollars" and the flat income tax rate.
   function estTaxableIncomeForOAS(openTaxable, cfg) {
     const r = Math.max(0, cfg.return_rate_after || 0);
     const d = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
     const flat = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
-    const taxDollars = openTaxable * r * d;         // dollars lost to tax (drag)
+    const taxDollars = openTaxable * r * d;  // dollars lost to tax (drag)
     if (flat <= 0) return 0;
-    const incomeApprox = taxDollars / flat;        // ≈ taxable income that caused that tax
-    return Math.max(0, incomeApprox);
+    return Math.max(0, taxDollars / flat);  // ≈ taxable income that caused that tax
   }
 
   // ---------------- pre-retirement build ----------------
@@ -4800,10 +4798,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         // Use opening taxable to estimate taxable *income* for OAS
         const taxableIncomeForOAS = estTaxableIncomeForOAS(openT, cfg);
         for (let it = 0; it < 3; it++) {
-          // compute OAS with the current RRSP gross guess
-          const baseIncomeForOAS = Math.max(0, cppAtAge(cfg, age) + guessRRSPGross + taxableIncomeForOAS);
-          oasClaw = Math.max(0, (baseIncomeForOAS - (cfg.oas_threshold || 0)) * (cfg.oas_clawback_rate || 0));
-          oasNet  = Math.max(0, oasGross - oasClaw);
+          if (oasGross > 0) { // <-- FIX: only compute clawback when OAS is in play
+            const baseIncomeForOAS = Math.max(0, cppAtAge(cfg, age) + guessRRSPGross + taxableIncomeForOAS);
+            oasClaw = Math.max(0, (baseIncomeForOAS - (cfg.oas_threshold || 0)) * (cfg.oas_clawback_rate || 0));
+            oasClaw = Math.min(oasClaw, oasGross); // cannot claw back more than gross
+            oasNet  = Math.max(0, oasGross - oasClaw);
+          } else {
+            oasClaw = 0;
+            oasNet  = 0;
+          }
 
           // simulate year given this oasNet
           chosen = simulateYearGivenOASNet({
@@ -4933,6 +4936,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
 
 
 
