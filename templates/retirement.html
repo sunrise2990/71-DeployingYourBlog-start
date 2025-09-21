@@ -4707,7 +4707,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const oasGross = oasGrossAtAge(cfg, age);
-        const oasNet   = oasGross;                 // fixed-order: no headroom logic
+        let oasNet     = oasGross;                 // will adjust after we know income components
         let netNeed    = Math.max(0, living - cppInc - oasNet);
 
         // ---- Taxable first ----
@@ -4793,6 +4793,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const liq = Number(lmRet[age] || lmRet[String(age)] || 0);
         if (liq) tAfter += liq;
 
+        // ---- OAS clawback (based on CPP + RRSP gross + taxable investment income; NOT withdrawals) ----
+        let oasClaw = 0;
+        if (oasGross > 0 && cfg.oas_threshold > 0 && cfg.oas_clawback_rate > 0) {
+          const taxableInvestmentIncome = Math.max(0, tAfter) * rAfter; // pre-tax return on taxable after withdrawals (no principal)
+          const incomeForOAS = (cppInc || 0) + (fromRRSP_GROSS || 0) + taxableInvestmentIncome;
+          const over = Math.max(0, incomeForOAS - (cfg.oas_threshold || 0));
+          oasClaw = Math.min(oasGross, over * (cfg.oas_clawback_rate || 0));
+          oasNet  = Math.max(0, oasGross - oasClaw);
+        }
+
         // ---- Growth ----
         const taxDragAmt = Math.max(0, tAfter) * rAfter * drag; // display only
         tBal  = Math.max(0, tAfter) * gT;
@@ -4800,7 +4810,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         rBal  = Math.max(0, rAfterBal) * gN;
 
         // ---- Output row ----
-        const incomeTaxPayment = Math.round(taxOnTaxable + taxOnRRSP);
+        const incomeTaxPayment = Math.round(taxOnTaxable + taxOnRRSP + oasClaw);
         cumTaxOnTaxable += Math.round(taxOnTaxable);
 
         rows.push({
@@ -4812,7 +4822,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           RRIF_Min_Pct: (rrifPct * 100).toFixed(2) + "%",
 
           OAS_Gross: Math.round(oasGross),
-          OAS_Clawback: 0,
+          OAS_Clawback: Math.round(oasClaw),
           OAS_Net: Math.round(oasNet),
 
           Tax_On_Taxable: Math.round(taxOnTaxable),
@@ -4910,6 +4920,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
 
 
 
