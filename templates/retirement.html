@@ -4368,9 +4368,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return liqs;
   }
 
-  // ---------- STRICT CPP reader (robust like asset reader) ----------
+  // ---------- STRICT CPP reader ----------
   function readCPPStrict(defaultEndAge) {
-    // Amount (monthly) aliases
     const amountSelectors = [
       '#cpp_monthly','[name="cpp_monthly"]',
       '#cpp_support','[name="cpp_support"]',
@@ -4380,7 +4379,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       '#cpp_mo','[name="cpp_mo"]',
       '#cpp','[name="cpp"]'
     ];
-    // Start age aliases
     const startSelectors = [
       '#cpp_start_age','[name="cpp_start_age"]',
       '#cpp_age_start','[name="cpp_age_start"]',
@@ -4391,7 +4389,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       '#ext_year_from_age','[name="ext_year_from_age"]',
       '#ext_from_age','[name="ext_from_age"]'
     ];
-    // End age aliases
     const endSelectors = [
       '#cpp_end_age','[name="cpp_end_age"]',
       '#cpp_age_end','[name="cpp_age_end"]',
@@ -4406,7 +4403,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const startIn = firstNum(startSelectors);
     const endIn   = firstNum(endSelectors);
 
-    const startAge = (Number.isFinite(startIn) && startIn > 0) ? startIn : 65;                 // only fallback if truly missing
+    const startAge = (Number.isFinite(startIn) && startIn > 0) ? startIn : 65;
     const endAge   = (Number.isFinite(endIn)   && endIn   > 0) ? endIn   : (defaultEndAge||startAge);
 
     return { cpp_monthly: monthly, cpp_start_age: startAge, cpp_end_age: endAge };
@@ -4437,14 +4434,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       return (Number.isFinite(v) && v > 0) ? v : current_age;
     })();
 
-    // pre-retirement yearly targets
     const pre_tfsa_annual = numMulti("pre_tfsa_annual", "tfsa_annual", "litev1_tfsa_annual");
     const pre_rrsp_annual = numMulti("pre_rrsp_annual", "rrsp_annual", "litev1_rrsp_annual");
 
-    // SINGLE SOURCE OF TRUTH for liquidations (prevents double counting)
     const asset_liquidations = readAssetLiquidationsStrict();
-
-    // CPP (strict, alias-aware; mirrors asset strict style)
     const { cpp_monthly, cpp_start_age, cpp_end_age } = readCPPStrict(end_age);
 
     return {
@@ -4463,7 +4456,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       pre_tfsa_annual,
       pre_rrsp_annual,
 
-      annual_expense: (num("litev1_spend") || 0) * 12,     // base-year spend
+      annual_expense: (num("litev1_spend") || 0) * 12,
       return_rate: (num("litev1_return") || 0) / 100,
       return_rate_after:
         (Number(document.getElementsByName("return_rate_after")?.[0]?.value
@@ -4475,12 +4468,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       tax_brackets: readBracketsFromUI(),
       income_tax_rate: (num("litev1_income_tax") || 0) / 100,
 
-      // CPP support (inflated between start & end ages)
+      // CPP support
       cpp_monthly,
       cpp_start_age,
       cpp_end_age,
 
-      // OAS
+      // OAS (with indexing toggle and clawback params)
       oas_monthly: num("oas_mo"),
       oas_start_age: num("oas_start_age"),
       oas_threshold: num("oas_threshold"),
@@ -4662,7 +4655,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const rr_tax = incrTax(1000, baseIncome, br, cfg.income_tax_rate) / 1000;  // ordinary marginal
     $("n1_rrsp").textContent    = `RRSP marginal ≈ ${(rr_tax*100).toFixed(1)}%`;
     $("n1_taxable").textContent = `Taxable effective ≈ ${(cfg.income_tax_rate*100).toFixed(1)}% (flat)`;
-    $("n1_oas").textContent     = (cfg.oas_monthly>0) ? `OAS headroom logic off in fixed-order mode` : `OAS not in play`;
+    $("n1_oas").textContent     = (cfg.oas_monthly>0) ? `OAS headroom/clawback applied in optimizer` : `OAS not in play`;
     $("n1_hint").textContent    = "Fixed order (Taxable → TFSA → RRSP). Expenses, CPP & OAS are indexed; CPP applies only between its start/end ages.";
   }
 
@@ -4695,7 +4688,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const br       = cfg.tax_brackets;
       const bracketsOn = !!(br && (br.enabled || br.bands));
 
-      // retirement-year liquidations map (ADDED before growth)
+      // retirement-year liquidations map
       const lmRet = liqMap(cfg.asset_liquidations);
 
       const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
@@ -4707,10 +4700,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const oasGross = oasGrossAtAge(cfg, age);
-        const oasNet   = oasGross;                 // fixed-order: no headroom logic
-        let netNeed    = Math.max(0, living - cppInc - oasNet);
 
-        // ---- Taxable first ----
+        // ------- Provisional pass (assume OAS fully received) -------
+        let netNeed    = Math.max(0, living - cppInc - oasGross);
+
+        // Taxable first
         let fromTax_NET = 0, taxOnTaxable = 0, fromTax_GROSS_FOR_TABLE = 0;
 
         if (netNeed > 0 && openT > 0) {
@@ -4725,11 +4719,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
             fromTax_NET             = take;
             fromTax_GROSS_FOR_TABLE = take;
             netNeed -= take;
-            taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0;
+            taxOnTaxable = flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0; // display-only path
           }
         }
 
-        // ---- TFSA next ----
+        // TFSA next
         let fromTFSA = 0;
         if (netNeed > 0 && openF > 0) {
           const take = Math.min(netNeed, openF);
@@ -4737,12 +4731,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           netNeed -= take;
         }
 
-        // ---- RRSP last ----
+        // RRSP last
         let fromRRSP_GROSS = 0, taxOnRRSP = 0;
         if (netNeed > 0 && openR > 0) {
           if (bracketsOn) {
-            const base = 0; // match working table
-            const g = grossForNet(netNeed, base, br, flatRate, openR);
+            const g = grossForNet(netNeed, /*base*/0, br, flatRate, openR);
             fromRRSP_GROSS = g.gross;
             taxOnRRSP      = g.tax;
             netNeed        = Math.max(0, netNeed - g.net);
@@ -4757,7 +4750,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           }
         }
 
-        // ---- RRIF minimum (force extra gross; net flows into taxable) ----
+        // RRIF minimum (extra gross; net lands in taxable)
         let rrifPct = 0, extraTaxFromRRIFMin = 0, extraNetFromRRIFMin = 0;
         if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age && openR > 0) {
           rrifPct = rrifMinPct(age);
@@ -4771,34 +4764,72 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
               extraTaxFromRRIFMin = mustGross * flatRate;
               extraNetFromRRIFMin = mustGross - extraTaxFromRRIFMin;
             }
-            fromRRSP_GROSS += mustGross;
+            fromRRSP_GROSS += mustGross; // count as income for OAS
           }
         }
 
-        // ---- Pre-growth balances (apply NET only) ----
-        let tAfter = openT - fromTax_NET;
-        let fAfter = openF - fromTFSA;
-        let rAfterBal = openR - fromRRSP_GROSS;
+        // ===== NEW: OAS clawback based on actual taxable income =====
+        const incomeForOAS = cppInc + fromRRSP_GROSS;   // taxable withdrawals only; exclude taxable-account draws (principal)
+        let oasClaw = 0, oasNet = oasGross;
+        if (oasGross > 0 && cfg.oas_threshold > 0 && cfg.oas_clawback_rate > 0) {
+          const over = Math.max(0, incomeForOAS - cfg.oas_threshold);
+          oasClaw = Math.min(oasGross, over * cfg.oas_clawback_rate);
+          oasNet  = Math.max(0, oasGross - oasClaw);
+        }
+
+        // If clawback reduced OAS, we must fund that lost net with the same order
+        if (oasClaw > 0) {
+          const addNeed = oasClaw; // extra NET we must supply
+          // balances remaining BEFORE growth but AFTER first-pass draws/rrif-min net to taxable applied below
+          let tAfterTemp = openT - fromTax_NET;
+          let fAfterTemp = openF - fromTFSA;
+          let rAfterTemp = openR - fromRRSP_GROSS;
+          tAfterTemp += extraNetFromRRIFMin; // RRIF-min net already lands in taxable pre-growth
+
+          const addAlloc = allocateByOrder(
+            addNeed,
+            { taxable: Math.max(0, tAfterTemp), tfsa: Math.max(0, fAfterTemp), rrsp: Math.max(0, rAfterTemp) },
+            ["taxable","tfsa","rrsp"],
+            flatRate
+          );
+
+          // merge second-pass results
+          fromTax_NET          += addAlloc.draws.fromTax;
+          fromTax_GROSS_FOR_TABLE += addAlloc.draws.fromTax; // Taxable is 1:1 net
+          fromTFSA             += addAlloc.draws.fromTFSA;
+          fromRRSP_GROSS       += addAlloc.draws.fromRRSPGross;
+          taxOnRRSP            += addAlloc.taxes.taxRRSP;
+
+          // update temps for final pre-growth balances
+          tAfterTemp = addAlloc.endBalancesBeforeGrowth.taxable;
+          fAfterTemp = addAlloc.endBalancesBeforeGrowth.tfsa;
+          rAfterTemp = addAlloc.endBalancesBeforeGrowth.rrsp;
+
+          // commit temps (these will be used to compute growth)
+          var tAfter = tAfterTemp;
+          var fAfter = fAfterTemp;
+          var rAfterBal = rAfterTemp;
+        } else {
+          var tAfter = openT - fromTax_NET;
+          var fAfter = openF - fromTFSA;
+          var rAfterBal = openR - fromRRSP_GROSS;
+        }
 
         // RRIF-min net lands in taxable (pre-growth)
         tAfter += extraNetFromRRIFMin;
         taxOnRRSP += extraTaxFromRRIFMin;
 
-        if (!bracketsOn && drag === 0 && taxOnTaxable > 0) {
-          tAfter -= Math.min(tAfter, taxOnTaxable);
-        }
-
-        // ---- Asset liquidation (RETIREMENT years) BEFORE growth ----
+        // Asset liquidation (retirement years) BEFORE growth
         const liq = Number(lmRet[age] || lmRet[String(age)] || 0);
         if (liq) tAfter += liq;
 
-        // ---- Growth ----
+        // Growth
         const taxDragAmt = Math.max(0, tAfter) * rAfter * drag; // display only
         tBal  = Math.max(0, tAfter) * gT;
         fBal  = Math.max(0, fAfter) * gN;
         rBal  = Math.max(0, rAfterBal) * gN;
 
-        // ---- Output row ----
+        // Output row
         const incomeTaxPayment = Math.round(taxOnTaxable + taxOnRRSP);
         cumTaxOnTaxable += Math.round(taxOnTaxable);
 
@@ -4811,7 +4842,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           RRIF_Min_Pct: (rrifPct * 100).toFixed(2) + "%",
 
           OAS_Gross: Math.round(oasGross),
-          OAS_Clawback: 0,
+          OAS_Clawback: Math.round(oasClaw),
           OAS_Net: Math.round(oasNet),
 
           Tax_On_Taxable: Math.round(taxOnTaxable),
@@ -4847,7 +4878,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
       const firstRet = rows.slice(0, 3);
       const r0 = firstRet.map(r =>
-        `Age ${r.Age}: Taxable $${(r.From_Taxable_Gross ?? 0).toLocaleString()}, TFSA $${(r.From_TFSA ?? 0).toLocaleString()}, RRSP(g) $${(r.From_RRSP_Gross ?? 0).toLocaleString()}`
+        `Age ${r.Age}: Taxable $${(r.From_Taxable_Gross ?? 0).toLocaleString()}, TFSA $${(r.From_TFSA ?? 0).toLocaleString()}, RRSP(g) $${(r.From_RRSP_Gross ?? 0).toLocaleString()} | OAS net $${(r.OAS_Net ?? 0).toLocaleString()} (clawback $${(r.OAS_Clawback ?? 0).toLocaleString()})`
       ).join(" • ");
       write("opt_rationale", r0 || "See table for per-year mix.");
 
@@ -4909,6 +4940,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (fixed order) =========================================== -->
+
 
 
 
