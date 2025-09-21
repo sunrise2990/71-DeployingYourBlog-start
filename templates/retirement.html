@@ -4316,7 +4316,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return d * Math.max(0, Math.min(0.90, flat || 0));
   }
 
-  // precise solver: gross needed to produce target NET at current base (bracketed or flat)
+  // precise solver: gross needed to produce target NET at current base (bracketed)
   function grossForNet(netNeed, base, br, flat, maxGross){
     netNeed = Math.max(0, netNeed || 0);
     const netFn = (g) => Math.max(0, g - incrTax(g, base, br, flat));
@@ -4362,8 +4362,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
     for (let i = 1; i <= 6; i++) {
       const age = firstNum(ageKeys(i));
-      theAmt = firstNum(amtKeys(i));
-      const amt = Number.isFinite(theAmt) ? theAmt : 0;
+      const amt = firstNum(amtKeys(i));
       if (age > 0 && amt !== 0) liqs.push({ age, amount: amt });
     }
     return liqs;
@@ -4711,14 +4710,30 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         const oasNet   = oasGross;                 // fixed-order: no headroom logic
         let netNeed    = Math.max(0, living - cppInc - oasNet);
 
-        // ---- Taxable first (ALWAYS gross-for-net, subtract gross from Taxable) ----
+        // ---- Taxable first (ALWAYS subtract GROSS from taxable) ----
         let fromTax_NET = 0, taxOnTaxable = 0, fromTax_GROSS_FOR_TABLE = 0;
+
         if (netNeed > 0 && openT > 0) {
-          const g = grossForNet(netNeed, /*base*/0, br, flatRate, openT);
-          fromTax_NET             = Math.min(netNeed, g.net);
-          taxOnTaxable            = g.tax;
-          fromTax_GROSS_FOR_TABLE = Math.min(openT, g.gross);
-          netNeed                 = Math.max(0, netNeed - g.net);
+          if (bracketsOn) {
+            // base set to 0 to match working table’s convention
+            const g = grossForNet(netNeed, /*base*/0, br, flatRate, openT);
+            fromTax_NET               = Math.min(netNeed, g.net);
+            fromTax_GROSS_FOR_TABLE   = Math.min(openT, g.gross);
+            taxOnTaxable              = Math.max(0, g.tax);   // record tax for display
+            netNeed                   = Math.max(0, netNeed - g.net);
+          } else {
+            // flat rate: netPossible = openT * (1 - flat), gross = net/(1-flat)
+            const netPossible = openT * (1 - flatRate);
+            const netTake     = Math.min(netNeed, Math.max(0, netPossible));
+            const gross       = netTake > 0 ? (netTake / (1 - flatRate)) : 0;
+            const tax         = gross - netTake;
+
+            fromTax_NET             = netTake;
+            fromTax_GROSS_FOR_TABLE = Math.min(openT, gross);
+            taxOnTaxable            = Math.max(0, tax);
+
+            netNeed -= netTake;
+          }
         }
 
         // ---- TFSA next ----
@@ -4767,8 +4782,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           }
         }
 
-        // ---- Pre-growth balances (apply NET/GROSS correctly) ----
-        // Taxable is reduced by GROSS amount withdrawn; taxes are not re-subtracted later.
+        // ---- Pre-growth balances (apply NET/GROSS as appropriate) ----
+        // IMPORTANT: reduce taxable by **gross** (net + tax) so taxes are actually paid from assets.
         let tAfter = openT - fromTax_GROSS_FOR_TABLE;
         let fAfter = openF - fromTFSA;
         let rAfterBal = openR - fromRRSP_GROSS;
