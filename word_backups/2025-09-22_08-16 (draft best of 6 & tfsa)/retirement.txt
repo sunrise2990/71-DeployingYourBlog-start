@@ -4633,17 +4633,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const body = rows.map((r) => cols.map((c) => esc(r[c])).join(",")).join("\n");
     return header + "\n" + body;
   }
-const CSV_COLS = [
-  "Age",
-  "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP",
-  "Liq_Added","CPP_Extra",
-  "CPP","OAS_Gross","OAS_Clawback","OAS_Net",
-  "Living_Expense","Income_Tax_Payment","Living_Exp_Ret",
-  "From_Taxable_Gross","From_TFSA","RRIF_Min_Pct","From_RRSP_Gross",
-  "Tax_On_Taxable","Tax_On_RRSP",
-  "Taxable_Drag",
-  "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
-];
+  const CSV_COLS = [
+    "Age",
+    "From_Taxable_Gross","From_TFSA","From_RRSP_Gross",
+    "Tax_On_Taxable","Tax_On_RRSP",
+    "RRIF_Min_Pct","CPP","OAS_Gross","OAS_Clawback","OAS_Net",
+    "Living_Expense","CPP_Extra","Income_Tax_Payment","Living_Exp_Ret",
+    "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP","Liq_Added",
+    "Taxable_Drag",
+    "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
+  ];
 
   // ---------------- Next-$1 (display only) ----------------
   function nextDollar() {
