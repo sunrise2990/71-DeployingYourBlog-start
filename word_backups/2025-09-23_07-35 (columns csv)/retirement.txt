@@ -4686,8 +4686,8 @@ const CSV_COLS = [
       fAvail   -= pre;
     }
 
-    // State for year (tax from taxable: track GROSS taken from taxable)
-    let fromTax_GROSS = 0, fromTax_GROSS_FOR_TABLE = 0, taxOnTaxable = 0;
+    // State for year
+    let fromTax_NET = 0, fromTax_GROSS_FOR_TABLE = 0, taxOnTaxable = 0;
     let fromRRSP_GROSS = 0, taxOnRRSP = 0;
     let rrifPct = 0, extraTaxFromRRIFMin = 0, extraNetFromRRIFMin = 0;
 
@@ -4695,37 +4695,23 @@ const CSV_COLS = [
 
     const takeFromTaxable = () => {
       if (netNeed <= 0 || tAvail <= 0) return;
-
       if (bracketsOn) {
-        // Solve for a gross G (≤ tAvail) that produces the net we still need.
         const g = grossForNet(netNeed, /*base*/0, br, flatRate, tAvail);
-        const gross = Math.min(tAvail, g.gross);
-        const net   = Math.min(netNeed, g.net);       // net delivered to spending
-        const tax   = incrTax(gross, /*base*/0, br, flatRate);
-
-        fromTax_GROSS            += gross;            // ↓ taxable by GROSS
-        fromTax_GROSS_FOR_TABLE  += gross;
-        taxOnTaxable             += tax;              // for reporting / Income_Tax_Payment
-
-        tAvail  -= gross;
-        netNeed -= net;
+        const net = Math.min(netNeed, g.net);
+        fromTax_NET             += net;
+        fromTax_GROSS_FOR_TABLE += Math.min(tAvail, g.gross);
+        tAvail                  -= g.gross;
+        netNeed                 -= net;
+        // taxOnTaxable is display-only for bracket mode => keep 0
       } else {
-        // Flat-rate mode: compute gross so tax is also paid from taxable
-        const netCapFromT = tAvail * (1 - flatRate);  // max net we can fund from current taxable
-        const net   = Math.min(netNeed, Math.max(0, netCapFromT));
-        const gross = net > 0 ? net / (1 - flatRate) : 0;
-        const tax   = gross * flatRate;
-
-        fromTax_GROSS            += gross;
-        fromTax_GROSS_FOR_TABLE  += gross;
-        taxOnTaxable             += tax;
-
-        tAvail  -= gross;
-        netNeed -= net;
+        const take = Math.min(netNeed, tAvail);
+        fromTax_NET             += take;
+        fromTax_GROSS_FOR_TABLE += take;
+        tAvail                  -= take;
+        netNeed                 -= take;
+        taxOnTaxable           += flatRate > 0 ? (take * (flatRate / (1 - flatRate))) : 0;
       }
     };
-
-
     const takeFromTFSA = () => {
       if (netNeed <= 0 || fAvail <= 0) return;
       const take = Math.min(netNeed, fAvail);
@@ -4779,17 +4765,19 @@ const CSV_COLS = [
       }
     }
 
-    // ---- Pre-growth balances (apply GROSS for taxable) ----
-    let tAfter    = openT - fromTax_GROSS;   // gross includes the tax paid
-    let fAfter    = openF - fromTFSA;
+    // ---- Pre-growth balances (apply NET only) ----
+    let tAfter = openT - fromTax_NET;
+    let fAfter = openF - fromTFSA;
     let rAfterBal = openR - fromRRSP_GROSS;
 
     // RRIF-min net lands in taxable (pre-growth)
-    tAfter    += extraNetFromRRIFMin;
+    tAfter += extraNetFromRRIFMin;
     taxOnRRSP += extraTaxFromRRIFMin;
 
-    // No extra taxable subtraction here—gross already removed the tax cash.
-
+    // In flat mode, subtract explicit tax only if drag === 0 (avoid double vs drag)
+    if (!bracketsOn && drag === 0 && taxOnTaxable > 0) {
+      tAfter -= Math.min(tAfter, taxOnTaxable);
+    }
 
     // ---- Asset liquidation (RETIREMENT years) BEFORE growth ----
     const liq = Number(lmRet[age] || lmRet[String(age)] || 0);
