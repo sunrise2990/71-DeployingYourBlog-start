@@ -4247,7 +4247,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!-- === Optimizer (best-of-6 + fractional-TFSA) + Next-$1 Analyzer ==== -->
+<!-- === Optimizer (Taxable → TFSA prefill → RRSP) + Next-$1 Analyzer ==== -->
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -4328,7 +4328,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return d * Math.max(0, Math.min(0.90, flat || 0));
   }
 
-  // precise solver: gross needed to produce target NET at current base (bracketed)
+  // precise solver: gross needed to produce target NET at current base (bracketed/flat)
   function grossForNet(netNeed, base, br, flat, maxGross){
     netNeed = Math.max(0, netNeed || 0);
     const netFn = (g) => Math.max(0, g - incrTax(g, base, br, flat));
@@ -4559,7 +4559,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const flat = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
     const taxDollars = openTaxable * r * d;  // dollars lost to tax (drag)
     if (flat <= 0) return 0;
-    return Math.max(0, taxDollars / flat);   // ≈ taxable income that caused that tax
+    return Math.max(0, taxDollars / flat);   // ≈ taxable INCOME that caused that tax
   }
 
   // ---------------- pre-retirement build ----------------
@@ -4657,9 +4657,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
     const rr_tax = incrTax(1000, baseIncome, br, cfg.income_tax_rate) / 1000;  // ordinary marginal
     $("n1_rrsp").textContent    = `RRSP marginal ≈ ${(rr_tax*100).toFixed(1)}%`;
-    $("n1_taxable").textContent = `Taxable effective ≈ ${(cfg.income_tax_rate*100).toFixed(1)}% (flat)`;
+    $("n1_taxable").textContent = br ? "Taxable: brackets ON (flat disabled)" : `Taxable flat ≈ ${(cfg.income_tax_rate*100).toFixed(1)}%`;
     $("n1_oas").textContent     = (cfg.oas_monthly>0) ? `OAS clawback uses CPP + RRSP(g) + taxable investment income` : `OAS not in play`;
-    $("n1_hint").textContent    = "Optimizer does per-year TFSA pre-fill scan and then follows the chosen order.";
+    $("n1_hint").textContent    = "Order is always Taxable → TFSA prefill → RRSP; TFSA prefill is scanned fractionally per year.";
   }
 
   // --------- one-year simulator GIVEN an OAS net value + order + TFSA prefill ---------
@@ -4676,50 +4676,47 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
     let netNeed    = Math.max(0, living - cppInc - oasNet);
 
-    // ---- Optional TFSA prefill (NET dollars) BEFORE following the order ----
-    let fromTFSA = 0;
-    let fAvail   = openF;
-    if (netNeed > 0 && fAvail > 0 && tfsa_prefill_net > 0) {
-      const pre = Math.min(netNeed, Math.min(fAvail, tfsa_prefill_net));
-      fromTFSA += pre;
-      netNeed  -= pre;
-      fAvail   -= pre;
-    }
-
     // State for year
     let fromTax_NET = 0, fromTax_GROSS_FOR_TABLE = 0, taxOnTaxable = 0;
     let fromRRSP_GROSS = 0, taxOnRRSP = 0;
+    let fromTFSA = 0;
     let rrifPct = 0, extraTaxFromRRIFMin = 0, extraNetFromRRIFMin = 0;
 
-    let tAvail = openT, rAvail = openR;
+    let tAvail = openT, rAvail = openR, fAvail = openF;
+    let tfsaCapRemaining = Math.max(0, Math.min(fAvail, tfsa_prefill_net || 0)); // only used at 'F' step
 
     const takeFromTaxable = () => {
       if (netNeed <= 0 || tAvail <= 0) return;
       if (bracketsOn) {
+        // brackets ON → no flat tax, subtract GROSS from balance
         const g = grossForNet(netNeed, /*base*/0, br, 0, tAvail);
         const net = Math.min(netNeed, g.net);
         fromTax_NET             += net;
-        fromTax_GROSS_FOR_TABLE += Math.min(tAvail, g.gross);
-        tAvail                  -= g.gross;
+        const grossSpent         = Math.min(tAvail, g.gross);
+        fromTax_GROSS_FOR_TABLE += grossSpent;
+        tAvail                  -= grossSpent;
         netNeed                 -= net;
-        // taxOnTaxable remains 0 in bracket mode (avoid duplicate tax)
+        // keep taxOnTaxable = 0 in bracket mode (avoid duplicate tax vs drag)
       } else {
-        const netTake = Math.min(netNeed, tAvail);                    // net dollars to user
-        const gross   = (flatRate > 0) ? netTake / (1 - flatRate) : netTake; // gross spent from taxable
-        const tax     = (flatRate > 0) ? gross - netTake : 0;
+        // flat mode → compute gross = net/(1-flat), subtract GROSS
+        const netTake = Math.min(netNeed, tAvail);
+        const gross   = (flatRate > 0) ? netTake / (1 - flatRate) : netTake;
+        const tax     = (flatRate > 0) ? (gross - netTake) : 0;
 
         fromTax_NET             += netTake;
-        fromTax_GROSS_FOR_TABLE += Math.min(tAvail, gross);
-        tAvail                  -= gross;
+        const grossSpent         = Math.min(tAvail, gross);
+        fromTax_GROSS_FOR_TABLE += grossSpent;
+        tAvail                  -= grossSpent;
         netNeed                 -= netTake;
         taxOnTaxable           += tax;
       }
     };
     const takeFromTFSA = () => {
-      if (netNeed <= 0 || fAvail <= 0) return;
-      const take = Math.min(netNeed, fAvail);
+      if (netNeed <= 0 || fAvail <= 0 || tfsaCapRemaining <= 0) return; // prefill ONLY
+      const take = Math.min(netNeed, fAvail, tfsaCapRemaining);
       fromTFSA += take;
       fAvail   -= take;
+      tfsaCapRemaining -= take;
       netNeed  -= take;
     };
     const takeFromRRSP = () => {
@@ -4742,7 +4739,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       }
     };
 
-    // Follow the order with remaining netNeed
+    // Follow the order with remaining netNeed (Taxable → TFSA prefill → RRSP)
     for (const ch of order) {
       if (netNeed <= 0) break;
       if (ch === 'T') takeFromTaxable();
@@ -4764,12 +4761,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           extraNetFromRRIFMin = mustGross - extraTaxFromRRIFMin;
         }
         fromRRSP_GROSS += mustGross;
-        rAvail         -= mustGross;
       }
     }
 
     // ---- Pre-growth balances (apply GROSS for taxable) ----
-    let tAfter = openT - fromTax_GROSS_FOR_TABLE; // IMPORTANT: subtract gross, not net
+    let tAfter = openT - fromTax_GROSS_FOR_TABLE; // subtract GROSS (not net)
     let fAfter = openF - fromTFSA;
     let rAfterBal = openR - fromRRSP_GROSS;
 
@@ -4777,7 +4773,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     tAfter += extraNetFromRRIFMin;
     taxOnRRSP += extraTaxFromRRIFMin;
 
-    // (Do NOT subtract taxOnTaxable from balance; gross already reduced it)
+    // Do NOT subtract taxOnTaxable from balance; gross already reduced it
 
     // ---- Asset liquidation (RETIREMENT years) BEFORE growth ----
     const liq = Number(lmRet[age] || lmRet[String(age)] || 0);
@@ -4803,7 +4799,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     };
   }
 
-  // ---------------- Optimizer (order + TFSA fractional scan) ----------------
+  // ---------------- Optimizer (Taxable-first + TFSA fractional prefill) ----------------
   async function runOptimizerIfEnabled() {
     const write = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
 
@@ -4831,7 +4827,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
       const br       = cfg.tax_brackets;
       const bracketsOn = !!(br && (br.enabled || br.bands));
-      const flatRate = bracketsOn ? 0 : Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
+      const flatRate = bracketsOn ? 0 : Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0)); // disable flat if brackets ON
 
       // retirement-year liquidations map (ADDED before growth)
       const lmRet = liqMap(cfg.asset_liquidations);
@@ -4839,7 +4835,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
       const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
 
-      // Taxable-first, but still scan fractional TFSA pre-fill each year
+      // Always Taxable → TFSA prefill → RRSP; scan TFSA prefill fraction 0..100%
       const ORDERS = ['TFR'];
       const FRACS  = Array.from({ length: 11 }, (_, i) => i / 10); // 0%,10%,…100%
 
@@ -4849,7 +4845,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
         const oasGross = oasGrossAtAge(cfg, age);
 
-        // candidates for TFSA pre-fill (NET dollars). Cap by living need w/o OAS + CPP (safe upper bound).
+        // Cap for TFSA prefill (NET dollars). After taxable, before RRSP.
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const tfsaPrefillCap = Math.max(0, Math.min(openF, living - cppInc));
@@ -5031,7 +5027,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   });
 })();
 </script>
-<!-- === /Optimizer (best-of-6 + fractional-TFSA) =================================== -->
+<!-- === /Optimizer (Taxable → TFSA prefill → RRSP) =================================== -->
+
 
 
 
