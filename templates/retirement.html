@@ -4416,7 +4416,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const endIn   = firstNum(endSelectors);
 
     const startAge = (Number.isFinite(startIn) && startIn > 0) ? startIn : 65;
-    theEnd = Number.isFinite(endIn) && endIn > 0 ? endIn : (defaultEndAge || startAge);
+    const theEnd = Number.isFinite(endIn) && endIn > 0 ? endIn : (defaultEndAge || startAge);
 
     return { cpp_monthly: monthly, cpp_start_age: startAge, cpp_end_age: theEnd };
   }
@@ -4437,7 +4437,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const bool = (id) => !!$(id)?.checked;
 
     const current_age = num("litev1_start_age");
-    const end_age     = num("litev1_end_age");
+    givenEndAge = num("litev1_end_age"); // shadow used below
+    const end_age     = givenEndAge;
 
     const retEl = document.getElementById("retirement_age") || document.querySelector('[name="retirement_age"]');
     const retirement_age = (() => {
@@ -4892,80 +4893,91 @@ const CSV_COLS = [
           return { sim, endTotal, oasClaw, oasNet, tfsaNet };
         };
 
-    // ---------- REPLACE the "Search best TFSA pre-fill..." block with this ----------
-    /* Full scan: all 6 orders × FRACS, then apply a dominance guard so the result
-       is never worse than the best-of-6 simple (tfsa prefill = 0). */
+        // ----- Full scan over all orders × TFSA pre-fill fractions
+        let best = null;  // best in the optimizer search space
+        for (const ord of ORDERS) {
+          for (const frac of FRACS) {
+            const tfsaNet = tfsaPrefillCap * frac;
+            const r = evalOrder(ord, tfsaNet);
+            const cand = { ...r, order: ord, tfsaNet };
+            if (!best || cand.endTotal > best.endTotal) best = cand;
+          }
+        }
 
-    let best = null;                   // best over orders × FRACS (optimizer space)
-    for (const ord of ORDERS) {
-      for (const frac of FRACS) {
-        const tfsaNet = tfsaPrefillCap * frac;
-        const res = evalOrder(ord, tfsaNet);
-        const cand = { ...res, order: ord, tfsaNet };
-        if (!best || cand.endTotal > best.endTotal) best = cand;
+        // ----- Best-of-6 "simple" guard (no TFSA pre-fill)
+        let bestSimple = null;
+        for (const ord of ORDERS) {
+          const r = evalOrder(ord, 0);
+          const cand = { ...r, order: ord, tfsaNet: 0 };
+          if (!bestSimple || cand.endTotal > bestSimple.endTotal) bestSimple = cand;
+        }
+
+        // ----- Never worse than simple
+        const EPS = 0.50; // tiny tolerance to ignore rounding noise
+        const choice = (bestSimple.endTotal > best.endTotal + EPS) ? bestSimple : best;
+        const chosen = choice.sim;
+
+        tBal = chosen.endTaxable;
+        fBal = chosen.endTFSA;
+        rBal = chosen.endRRSP;
+
+        const incomeTaxPayment = chosen.incomeTaxPayment;
+        cumTaxOnTaxable += Math.round(chosen.taxOnTaxable);
+
+        rows.push({
+          Age: age,
+
+          From_Taxable_Gross: Math.round(chosen.fromTax_GROSS_FOR_TABLE),
+          From_TFSA: Math.round(chosen.fromTFSA),
+          From_RRSP_Gross: Math.round(chosen.fromRRSP_GROSS),
+          RRIF_Min_Pct: (chosen.rrifPct * 100).toFixed(2) + "%",
+
+          OAS_Gross: Math.round(oasGross),
+          OAS_Clawback: Math.round(choice.oasClaw),
+          OAS_Net: Math.round(choice.oasNet),
+
+          Tax_On_Taxable: Math.round(chosen.taxOnTaxable),
+          Tax_On_RRSP: Math.round(chosen.taxOnRRSP),
+
+          Liq_Added: Math.round(chosen.liq),
+          Taxable_Drag: Math.round(chosen.taxDragAmt),
+
+          End_Taxable: Math.round(tBal),
+          End_TFSA: Math.round(fBal),
+          End_RRSP: Math.round(rBal),
+          End_Total_Raw: Math.round(
+            Math.max(0, chosen.tAfter) +
+            Math.max(0, chosen.fAfter) +
+            Math.max(0, chosen.rAfterBal)
+          ),
+          Cum_Tax_On_Taxable: Math.round(cumTaxOnTaxable),
+          End_Total: Math.round(tBal + fBal + rBal),
+
+          CPP: Math.round(chosen.cppInc),
+          Living_Expense: Math.round(chosen.living),
+          Income_Tax_Payment: incomeTaxPayment,
+          Living_Exp_Ret: Math.round(
+            Math.max(0, chosen.living - chosen.cppInc - choice.oasNet) + incomeTaxPayment
+          ),
+          Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0
+        });
       }
-    }
 
-    // Best-of-6 simple (NO TFSA pre-fill) — used as a guard/fallback
-    let bestSimple = null;
-    for (const ord of ORDERS) {
-      const res = evalOrder(ord, /* tfsaNet */ 0);
-      const cand = { ...res, order: ord, tfsaNet: 0 };
-      if (!bestSimple || cand.endTotal > bestSimple.endTotal) bestSimple = cand;
-    }
+      const full = [...preRows, ...rows];
+      window.__optRows = full;
+      window.__optCfg  = cfg;
 
-    // Never worse than simple: if simple beats the scan, use simple
-    const EPS = 0.5; // tiny tie-break tolerance in dollars
-    const choice = (bestSimple.endTotal > best.endTotal + EPS) ? bestSimple : best;
-    const chosen = choice.sim;
+      const last = full[full.length - 1] || { Age: "—", End_Total: 0, Cum_Tax_On_Taxable: 0 };
+      write(
+        "opt_summary",
+        `End Total at age ${last.Age}: $${Number(last.End_Total || 0).toLocaleString()} (Tax on Taxable shown: $${Number(last.Cum_Tax_On_Taxable || 0).toLocaleString()}).`
+      );
 
-    // ---------- keep the rest of your code below unchanged ----------
-    tBal = chosen.endTaxable;
-    fBal = chosen.endTFSA;
-    rBal = chosen.endRRSP;
-
-    const incomeTaxPayment = chosen.incomeTaxPayment;
-    cumTaxOnTaxable += Math.round(chosen.taxOnTaxable);
-
-    rows.push({
-      Age: age,
-
-      From_Taxable_Gross: Math.round(chosen.fromTax_GROSS_FOR_TABLE),
-      From_TFSA: Math.round(chosen.fromTFSA),
-      From_RRSP_Gross: Math.round(chosen.fromRRSP_GROSS),
-      RRIF_Min_Pct: (chosen.rrifPct * 100).toFixed(2) + "%",
-
-      OAS_Gross: Math.round(oasGross),
-      OAS_Clawback: Math.round(choice.oasClaw),
-      OAS_Net: Math.round(choice.oasNet),
-
-      Tax_On_Taxable: Math.round(chosen.taxOnTaxable),
-      Tax_On_RRSP: Math.round(chosen.taxOnRRSP),
-
-      Liq_Added: Math.round(chosen.liq),
-      Taxable_Drag: Math.round(chosen.taxDragAmt),
-
-      End_Taxable: Math.round(tBal),
-      End_TFSA: Math.round(fBal),
-      End_RRSP: Math.round(rBal),
-      End_Total_Raw: Math.round(
-        Math.max(0, chosen.tAfter) +
-        Math.max(0, chosen.fAfter) +
-        Math.max(0, chosen.rAfterBal)
-      ),
-      Cum_Tax_On_Taxable: Math.round(cumTaxOnTaxable),
-      End_Total: Math.round(tBal + fBal + rBal),
-
-      CPP: Math.round(chosen.cppInc),
-      Living_Expense: Math.round(chosen.living),
-      Income_Tax_Payment: incomeTaxPayment,
-      Living_Exp_Ret: Math.round(
-        Math.max(0, chosen.living - chosen.cppInc - choice.oasNet) + incomeTaxPayment
-      ),
-      Contrib_Taxable: 0, Contrib_TFSA: 0, Contrib_RRSP: 0
-    });
-
-
+      const firstRet = rows.slice(0, 3);
+      const r0 = firstRet.map(r =>
+        `Age ${r.Age}: Taxable $${(r.From_Taxable_Gross ?? 0).toLocaleString()}, TFSA $${(r.From_TFSA ?? 0).toLocaleString()}, RRSP(g) $${(r.From_RRSP_Gross ?? 0).toLocaleString()} | OAS clawback $${(r.OAS_Clawback ?? 0).toLocaleString()}`
+      ).join(" • ");
+      write("opt_rationale", r0 || "See table for per-year mix.");
 
       // CSV button (once)
       if (!document.getElementById("opt_csv_btn")) {
@@ -5027,6 +5039,7 @@ const CSV_COLS = [
 })();
 </script>
 <!-- === /Optimizer (best-of-6 + fractional-TFSA) =================================== -->
+
 
 
 
