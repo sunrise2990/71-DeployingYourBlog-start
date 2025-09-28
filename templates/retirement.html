@@ -4852,7 +4852,8 @@ const CSV_COLS = [
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const tfsaPrefillCap = Math.max(0, Math.min(openF, living - cppInc));
-        const FRACS = [0, 0.25, 0.5, 0.75, 1];
+        // After (force no prefill)
+        const FRACS = [0];
 
         // Helper: evaluate one order + one TFSA pre-fill candidate (iterates OAS/RRSP convergence)
         const evalOrder = (order, tfsaNet) => {
