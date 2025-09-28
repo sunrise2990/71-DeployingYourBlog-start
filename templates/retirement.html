@@ -4839,7 +4839,8 @@ const CSV_COLS = [
       const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
       const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
 
-      const ORDERS = ['TFR','TRF','FTR','FRT','RTF','RFT'];
+      // AFTER (taxable always first)
+      const ORDERS = ['TFR','TRF'];
 
       for (let age = rAge; age <= endAge; age++) {
 
