@@ -4413,7 +4413,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
     const monthly = firstNum(amountSelectors) || 0;
     const startIn = firstNum(startSelectors);
-    const endIn   = firstNum(endSelectors);
+       const endIn   = firstNum(endSelectors);
 
     const startAge = (Number.isFinite(startIn) && startIn > 0) ? startIn : 65;
     const theEnd = Number.isFinite(endIn) && endIn > 0 ? endIn : (defaultEndAge || startAge);
@@ -4524,7 +4524,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       oas_index: bool("oas_index"),
 
       rrif_start_age: num("rrif_start_age"),
-      taxable_drag: (Number(document.getElementById("litev1_taxable_drag")?.value) || 0) / 100, // kept for growth only
+
+      // taxable drag still used for growth; also used in proxy if yields missing
+      taxable_drag: (Number(document.getElementById("litev1_taxable_drag")?.value) || 0) / 100,
 
       // NEW (for OAS base calc)
       taxable_interest_yield,
@@ -4573,22 +4575,32 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return m;
   }
 
-  // === NEW: precise taxable *investment income* for OAS base (no withdrawals, no drag proxy)
+  // === OAS taxable *investment income* used in the OAS base ===
+  // Uses explicit yields if any are provided; otherwise falls back to the proxy:
+  // E = openTaxable * return_after * taxable_drag / flat_income_tax_rate
   function taxableInvestmentIncomeForOAS(openTaxable, cfg) {
     const bal = Math.max(0, openTaxable || 0);
-    // If no yields provided, treat taxable investment income as 0 (avoids phantom clawback)
-    if (!cfg.taxable_interest_yield && !cfg.taxable_dividend_yield && !cfg.taxable_cg_realize_pct) return 0;
 
     const i   = Math.max(0, cfg.taxable_interest_yield || 0);
     const d   = Math.max(0, cfg.taxable_dividend_yield || 0);
-    const gr  = (cfg.eligible_div_grossup_pct || 0.38);
     const cgR = Math.max(0, cfg.taxable_cg_realize_pct || 0);
-    const inc = (cfg.cap_gains_inclusion_pct || 0.50);
+    const usingYields = (i>0) || (d>0) || (cgR>0);
 
-    const interest            = bal * i;
-    const dividends_grossed   = bal * d * (1 + gr);   // grossed-up for income base
-    const cap_gains_included  = bal * cgR * inc;      // only the included portion counts as income
-    return interest + dividends_grossed + cap_gains_included;
+    if (usingYields) {
+      const gr  = (cfg.eligible_div_grossup_pct ?? 0.38);
+      const inc = (cfg.cap_gains_inclusion_pct ?? 0.50);
+      const interest           = bal * i;
+      const dividends_grossed  = bal * d * (1 + gr);
+      const cap_gains_included = bal * cgR * inc;
+      return { amount: interest + dividends_grossed + cap_gains_included, method: "yields" };
+    }
+
+    // Proxy fallback (your "second snippet" calculation)
+    const r    = Math.max(0, cfg.return_rate_after || 0);
+    const drag = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+    const flat = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
+    if (bal<=0 || r<=0 || drag<=0 || flat<=0) return { amount: 0, method: "none" };
+    return { amount: bal * r * drag / flat, method: "proxy" };
   }
 
   // ---------------- pre-retirement build ----------------
@@ -4888,7 +4900,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           let sim = null, oasClaw = 0, oasNet = oasGross;
 
           // *** OAS base = CPP + RRSP (gross) + taxable *investment income* only ***
-          const taxableIncomeForOAS = taxableInvestmentIncomeForOAS(openT, cfg);
+          const { amount: taxableIncomeForOAS } = taxableInvestmentIncomeForOAS(openT, cfg);
 
           for (let it = 0; it < 3; it++) {
             if (oasGross > 0) {
@@ -4977,7 +4989,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Liq_Added: Math.round(chosen.liq),
           Taxable_Drag: Math.round(chosen.taxDragAmt),
 
-          OAS_Base: Math.round(oasBase),                 // NEW: for verification
+          OAS_Base: Math.round(oasBase),
           OAS_Base_CPP: Math.round(oasBaseCPP),
           OAS_Base_RRSP: Math.round(oasBaseRRSP),
           OAS_Base_TaxInc: Math.round(oasTaxInc),
@@ -5081,6 +5093,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (best-of-6 + fractional-TFSA) [OAS BASE FIXED, DEBUG] =================================== -->
+
 
 
 
