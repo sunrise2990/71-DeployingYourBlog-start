@@ -4247,7 +4247,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!-- === Optimizer (best-of-6 + fractional-TFSA) + Next-$1 Analyzer [OAS FIXED] ==== -->
+<!-- === Optimizer (best-of-6 + fractional-TFSA) + Next-$1 Analyzer [OAS FIXED v2] ==== -->
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -4470,6 +4470,13 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       "msaving_increase_rate"
     ]);
 
+    // Optional yields for precise taxable-income (for OAS base); fall back to drag if absent
+    const taxable_interest_yield = readPctMulti(["taxable_interest_yield","interest_yield","litev1_taxable_interest_yield"]);
+    const taxable_dividend_yield = readPctMulti(["taxable_dividend_yield","dividend_yield","litev1_taxable_dividend_yield"]);
+    const taxable_cg_realize_pct = readPctMulti(["taxable_cg_realize_pct","cg_realize_pct","realized_cg_pct"]);
+    const eligible_div_grossup_pct = readPctMulti(["eligible_div_grossup_pct","div_grossup_pct","grossup_pct"]);
+    const cap_gains_inclusion_pct  = readPctMulti(["cap_gains_inclusion_pct","cg_inclusion_pct"]);
+
     return {
       current_age,
       life_expectancy: end_age,
@@ -4503,15 +4510,22 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       cpp_start_age,
       cpp_end_age,
 
-      // OAS
+      // OAS (clawback uses CPP + RRSP gross + taxable investment income ONLY)
       oas_monthly: num("oas_mo"),
       oas_start_age: num("oas_start_age"),
       oas_threshold: num("oas_threshold"),
       oas_clawback_rate: (Number(document.getElementById("oas_rate")?.value) || 0) / 100,
       oas_index: bool("oas_index"),
 
-      rrif_start_age: num("rrif_start_age"),
+      rrif_start_age: num("rrif_start_age") || 72, // default to 72 if blank
       taxable_drag: (Number(document.getElementById("litev1_taxable_drag")?.value) || 0) / 100,
+
+      // Optional detailed yield inputs (prefer these for OAS income base if provided)
+      taxable_interest_yield,
+      taxable_dividend_yield,
+      taxable_cg_realize_pct,
+      eligible_div_grossup_pct,
+      cap_gains_inclusion_pct,
 
       tfsa_cagr_after_2025: 0.021,
 
@@ -4553,14 +4567,39 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return m;
   }
 
-  // Estimate taxable *income* (not tax paid) from taxable account to feed OAS base.
-  function estTaxableIncomeForOAS(openTaxable, cfg) {
+  // --- precise taxable *income* (interest + grossed-up dividends + included cap gains)
+  function taxableInvestmentIncomeFromYields(openTaxable, cfg) {
+    const bal = Math.max(0, openTaxable || 0);
+    const i  = Math.max(0, cfg.taxable_interest_yield || 0);
+    const d  = Math.max(0, cfg.taxable_dividend_yield || 0);
+    const gr = Math.max(0, cfg.eligible_div_grossup_pct || 0);
+    const cg = Math.max(0, cfg.taxable_cg_realize_pct || 0);
+    const inc = Math.max(0, cfg.cap_gains_inclusion_pct || 0);
+    const interest = bal * i;
+    const dividends_grossed = bal * d * (1 + gr);
+    const cap_gains_included = bal * cg * inc;
+    return interest + dividends_grossed + cap_gains_included;
+  }
+
+  // --- fallback: infer income from taxable-drag dollars (drag = income * flatRate / balance growth tax)
+  function taxableIncomeFromDrag(openTaxable, cfg) {
     const r = Math.max(0, cfg.return_rate_after || 0);
     const d = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
     const flat = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
-    const taxDollars = openTaxable * r * d;  // dollars lost to tax (drag)
     if (flat <= 0) return 0;
-    return Math.max(0, taxDollars / flat);   // ≈ taxable income that caused that tax
+    const taxDollars = Math.max(0, openTaxable || 0) * r * d; // dollars paid as tax
+    return taxDollars / flat; // approximate underlying taxable income that produced that tax
+  }
+
+  // Unified builder: use yields if provided (any non-zero), else drag-based approximation
+  function taxableIncomeForOAS_Base(openTaxable, cfg) {
+    const hasYields =
+      (cfg.taxable_interest_yield || 0) > 0 ||
+      (cfg.taxable_dividend_yield || 0) > 0 ||
+      (cfg.taxable_cg_realize_pct || 0) > 0;
+    return hasYields
+      ? taxableInvestmentIncomeFromYields(openTaxable, cfg)
+      : taxableIncomeFromDrag(openTaxable, cfg);
   }
 
   // ---------------- pre-retirement build ----------------
@@ -4634,17 +4673,17 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const body = rows.map((r) => cols.map((c) => esc(r[c])).join(",")).join("\n");
     return header + "\n" + body;
   }
-const CSV_COLS = [
-  "Age",
-  "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP",
-  "Liq_Added","CPP_Extra",
-  "CPP","OAS_Gross","OAS_Clawback","OAS_Net",
-  "Living_Expense","Income_Tax_Payment","Living_Exp_Ret",
-  "From_Taxable_Gross","From_TFSA","RRIF_Min_Pct","From_RRSP_Gross",
-  "Tax_On_Taxable","Tax_On_RRSP",
-  "Taxable_Drag",
-  "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
-];
+  const CSV_COLS = [
+    "Age",
+    "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP",
+    "Liq_Added","CPP_Extra",
+    "CPP","OAS_Gross","OAS_Clawback","OAS_Net",
+    "Living_Expense","Income_Tax_Payment","Living_Exp_Ret",
+    "From_Taxable_Gross","From_TFSA","RRIF_Min_Pct","From_RRSP_Gross",
+    "Tax_On_Taxable","Tax_On_RRSP",
+    "Taxable_Drag",
+    "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
+  ];
 
   // ---------------- Next-$1 (display only) ----------------
   function nextDollar() {
@@ -4786,9 +4825,9 @@ const CSV_COLS = [
 
     // ---- Growth ----
     const taxDragAmt = Math.max(0, tAfter) * rAfter * drag; // display only
-    const endTaxable = Math.max(0, tAfter) * gT;
-    const endTFSA    = Math.max(0, fAfter) * gN;
-    const endRRSP    = Math.max(0, rAfterBal) * gN;
+    const endTaxable = Math.max(0, tAfter) * (1 + rAfter * (1 - drag));
+    const endTFSA    = Math.max(0, fAfter) * (1 + rAfter);
+    const endRRSP    = Math.max(0, rAfterBal) * (1 + rAfter);
 
     const incomeTaxPayment = Math.round(taxOnTaxable + taxOnRRSP);
 
@@ -4863,7 +4902,9 @@ const CSV_COLS = [
           let guessRRSPGross = 0, lastRRSPGross = -1;
           let sim = null, oasClaw = 0, oasNet = oasGross;
 
-          const taxableIncomeForOAS = estTaxableIncomeForOAS(openT, cfg); // E proxy from *opening taxable*
+          // *** OAS base = CPP + RRSP (gross) + taxable *investment income* only ***
+          const taxableIncomeForOAS = taxableIncomeForOAS_Base(openT, cfg);
+
           for (let it = 0; it < 4; it++) {
             if (oasGross > 0) {
               const baseIncomeForOAS = Math.max(
@@ -5026,6 +5067,8 @@ const CSV_COLS = [
     // saving increase rate: listen to all common aliases
     "saving_increase_rate","annual_saving_increase_rate","annual_savings_increase_rate","savings_increase_rate","saving_increase","savings_increase",
     "pre_tfsa_annual","pre_rrsp_annual","return_rate_after","inflation_rate","litev1_taxable_drag",
+    // optional yield params for precise OAS base
+    "taxable_interest_yield","taxable_dividend_yield","taxable_cg_realize_pct","eligible_div_grossup_pct","cap_gains_inclusion_pct",
     "opt_toggle"
   ].forEach(id => document.getElementById(id)?.addEventListener("input", () => {
     try { nextDollar(); } catch(_) {}
@@ -5038,7 +5081,8 @@ const CSV_COLS = [
   });
 })();
 </script>
-<!-- === /Optimizer (best-of-6 + fractional-TFSA) [OAS FIXED] =================================== -->
+<!-- === /Optimizer (best-of-6 + fractional-TFSA) [OAS FIXED v2] =================================== -->
+
 
 
 
