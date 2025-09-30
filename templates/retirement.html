@@ -4247,7 +4247,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!-- === Optimizer (OAS hard-gated, capped, with explicit E override & balance override) ==== -->
+<!-- === Optimizer (OAS gated/capped + explicit E override & base override + open-balance debug) ==== -->
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -4287,8 +4287,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   function readBracketsFromUI() {
     const v = (id) => {
       const el = $(id); if (!el) return NaN;
-      const s = (el.value || "").replace(/,/g, "");
-      const n = Number(s);
+      const n = Number((el.value || "").replace(/,/g, ""));
       return Number.isFinite(n) ? n : NaN;
     };
     const lim1 = v("tb_lim1"), lim2 = v("tb_lim2"),
@@ -4471,7 +4470,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const income_tax_rate = (num("litev1_income_tax") || 0) / 100;
 
     // Overrides for OAS taxable income “E” and/or the balance used for the proxy
-    const oas_tax_inc_fixed   = numMulti("oas_tax_inc_fixed","oas_taxable_income_for_oas","oas_E");
+    const oas_tax_inc_fixed     = numMulti("oas_tax_inc_fixed","oas_taxable_income_for_oas","oas_E");
     const oas_tax_base_override = numMulti("oas_tax_base_override","oas_E_base");
 
     return {
@@ -4547,7 +4546,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return m;
   }
 
-  // === OAS: taxable *investment income* (E) with precedence and optional balance override
+  // === OAS: taxable *investment income* (E) with override and optional base override
   function computeTaxIncForOAS(openTaxable, cfg) {
     const flat = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
     const rA   = Math.max(0, cfg.return_rate_after || 0);
@@ -4557,7 +4556,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const fixed = Math.max(0, Number(cfg.oas_tax_inc_fixed || 0));
     if (fixed > 0) return { E: fixed, method: "fixed", baseUsed: fixed, openT: openTaxable, rAfter: rA, drag, flat };
 
-    // 2) Balance override for the proxy base (lets you force 124,740)
+    // 2) Balance override for the proxy base
     const base = Math.max(0, Number(cfg.oas_tax_base_override || openTaxable || 0));
 
     const taxDollars = base * rA * drag;
@@ -4668,10 +4667,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     $("n1_rrsp").textContent    = `RRSP marginal ≈ ${(rr_tax*100).toFixed(1)}%`;
     $("n1_taxable").textContent = `Taxable effective ≈ ${(cfg.income_tax_rate*100).toFixed(1)}% (flat)`;
     $("n1_oas").textContent     = (cfg.oas_monthly>0) ? `OAS clawback uses CPP + RRSP(g) + taxable investment income (E)` : `OAS not in play`;
-    $("n1_hint").textContent    = "You can override E directly (oas_E) or the proxy balance (oas_E_base).";
+    $("n1_hint").textContent    = "You can override E directly (oas_E) or the proxy base (oas_E_base).";
   }
 
-  // --------- one-year simulator GIVEN an OAS net value + order + TFSA prefill ---------
+  // --------- one-year simulator GIVEN an OAS net value + order ---------
   function simulateYearOrderGivenOASNet(params){
     const {
       age, cfg, openT, openF, openR,
@@ -4825,17 +4824,18 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const FRACS = [0];
 
       for (let age = rAge; age <= endAge; age++) {
-        // expose opening balances in the output
         const openT = tBal, openF = fBal, openR = rBal;
 
+        // OAS strictly zero before start age
         const oasGross = (age >= cfg.oas_start_age) ? oasGrossAtAge(cfg, age) : 0;
 
         const evalOrder = (order, tfsaNet) => {
           let guessRRSPGross = 0, lastRRSPGross = -1;
           let sim = null, oasClaw = 0, oasNet = oasGross;
 
-          // compute E off the OPEN taxable balance (or override base)
-          const Einfo = computeTaxIncForOAS(openT, cfg);
+          // taxable-income E for OAS base, from open taxable (or override)
+          const Einfo = (age >= cfg.oas_start_age) ? computeTaxIncForOAS(openT, cfg)
+                                                   : {E:0, method:"off", baseUsed:0, openT, rAfter:0, drag:0, flat:0};
 
           for (let it = 0; it < 3; it++) {
             if (oasGross > 0) {
@@ -4844,7 +4844,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
               oasClaw = Math.min(raw, oasGross);     // clip to OAS gross
               oasNet  = Math.max(0, oasGross - oasClaw);
             } else {
-              oasClaw = 0; oasNet = 0;               // before start age
+              oasClaw = 0; oasNet = 0;
             }
 
             sim = simulateYearOrderGivenOASNet({
@@ -4866,7 +4866,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         let best = null;
         for (const ord of ORDERS) {
           for (const frac of FRACS) {
-            const r = evalOrder(ord, 0); // no TFSA prefill scan by default
+            const r = evalOrder(ord, 0);
             const cand = { ...r, order: ord, tfsaNet: 0 };
             if (!best || cand.endTotal > best.endTotal) best = cand;
           }
@@ -4906,7 +4906,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Tax_On_RRSP: Math.round(chosen.taxOnRRSP),
 
           Liq_Added: Math.round(chosen.liq),
-          Taxable_Drag: 0,   // display-only drag not needed in retirement
+          Taxable_Drag: 0,
 
           // opening balances (debug)
           Open_Taxable: Math.round(openT),
@@ -5020,6 +5020,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (OAS gated/capped + E overrides + open-balance debug) ============== -->
+
+
 
 
 
