@@ -4247,7 +4247,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!-- === Optimizer (best-of-6 + fractional-TFSA) + Next-$1 Analyzer [OAS FIXED v2] ==== -->
+<!-- === Optimizer (best-of-6 + fractional-TFSA) + Next-$1 Analyzer [OAS BASE FIXED] ==== -->
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -4321,7 +4321,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const last = br.bands[br.bands.length - 1];
     return tax + Math.max(0, I - prev) * (last.rate || 0);
   }
-  function incrTax(d, b, br, flat) {               // incremental tax on delta d at base b
+  function incrTax(d, b, br, flat) {
     d = Math.max(0, d || 0);
     b = Math.max(0, b || 0);
     if (br && (br.enabled || br.bands)) return Math.max(0, taxFromBr(b + d, br) - taxFromBr(b, br));
@@ -4437,7 +4437,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const bool = (id) => !!$(id)?.checked;
 
     const current_age = num("litev1_start_age");
-    givenEndAge = num("litev1_end_age"); // shadow used below
+    givenEndAge = num("litev1_end_age");
     const end_age     = givenEndAge;
 
     const retEl = document.getElementById("retirement_age") || document.querySelector('[name="retirement_age"]');
@@ -4470,12 +4470,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       "msaving_increase_rate"
     ]);
 
-    // Optional yields for precise taxable-income (for OAS base); fall back to drag if absent
-    const taxable_interest_yield = readPctMulti(["taxable_interest_yield","interest_yield","litev1_taxable_interest_yield"]);
-    const taxable_dividend_yield = readPctMulti(["taxable_dividend_yield","dividend_yield","litev1_taxable_dividend_yield"]);
-    const taxable_cg_realize_pct = readPctMulti(["taxable_cg_realize_pct","cg_realize_pct","realized_cg_pct"]);
-    const eligible_div_grossup_pct = readPctMulti(["eligible_div_grossup_pct","div_grossup_pct","grossup_pct"]);
-    const cap_gains_inclusion_pct  = readPctMulti(["cap_gains_inclusion_pct","cg_inclusion_pct"]);
+    // ---- NEW: Optional yields for precise OAS taxable income (all decimals) ----
+    const taxable_interest_yield = readPctMulti([
+      "taxable_interest_yield","interest_yield","litev1_taxable_interest_yield"
+    ]);
+    const taxable_dividend_yield = readPctMulti([
+      "taxable_dividend_yield","dividend_yield","litev1_taxable_dividend_yield"
+    ]);
+    const taxable_cg_realize_pct = readPctMulti([
+      "taxable_cg_realize_pct","cg_realize_pct","realized_cg_pct"
+    ]);
+    // These two default if not present
+    const eligible_div_grossup_pct = readPctMulti(["eligible_div_grossup_pct","div_grossup_pct"]) || 0.38;
+    const cap_gains_inclusion_pct  = readPctMulti(["cap_gains_inclusion_pct","cg_inclusion_pct"]) || 0.50;
 
     return {
       current_age,
@@ -4510,17 +4517,17 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       cpp_start_age,
       cpp_end_age,
 
-      // OAS (clawback uses CPP + RRSP gross + taxable investment income ONLY)
+      // OAS
       oas_monthly: num("oas_mo"),
       oas_start_age: num("oas_start_age"),
       oas_threshold: num("oas_threshold"),
       oas_clawback_rate: (Number(document.getElementById("oas_rate")?.value) || 0) / 100,
       oas_index: bool("oas_index"),
 
-      rrif_start_age: num("rrif_start_age") || 72, // default to 72 if blank
+      rrif_start_age: num("rrif_start_age"),
       taxable_drag: (Number(document.getElementById("litev1_taxable_drag")?.value) || 0) / 100,
 
-      // Optional detailed yield inputs (prefer these for OAS income base if provided)
+      // NEW (for OAS base calc)
       taxable_interest_yield,
       taxable_dividend_yield,
       taxable_cg_realize_pct,
@@ -4567,39 +4574,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return m;
   }
 
-  // --- precise taxable *income* (interest + grossed-up dividends + included cap gains)
-  function taxableInvestmentIncomeFromYields(openTaxable, cfg) {
+  // === NEW: precise taxable *investment income* for OAS base (no withdrawals, no drag proxy)
+  function taxableInvestmentIncomeForOAS(openTaxable, cfg) {
     const bal = Math.max(0, openTaxable || 0);
-    const i  = Math.max(0, cfg.taxable_interest_yield || 0);
-    const d  = Math.max(0, cfg.taxable_dividend_yield || 0);
-    const gr = Math.max(0, cfg.eligible_div_grossup_pct || 0);
-    const cg = Math.max(0, cfg.taxable_cg_realize_pct || 0);
-    const inc = Math.max(0, cfg.cap_gains_inclusion_pct || 0);
-    const interest = bal * i;
-    const dividends_grossed = bal * d * (1 + gr);
-    const cap_gains_included = bal * cg * inc;
+    const i   = Math.max(0, cfg.taxable_interest_yield || 0);
+    const d   = Math.max(0, cfg.taxable_dividend_yield || 0);
+    const gr  = (cfg.eligible_div_grossup_pct || 0.38);  // eligible dividend gross-up (default 38%)
+    const cgR = Math.max(0, cfg.taxable_cg_realize_pct || 0);
+    const inc = (cfg.cap_gains_inclusion_pct || 0.50);   // inclusion rate (default 50%)
+
+    const interest            = bal * i;
+    const dividends_grossed   = bal * d * (1 + gr);       // grossed-up for income base
+    const cap_gains_included  = bal * cgR * inc;         // only the included portion counts as income
     return interest + dividends_grossed + cap_gains_included;
-  }
-
-  // --- fallback: infer income from taxable-drag dollars (drag = income * flatRate / balance growth tax)
-  function taxableIncomeFromDrag(openTaxable, cfg) {
-    const r = Math.max(0, cfg.return_rate_after || 0);
-    const d = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const flat = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
-    if (flat <= 0) return 0;
-    const taxDollars = Math.max(0, openTaxable || 0) * r * d; // dollars paid as tax
-    return taxDollars / flat; // approximate underlying taxable income that produced that tax
-  }
-
-  // Unified builder: use yields if provided (any non-zero), else drag-based approximation
-  function taxableIncomeForOAS_Base(openTaxable, cfg) {
-    const hasYields =
-      (cfg.taxable_interest_yield || 0) > 0 ||
-      (cfg.taxable_dividend_yield || 0) > 0 ||
-      (cfg.taxable_cg_realize_pct || 0) > 0;
-    return hasYields
-      ? taxableInvestmentIncomeFromYields(openTaxable, cfg)
-      : taxableIncomeFromDrag(openTaxable, cfg);
   }
 
   // ---------------- pre-retirement build ----------------
@@ -4673,17 +4660,17 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const body = rows.map((r) => cols.map((c) => esc(r[c])).join(",")).join("\n");
     return header + "\n" + body;
   }
-  const CSV_COLS = [
-    "Age",
-    "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP",
-    "Liq_Added","CPP_Extra",
-    "CPP","OAS_Gross","OAS_Clawback","OAS_Net",
-    "Living_Expense","Income_Tax_Payment","Living_Exp_Ret",
-    "From_Taxable_Gross","From_TFSA","RRIF_Min_Pct","From_RRSP_Gross",
-    "Tax_On_Taxable","Tax_On_RRSP",
-    "Taxable_Drag",
-    "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
-  ];
+const CSV_COLS = [
+  "Age",
+  "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP",
+  "Liq_Added","CPP_Extra",
+  "CPP","OAS_Gross","OAS_Clawback","OAS_Net",
+  "Living_Expense","Income_Tax_Payment","Living_Exp_Ret",
+  "From_Taxable_Gross","From_TFSA","RRIF_Min_Pct","From_RRSP_Gross",
+  "Tax_On_Taxable","Tax_On_RRSP",
+  "Taxable_Drag",
+  "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
+];
 
   // ---------------- Next-$1 (display only) ----------------
   function nextDollar() {
@@ -4742,7 +4729,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         fromTax_GROSS_FOR_TABLE += Math.min(tAvail, g.gross);
         tAvail                  -= g.gross;
         netNeed                 -= net;
-        // taxOnTaxable is display-only for bracket mode => keep 0
       } else {
         const take = Math.min(netNeed, tAvail);
         fromTax_NET             += take;
@@ -4863,7 +4849,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const rows   = [];
       let cumTaxOnTaxable = 0;
 
-      // environment (snapshot)
+      // environment
       const rAfter   = Math.max(0, cfg.return_rate_after || 0);
       const drag     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
       const gN       = 1 + rAfter;               // RRSP/TFSA growth
@@ -4871,8 +4857,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const flatRate = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
       const br       = cfg.tax_brackets;
       const bracketsOn = !!(br && (br.enabled || br.bands));
-      const thr      = Number(cfg.oas_threshold || 0);
-      const oasRate  = Number(cfg.oas_clawback_rate || 0) || 0.15;
 
       // retirement-year liquidations map (ADDED before growth)
       const lmRet = liqMap(cfg.asset_liquidations);
@@ -4880,22 +4864,18 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
       const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
 
-      // All six orders
-      const ORDERS = ['TFR','TRF','FTR','FRT','RTF','RFT'];
-
+      // AFTER (taxable always first)
+      const ORDERS = ['TFR','TRF'];
       for (let age = rAge; age <= endAge; age++) {
 
         const openT = tBal, openF = fBal, openR = rBal;
-
         const oasGross = oasGrossAtAge(cfg, age);
 
-        // candidates for TFSA pre-fill (NET dollars). Cap by living need w/o OAS + CPP (safe upper bound).
+        // candidates for TFSA pre-fill (NET dollars). (kept at 0 by FRACS below)
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const tfsaPrefillCap = Math.max(0, Math.min(openF, living - cppInc));
-
-        // scan fractions (0, 10%, …, 100%)
-        const FRACS = Array.from({length:11}, (_,i)=> i/10);
+        const FRACS = [0];
 
         // Helper: evaluate one order + one TFSA pre-fill candidate (iterates OAS/RRSP convergence)
         const evalOrder = (order, tfsaNet) => {
@@ -4903,19 +4883,21 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           let sim = null, oasClaw = 0, oasNet = oasGross;
 
           // *** OAS base = CPP + RRSP (gross) + taxable *investment income* only ***
-          const taxableIncomeForOAS = taxableIncomeForOAS_Base(openT, cfg);
+          const taxableIncomeForOAS = taxableInvestmentIncomeForOAS(openT, cfg);
 
-          for (let it = 0; it < 4; it++) {
+          for (let it = 0; it < 3; it++) {
             if (oasGross > 0) {
-              const baseIncomeForOAS = Math.max(
+              const baseIncomeForOAS =
+                Math.max(0, cppAtAge(cfg, age) + guessRRSPGross + taxableIncomeForOAS);
+              oasClaw = Math.max(
                 0,
-                cppAtAge(cfg, age) + guessRRSPGross + taxableIncomeForOAS
+                (baseIncomeForOAS - (cfg.oas_threshold || 0)) * (cfg.oas_clawback_rate || 0)
               );
-              oasClaw = Math.max(0, (baseIncomeForOAS - thr) * oasRate);
               oasClaw = Math.min(oasClaw, oasGross);
               oasNet  = Math.max(0, oasGross - oasClaw);
             } else {
-              oasClaw = 0; oasNet = 0;
+              oasClaw = 0;
+              oasNet = 0;
             }
 
             sim = simulateYearOrderGivenOASNet({
@@ -4927,15 +4909,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
             if (Math.abs(sim.fromRRSP_GROSS - lastRRSPGross) < 1) break;
             lastRRSPGross = guessRRSPGross;
-            guessRRSPGross = sim.fromRRSP_GROSS; // converge on RRSP gross used in OAS base
+            guessRRSPGross = sim.fromRRSP_GROSS;
           }
 
           const endTotal = (sim?.endTaxable || 0) + (sim?.endTFSA || 0) + (sim?.endRRSP || 0);
           return { sim, endTotal, oasClaw, oasNet, tfsaNet };
         };
 
-        // ----- Full scan over all orders × TFSA pre-fill fractions
-        let best = null;  // best in the optimizer search space
+        // ----- Full scan (orders × TFSA fractions)
+        let best = null;
         for (const ord of ORDERS) {
           for (const frac of FRACS) {
             const tfsaNet = tfsaPrefillCap * frac;
@@ -4945,7 +4927,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           }
         }
 
-        // ----- Best-of-6 "simple" guard (no TFSA pre-fill)
+        // ----- Simple guard (no TFSA pre-fill)
         let bestSimple = null;
         for (const ord of ORDERS) {
           const r = evalOrder(ord, 0);
@@ -4954,7 +4936,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         }
 
         // ----- Never worse than simple
-        const EPS = 0.50; // tiny tolerance to ignore rounding noise
+        const EPS = 0.50;
         const choice = (bestSimple.endTotal > best.endTotal + EPS) ? bestSimple : best;
         const chosen = choice.sim;
 
@@ -5064,10 +5046,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "extended_from_age","extended_to_age","ext_from_age","ext_to_age","extended_year_from","extended_year_to","ext_year_from_age","ext_year_to_age",
 
     "litev1_taxable","litev1_rrsp","litev1_tfsa","litev1_monthly_saving",
-    // saving increase rate: listen to all common aliases
+    // saving increase rate
     "saving_increase_rate","annual_saving_increase_rate","annual_savings_increase_rate","savings_increase_rate","saving_increase","savings_increase",
     "pre_tfsa_annual","pre_rrsp_annual","return_rate_after","inflation_rate","litev1_taxable_drag",
-    // optional yield params for precise OAS base
+    // NEW: yield inputs (optional)
     "taxable_interest_yield","taxable_dividend_yield","taxable_cg_realize_pct","eligible_div_grossup_pct","cap_gains_inclusion_pct",
     "opt_toggle"
   ].forEach(id => document.getElementById(id)?.addEventListener("input", () => {
@@ -5081,7 +5063,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   });
 })();
 </script>
-<!-- === /Optimizer (best-of-6 + fractional-TFSA) [OAS FIXED v2] =================================== -->
+<!-- === /Optimizer (best-of-6 + fractional-TFSA) [OAS BASE FIXED] =================================== -->
+
 
 
 
