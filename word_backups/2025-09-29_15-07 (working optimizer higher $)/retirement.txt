@@ -4247,7 +4247,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!-- === Optimizer (best-of-6 + fractional-TFSA) + Next-$1 Analyzer [OAS FIXED] ==== -->
+<!-- === Optimizer (best-of-6 + fractional-TFSA) + Next-$1 Analyzer ==== -->
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -4824,7 +4824,7 @@ const CSV_COLS = [
       const rows   = [];
       let cumTaxOnTaxable = 0;
 
-      // environment (snapshot)
+      // environment
       const rAfter   = Math.max(0, cfg.return_rate_after || 0);
       const drag     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
       const gN       = 1 + rAfter;               // RRSP/TFSA growth
@@ -4832,8 +4832,6 @@ const CSV_COLS = [
       const flatRate = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
       const br       = cfg.tax_brackets;
       const bracketsOn = !!(br && (br.enabled || br.bands));
-      const thr      = Number(cfg.oas_threshold || 0);
-      const oasRate  = Number(cfg.oas_clawback_rate || 0) || 0.15;
 
       // retirement-year liquidations map (ADDED before growth)
       const lmRet = liqMap(cfg.asset_liquidations);
@@ -4841,8 +4839,8 @@ const CSV_COLS = [
       const rAge   = Number.isFinite(cfg.retirement_age) ? cfg.retirement_age : (cfg.current_age || 0);
       const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
 
-      // All six orders
-      const ORDERS = ['TFR','TRF','FTR','FRT','RTF','RFT'];
+      // AFTER (taxable always first)
+      const ORDERS = ['TFR','TRF'];
 
       for (let age = rAge; age <= endAge; age++) {
 
@@ -4854,27 +4852,31 @@ const CSV_COLS = [
         const living   = livingExpenseAtAge(cfg, age);
         const cppInc   = cppAtAge(cfg, age);
         const tfsaPrefillCap = Math.max(0, Math.min(openF, living - cppInc));
-
-        // scan fractions (0, 10%, …, 100%)
-        const FRACS = Array.from({length:11}, (_,i)=> i/10);
+        // After (force no prefill)
+        const FRACS = [0];
 
         // Helper: evaluate one order + one TFSA pre-fill candidate (iterates OAS/RRSP convergence)
         const evalOrder = (order, tfsaNet) => {
           let guessRRSPGross = 0, lastRRSPGross = -1;
           let sim = null, oasClaw = 0, oasNet = oasGross;
 
-          const taxableIncomeForOAS = estTaxableIncomeForOAS(openT, cfg); // E proxy from *opening taxable*
-          for (let it = 0; it < 4; it++) {
+          const taxableIncomeForOAS = estTaxableIncomeForOAS(openT, cfg);
+          for (let it = 0; it < 3; it++) {
             if (oasGross > 0) {
               const baseIncomeForOAS = Math.max(
                 0,
                 cppAtAge(cfg, age) + guessRRSPGross + taxableIncomeForOAS
               );
-              oasClaw = Math.max(0, (baseIncomeForOAS - thr) * oasRate);
+              oasClaw = Math.max(
+                0,
+                (baseIncomeForOAS - (cfg.oas_threshold || 0)) *
+                  (cfg.oas_clawback_rate || 0)
+              );
               oasClaw = Math.min(oasClaw, oasGross);
-              oasNet  = Math.max(0, oasGross - oasClaw);
+              oasNet = Math.max(0, oasGross - oasClaw);
             } else {
-              oasClaw = 0; oasNet = 0;
+              oasClaw = 0;
+              oasNet = 0;
             }
 
             sim = simulateYearOrderGivenOASNet({
@@ -4886,7 +4888,7 @@ const CSV_COLS = [
 
             if (Math.abs(sim.fromRRSP_GROSS - lastRRSPGross) < 1) break;
             lastRRSPGross = guessRRSPGross;
-            guessRRSPGross = sim.fromRRSP_GROSS; // converge on RRSP gross used in OAS base
+            guessRRSPGross = sim.fromRRSP_GROSS;
           }
 
           const endTotal = (sim?.endTaxable || 0) + (sim?.endTFSA || 0) + (sim?.endRRSP || 0);
@@ -5038,8 +5040,7 @@ const CSV_COLS = [
   });
 })();
 </script>
-<!-- === /Optimizer (best-of-6 + fractional-TFSA) [OAS FIXED] =================================== -->
-
+<!-- === /Optimizer (best-of-6 + fractional-TFSA) =================================== -->
 
 
 
