@@ -4247,7 +4247,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!-- === Optimizer (OAS gated/capped + explicit E override & base override + open-balance debug) ==== -->
+<!-- === Optimizer (OAS gated/capped + explicit E override & base override + open-balance debug, with column profiles) ==== -->
 <script>
 (function () {
   "use strict";
@@ -4641,15 +4641,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return rows;
   }
 
-  // ---------------- CSV ----------------
-  function toCSV(rows, cols) {
-    if (!rows?.length) return "";
-    const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
-    const header = cols.join(",");
-    const body = rows.map((r) => cols.map((c) => esc(r[c])).join(",")).join("\n");
-    return header + "\n" + body;
-  }
-  const CSV_COLS = [
+  // ---------------- column sets & CSV ----------------
+  const ALL_COLS = [
     "Age",
     "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP","Liq_Added","CPP_Extra",
     "CPP","OAS_Gross","OAS_Clawback","OAS_Net",
@@ -4662,6 +4655,203 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "OAS_Threshold","OAS_Rate","OAS_Claw_raw","OAS_Claw_capped",
     "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
   ];
+
+  // Profiles
+  const COLUMN_SETS = {
+    compact: [
+      "Age",
+      "From_Taxable_Gross","From_TFSA","From_RRSP_Gross",
+      "CPP","OAS_Gross","OAS_Clawback","OAS_Net",
+      "Tax_On_Taxable","Tax_On_RRSP",
+      "End_Taxable","End_TFSA","End_RRSP","End_Total"
+    ],
+    standard: [
+      "Age",
+      "Open_Taxable","Open_TFSA","Open_RRSP",
+      "From_Taxable_Gross","From_TFSA","From_RRSP_Gross","RRIF_Min_Pct",
+      "CPP","OAS_Gross","OAS_Clawback","OAS_Net",
+      "Living_Expense","Income_Tax_Payment","Liq_Added","Tax_On_Taxable","Tax_On_RRSP","Taxable_Drag",
+      "End_Taxable","End_TFSA","End_RRSP","End_Total","Cum_Tax_On_Taxable"
+    ],
+    audit: [...ALL_COLS] // everything
+  };
+
+  function toCSV(rows, cols) {
+    if (!rows?.length) return "";
+    const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+    const header = cols.join(",");
+    const body = rows.map((r) => cols.map((c) => esc(r[c])).join(",")).join("\n");
+    return header + "\n" + body;
+  }
+
+  // ---------- table rendering (profiles) ----------
+  function ensureControls() {
+    const host = pickEl("opt_summary", "#opt_summary");
+    if (!host || !host.parentElement) return null;
+
+    // wrapper row for controls and CSV button
+    let ctr = document.getElementById("opt_controls_row");
+    if (!ctr) {
+      ctr = document.createElement("div");
+      ctr.id = "opt_controls_row";
+      ctr.style.display = "flex";
+      ctr.style.gap = "8px";
+      ctr.style.alignItems = "center";
+      ctr.style.flexWrap = "wrap";
+      host.parentElement.appendChild(ctr);
+    }
+
+    // View selector
+    let sel = document.getElementById("opt_view");
+    if (!sel) {
+      const label = document.createElement("label");
+      label.textContent = "View:";
+      label.style.fontSize = "0.9rem";
+
+      sel = document.createElement("select");
+      sel.id = "opt_view";
+      sel.style.marginLeft = "4px";
+      ["compact","standard","audit"].forEach(v => {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v.charAt(0).toUpperCase()+v.slice(1);
+        sel.appendChild(o);
+      });
+      sel.value = "standard";
+      sel.addEventListener("change", () => {
+        renderOptTable(window.__optRows || []);
+        updateCsvButton();
+      });
+
+      const wrap = document.createElement("div");
+      wrap.style.display = "flex";
+      wrap.style.alignItems = "center";
+      wrap.appendChild(label);
+      wrap.appendChild(sel);
+      ctr.appendChild(wrap);
+    }
+
+    // CSV button
+    let btn = document.getElementById("opt_csv_btn");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = "opt_csv_btn";
+      btn.className = "btn btn-sm";
+      btn.style.marginLeft = "8px";
+      btn.textContent = "Download CSV (current view)";
+      btn.onclick = () => {
+        const cols = getCurrentCols();
+        const csv = toCSV(window.__optRows || [], cols);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "optimized_withdrawals.csv";
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      };
+      ctr.appendChild(btn);
+    }
+
+    // table host
+    let tableHost = document.getElementById("opt_table_host");
+    if (!tableHost) {
+      tableHost = document.createElement("div");
+      tableHost.id = "opt_table_host";
+      tableHost.style.marginTop = "10px";
+      tableHost.style.borderTop = "1px solid #eee";
+      tableHost.style.paddingTop = "8px";
+
+      const scroller = document.createElement("div");
+      scroller.id = "opt_table_scroller";
+      scroller.style.overflowX = "auto";
+      scroller.style.maxWidth = "100%";
+
+      const tbl = document.createElement("table");
+      tbl.id = "opt_table";
+      tbl.style.borderCollapse = "collapse";
+      tbl.style.width = "100%";
+      tbl.style.fontSize = "12px";
+
+      scroller.appendChild(tbl);
+      tableHost.appendChild(scroller);
+      ctr.parentElement.appendChild(tableHost);
+    }
+
+    updateCsvButton();
+    return sel;
+  }
+
+  function getCurrentCols() {
+    const sel = document.getElementById("opt_view");
+    const view = sel ? sel.value : "standard";
+    const cols = COLUMN_SETS[view] || COLUMN_SETS.standard;
+    return cols;
+  }
+
+  function updateCsvButton() {
+    const sel = document.getElementById("opt_view");
+    const view = sel ? sel.value : "standard";
+    const btn = document.getElementById("opt_csv_btn");
+    if (btn) btn.textContent = `Download CSV (${view})`;
+  }
+
+  function fmt(v) {
+    if (v === "" || v === null || v === undefined) return "";
+    if (typeof v === "string" && v.endsWith("%")) return v; // keep RRIF_Min_Pct etc.
+    if (typeof v === "number") {
+      const a = Math.abs(v);
+      if (a >= 1e6) return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+    const n = Number(v);
+    if (Number.isFinite(n)) return fmt(n);
+    return String(v);
+  }
+
+  function renderOptTable(rows) {
+    ensureControls();
+    const table = document.getElementById("opt_table");
+    if (!table) return;
+
+    const cols = getCurrentCols();
+
+    // clear
+    table.innerHTML = "";
+
+    // header
+    const thead = document.createElement("thead");
+    const trh = document.createElement("tr");
+    cols.forEach(c => {
+      const th = document.createElement("th");
+      th.textContent = c.replace(/_/g, " ");
+      th.style.position = "sticky";
+      th.style.top = "0";
+      th.style.background = "white";
+      th.style.borderBottom = "1px solid #ddd";
+      th.style.padding = "6px 8px";
+      th.style.textAlign = "right";
+      if (c === "Age") th.style.textAlign = "left";
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    // body
+    const tbody = document.createElement("tbody");
+    (rows || []).forEach((r) => {
+      const tr = document.createElement("tr");
+      cols.forEach(c => {
+        const td = document.createElement("td");
+        const val = r[c];
+        td.textContent = fmt(val);
+        td.style.borderBottom = "1px solid #f0f0f0";
+        td.style.padding = "4px 8px";
+        td.style.textAlign = (c === "Age") ? "left" : "right";
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+  }
 
   // ---------------- Next-$1 (display only) ----------------
   function nextDollar() {
@@ -4864,12 +5054,13 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
               oasNet  = Math.max(0, oasGross - oasClaw);
             } else { oasClaw = 0; oasNet = 0; }
 
-            sim = simulateYearOrderGivenOASNet({
+            const simParams = {
               age, cfg, openT, openF, openR,
               oasGross, oasNet,
               order, tfsa_prefill_net: tfsaNet,
               lmRet, rAfter, drag, gN, gT, flatRate, br, bracketsOn
-            });
+            };
+            sim = simulateYearOrderGivenOASNet(simParams);
 
             if (Math.abs(sim.fromRRSP_GROSS - lastRRSPGross) < 1) break;
             lastRRSPGross = guessRRSPGross;
@@ -4981,34 +5172,18 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       ).join(" • ");
       write("opt_rationale", r0 || "See table for per-year mix.");
 
-      if (!document.getElementById("opt_csv_btn")) {
-        const btn = document.createElement("button");
-        btn.id = "opt_csv_btn";
-        btn.className = "btn btn-sm";
-        btn.style.marginLeft = "8px";
-        btn.textContent = "Download optimizer CSV";
-        btn.onclick = () => {
-          const csv = toCSV(window.__optRows || [], CSV_COLS);
-          const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url; a.download = "optimized_withdrawals.csv";
-          document.body.appendChild(a); a.click(); a.remove();
-          URL.revokeObjectURL(url);
-        };
-        const host = pickEl("opt_summary", "#opt_summary");
-        if (host?.parentElement) host.parentElement.appendChild(btn);
-      }
+      // Controls + table (profile aware)
+      ensureControls();
+      renderOptTable(full);
+
     } catch (e) {
       const msg = (e && e.message) ? e.message : "JS";
       writeTo("opt_summary", "Optimizer error: " + msg);
       writeTo("opt_rationale", "");
-      // console.error("Optimizer error:", e);
     }
   }
 
   // ---------------- wiring ----------------
-  // Run when user clicks "Run plan" (if present) AND on load
   (function wire() {
     const runBtn = $("litev1_run");
     if (runBtn) runBtn.addEventListener("click", () => {
@@ -5044,7 +5219,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       runOptimizerIfEnabled();
     });
 
-    // Also kick once in case the page added the boxes after script load
+    // Safety kick in case DOM populates late
     setTimeout(() => {
       try { nextDollar(); } catch(_) {}
       runOptimizerIfEnabled();
@@ -5052,21 +5227,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   })();
 })();
 </script>
-<!-- === /Optimizer (OAS gated/capped + E overrides + open-balance debug) ============== -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+<!-- === /Optimizer (with column profiles) ============== -->
 
 
 
