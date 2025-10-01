@@ -4247,7 +4247,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!-- === Optimizer (OAS gated/capped + explicit E override & base override, with column profiles + baseline table under graph) ==== -->
+<!-- === Optimizer (OAS gated/capped + explicit E override & base override + open-balance debug, with column profiles) ==== -->
 <script>
 (function () {
   "use strict";
@@ -4556,15 +4556,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   }
 
   // === OAS: taxable *investment income* (E) with override and optional base override
+  // baseForProxy is the balance we want to treat as producing taxable investment income
   function computeTaxIncForOAS(baseForProxy, cfg) {
     const flat = Math.max(0, Math.min(0.90, cfg.income_tax_rate || 0));
     const rA   = Math.max(0, cfg.return_rate_after || 0);
     const drag = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
 
+    // 1) Hard override for E
     const fixed = Math.max(0, Number(cfg.oas_tax_inc_fixed || 0));
     if (fixed > 0) return { E: fixed, method: "fixed", baseUsed: fixed, rAfter: rA, drag, flat };
 
+    // 2) Balance override for the proxy base (else use provided baseForProxy)
     const base = Math.max(0, Number(cfg.oas_tax_base_override || baseForProxy || 0));
+
     const taxDollars = base * rA * drag;
     const proxyE = flat > 0 ? (taxDollars / flat) : 0;
     return { E: proxyE, method: (cfg.oas_tax_base_override ? "proxy(base-override)" : "proxy"),
@@ -4652,7 +4656,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "End_Taxable","End_TFSA","End_RRSP","End_Total_Raw","Cum_Tax_On_Taxable","End_Total"
   ];
 
-  // Profiles for B (optimizer) table
+  // Profiles
   const COLUMN_SETS = {
     compact: [
       "Age",
@@ -4669,15 +4673,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       "Living_Expense","Income_Tax_Payment","Liq_Added","Tax_On_Taxable","Tax_On_RRSP","Taxable_Drag",
       "End_Taxable","End_TFSA","End_RRSP","End_Total","Cum_Tax_On_Taxable"
     ],
-    audit: [...ALL_COLS]
+    audit: [...ALL_COLS] // everything
   };
-
-  // Columns for A (baseline) table — non-tax/graph data
-  const BASELINE_COLS = [
-    "Age",
-    "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP","Liq_Added","Taxable_Drag",
-    "End_Taxable","End_TFSA","End_RRSP","End_Total"
-  ];
 
   function toCSV(rows, cols) {
     if (!rows?.length) return "";
@@ -4685,162 +4682,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const header = cols.join(",");
     const body = rows.map((r) => cols.map((c) => esc(r[c])).join(",")).join("\n");
     return header + "\n" + body;
-  }
-
-  // ---------- formatting helper ----------
-  function fmt(v) {
-    if (v === "" || v === null || v === undefined) return "";
-    if (typeof v === "string" && v.endsWith("%")) return v;
-    if (typeof v === "number") return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
-    const n = Number(v);
-    if (Number.isFinite(n)) return fmt(n);
-    return String(v);
-  }
-
-  // ===== Part A: Baseline table right under the JS visual graph =====
-  function findGraphAnchor() {
-    return pickEl(
-      "js_visual_graph","visual_graph","chart_container","plan_chart","chart",
-      "#js_visual_graph",".js-visual-graph",".visual-graph",".chart-host",".chart-container",
-      "litev1_chart","litev1_graph"
-    ) || document.querySelector("canvas");
-  }
-
-  function ensureBaselineUI() {
-    const graph = findGraphAnchor();
-    if (!graph || !graph.parentElement) return null;
-
-    let host = document.getElementById("baseline_table_host");
-    if (!host) {
-      host = document.createElement("div");
-      host.id = "baseline_table_host";
-      host.style.marginTop = "10px";
-      graph.parentElement.insertBefore(host, graph.nextSibling);
-
-      // Controls row
-      const ctr = document.createElement("div");
-      ctr.id = "baseline_controls_row";
-      ctr.style.display = "flex";
-      ctr.style.gap = "8px";
-      ctr.style.alignItems = "center";
-      ctr.style.flexWrap = "wrap";
-      host.appendChild(ctr);
-
-      // CSV button
-      const btn = document.createElement("button");
-      btn.id = "baseline_csv_btn";
-      btn.className = "btn btn-sm";
-      btn.textContent = "Download CSV (baseline)";
-      btn.onclick = () => {
-        const rows = window.__baselineRows || [];
-        const csv = toCSV(rows, BASELINE_COLS);
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "baseline_table.csv";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-      };
-      ctr.appendChild(btn);
-
-      // Scroll container (≈10 rows visible)
-      const scroller = document.createElement("div");
-      scroller.id = "baseline_scroller";
-      scroller.style.overflowY = "auto";
-      scroller.style.maxWidth = "100%";
-      scroller.style.border = "1px solid #eee";
-      scroller.style.borderRadius = "4px";
-      scroller.style.marginTop = "6px";
-      scroller.style.maxHeight = (28 * 11) + "px"; // header + ~10 rows
-      host.appendChild(scroller);
-
-      const tbl = document.createElement("table");
-      tbl.id = "baseline_table";
-      tbl.style.borderCollapse = "collapse";
-      tbl.style.width = "100%";
-      tbl.style.fontSize = "12px";
-      scroller.appendChild(tbl);
-    }
-    return host;
-  }
-
-  function renderBaselineTable(rows) {
-    ensureBaselineUI();
-    const table = document.getElementById("baseline_table");
-    if (!table) return;
-
-    table.innerHTML = "";
-
-    // header
-    const thead = document.createElement("thead");
-    const trh = document.createElement("tr");
-    BASELINE_COLS.forEach(c => {
-      const th = document.createElement("th");
-      th.textContent = c.replace(/_/g, " ");
-      th.style.position = "sticky";
-      th.style.top = "0";
-      th.style.background = "white";
-      th.style.borderBottom = "1px solid #ddd";
-      th.style.padding = "6px 8px";
-      th.style.textAlign = (c === "Age") ? "left" : "right";
-      trh.appendChild(th);
-    });
-    thead.appendChild(trh);
-    table.appendChild(thead);
-
-    // body
-    const tbody = document.createElement("tbody");
-    (rows || []).forEach((r) => {
-      const tr = document.createElement("tr");
-      BASELINE_COLS.forEach(c => {
-        const td = document.createElement("td");
-        td.textContent = fmt(r[c]);
-        td.style.borderBottom = "1px solid #f0f0f0";
-        td.style.padding = "4px 8px";
-        td.style.textAlign = (c === "Age") ? "left" : "right";
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-  }
-
-  // ===== Part B: Optimizer table (full-width host) =====
-  function ensureWideHost() {
-    let wide = document.getElementById("opt_wide_host");
-    if (wide) return wide;
-
-    wide = document.createElement("div");
-    wide.id = "opt_wide_host";
-    wide.style.width = "100%";
-    wide.style.marginTop = "8px";
-    wide.style.gridColumn = "1 / -1"; // span if parent uses CSS grid
-    // place right after the optimizer card/container
-    const sum = pickEl("opt_summary","#opt_summary");
-    const card = sum ? (sum.closest(".card, .panel, section, .container, .box, .group") || sum.parentElement) : null;
-    if (card && card.parentElement) {
-      card.parentElement.insertBefore(wide, card.nextSibling);
-    } else {
-      document.body.appendChild(wide);
-    }
-
-    const scroller = document.createElement("div");
-    scroller.id = "opt_table_scroller";
-    scroller.style.overflowX = "auto";
-    scroller.style.maxWidth = "100%";
-    scroller.style.border = "1px solid #eee";
-    scroller.style.borderRadius = "4px";
-    scroller.style.background = "white";
-    wide.appendChild(scroller);
-
-    const tbl = document.createElement("table");
-    tbl.id = "opt_table";
-    tbl.style.borderCollapse = "collapse";
-    tbl.style.width = "100%";
-    tbl.style.fontSize = "12px";
-    scroller.appendChild(tbl);
-
-    return wide;
   }
 
   // ---------- table rendering (profiles) ----------
@@ -4857,7 +4698,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       ctr.style.gap = "8px";
       ctr.style.alignItems = "center";
       ctr.style.flexWrap = "wrap";
-      // keep controls near summary (right card), not the table
       host.parentElement.appendChild(ctr);
     }
 
@@ -4897,7 +4737,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       btn.id = "opt_csv_btn";
       btn.className = "btn btn-sm";
       btn.style.marginLeft = "8px";
-      btn.textContent = "Download CSV (standard)";
+      btn.textContent = "Download CSV (current view)";
       btn.onclick = () => {
         const cols = getCurrentCols();
         const csv = toCSV(window.__optRows || [], cols);
@@ -4911,8 +4751,31 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       ctr.appendChild(btn);
     }
 
-    // ensure wide table host exists (separate from controls)
-    ensureWideHost();
+    // table host
+    let tableHost = document.getElementById("opt_table_host");
+    if (!tableHost) {
+      tableHost = document.createElement("div");
+      tableHost.id = "opt_table_host";
+      tableHost.style.marginTop = "10px";
+      tableHost.style.borderTop = "1px solid #eee";
+      tableHost.style.paddingTop = "8px";
+
+      const scroller = document.createElement("div");
+      scroller.id = "opt_table_scroller";
+      scroller.style.overflowX = "auto";
+      scroller.style.maxWidth = "100%";
+
+      const tbl = document.createElement("table");
+      tbl.id = "opt_table";
+      tbl.style.borderCollapse = "collapse";
+      tbl.style.width = "100%";
+      tbl.style.fontSize = "12px";
+
+      scroller.appendChild(tbl);
+      tableHost.appendChild(scroller);
+      ctr.parentElement.appendChild(tableHost);
+    }
+
     updateCsvButton();
     return sel;
   }
@@ -4931,6 +4794,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     if (btn) btn.textContent = `Download CSV (${view})`;
   }
 
+  function fmt(v) {
+    if (v === "" || v === null || v === undefined) return "";
+    if (typeof v === "string" && v.endsWith("%")) return v; // keep RRIF_Min_Pct etc.
+    if (typeof v === "number") {
+      const a = Math.abs(v);
+      if (a >= 1e6) return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+    const n = Number(v);
+    if (Number.isFinite(n)) return fmt(n);
+    return String(v);
+  }
+
   function renderOptTable(rows) {
     ensureControls();
     const table = document.getElementById("opt_table");
@@ -4938,6 +4814,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
     const cols = getCurrentCols();
 
+    // clear
     table.innerHTML = "";
 
     // header
@@ -5127,15 +5004,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
     try {
       const toggle = document.getElementById("opt_toggle");
+      // Only skip when the toggle exists AND is OFF. If it's missing, run.
       if (toggle && !toggle.checked) return;
 
       const cfg     = buildCfgLight();
-      const preRows = buildPreRetRows(cfg);               // baseline (graph, non-tax)
+      const preRows = buildPreRetRows(cfg);
       const preLast = preRows[preRows.length - 1] || null;
-
-      // Make Part A visible (under graph) with 10-row scroller + CSV
-      window.__baselineRows = preRows;
-      renderBaselineTable(preRows);
 
       let tBal  = preLast ? Number(preLast.End_Taxable || 0) : Number(cfg.taxable0 || 0);
       let fBal  = preLast ? Number(preLast.End_TFSA    || 0) : Number(cfg.tfsa0    || 0);
@@ -5158,7 +5032,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
 
       const ORDERS = ['TFR','TRF','FTR','FRT','RTF','RFT'];
-      const FRACS = [0];
+      const FRACS = [0]; // (scan fractions if you re-enable TFSA prefill exploration)
 
       for (let age = rAge; age <= endAge; age++) {
         const openT = tBal, openF = fBal, openR = rBal;
@@ -5169,6 +5043,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           let guessRRSPGross = 0, lastRRSPGross = -1;
           let sim = null, oasClaw = 0, oasNet = oasGross;
 
+          // iterate E with average taxable base: openT + 0.5 * (net RRIF-min deposited)
           let Einfo = computeTaxIncForOAS(openT, cfg);
 
           for (let it = 0; it < 3; it++) {
@@ -5191,6 +5066,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
             lastRRSPGross = guessRRSPGross;
             guessRRSPGross = sim.fromRRSP_GROSS;
 
+            // recompute E using average taxable base including 0.5 * RRIF-min net added
             const addNetToTaxable = Math.max(0, sim.extraNetFromRRIFMin || 0);
             const avgBaseForE = openT + 0.5 * addNetToTaxable;
             Einfo = computeTaxIncForOAS(avgBaseForE, cfg);
@@ -5243,7 +5119,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Tax_On_RRSP: Math.round(chosen.taxOnRRSP),
 
           Liq_Added: Math.round(chosen.liq),
-          Taxable_Drag: Math.round(chosen.taxDragAmt),
+          Taxable_Drag: Math.round(chosen.taxDragAmt),   // display-only drag for the year
 
           // opening balances (debug)
           Open_Taxable: Math.round(openT),
@@ -5296,7 +5172,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       ).join(" • ");
       write("opt_rationale", r0 || "See table for per-year mix.");
 
-      // Controls + table (profile aware), full-width host
+      // Controls + table (profile aware)
       ensureControls();
       renderOptTable(full);
 
@@ -5351,8 +5227,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   })();
 })();
 </script>
-<!-- === /Optimizer (profiles + baseline under graph, full-width optimizer table) ============== -->
-
+<!-- === /Optimizer (with column profiles) ============== -->
 
 
 
