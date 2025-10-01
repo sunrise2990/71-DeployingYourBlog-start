@@ -4261,9 +4261,10 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (!el) continue;
-      const v = (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA")
-        ? el.value
-        : (el.getAttribute("value") ?? el.textContent);
+      const v =
+        (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA")
+          ? el.value
+          : (el.getAttribute("value") ?? el.textContent);
       const n = toNum(v);
       if (Number.isFinite(n)) return n;
     }
@@ -4547,7 +4548,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const fixed = Math.max(0, Number(cfg.oas_tax_inc_fixed || 0));
     if (fixed > 0) return { E: fixed, method: "fixed", baseUsed: fixed, rAfter: rA, drag, flat };
 
-    // 2) Balance override for the proxy base
+    // 2) Balance override for the proxy base (else use provided baseForProxy)
     const base = Math.max(0, Number(cfg.oas_tax_base_override || baseForProxy || 0));
 
     const taxDollars = base * rA * drag;
@@ -4766,7 +4767,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const liq = Number(lmRet[age] || lmRet[String(age)] || 0);
     if (liq) tAfter += liq;
 
-    // Growth
+    // Growth (and display-only tax drag for this year)
+    const taxDragAmt = Math.max(0, tAfter) * rAfter * drag; // display only
     const endTaxable = Math.max(0, tAfter) * gT;
     const endTFSA    = Math.max(0, fAfter) * gN;
     const endRRSP    = Math.max(0, rAfterBal) * gN;
@@ -4777,7 +4779,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       living, cppInc,
       fromTax_GROSS_FOR_TABLE, fromTFSA, fromRRSP_GROSS,
       taxOnTaxable, taxOnRRSP, rrifPct,
-      liq,
+      liq, taxDragAmt,
       endTaxable, endTFSA, endRRSP,
       incomeTaxPayment,
       tAfter, fAfter, rAfterBal,
@@ -4818,7 +4820,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
 
       const ORDERS = ['TFR','TRF','FTR','FRT','RTF','RFT'];
-      const FRACS = [0];
+      const FRACS = [0]; // (scan fractions if you re-enable TFSA prefill exploration)
 
       for (let age = rAge; age <= endAge; age++) {
         const openT = tBal, openF = fBal, openR = rBal;
@@ -4839,9 +4841,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
               const raw = Math.max(0, (baseIncomeForOAS - (cfg.oas_threshold || 0)) * (cfg.oas_clawback_rate || 0));
               oasClaw = Math.min(raw, oasGross);
               oasNet  = Math.max(0, oasGross - oasClaw);
-            } else {
-              oasClaw = 0; oasNet = 0;
-            }
+            } else { oasClaw = 0; oasNet = 0; }
 
             sim = simulateYearOrderGivenOASNet({
               age, cfg, openT, openF, openR,
@@ -4850,8 +4850,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
               lmRet, rAfter, drag, gN, gT, flatRate, br, bracketsOn
             });
 
-            // update RRSP guess for next OAS iteration
-            if (Math.abs(sim.fromRRSP_GROSS - lastRRSPGross) < 1) { break; }
+            if (Math.abs(sim.fromRRSP_GROSS - lastRRSPGross) < 1) break;
             lastRRSPGross = guessRRSPGross;
             guessRRSPGross = sim.fromRRSP_GROSS;
 
@@ -4862,9 +4861,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           }
 
           const endTotal = (sim?.endTaxable || 0) + (sim?.endTFSA || 0) + (sim?.endRRSP || 0);
-          // return Einfo too for debug columns
-          return { sim, endTotal, oasClaw, oasNet,
-                   Einfo, EopenUsed: openT, EbaseUsed: Einfo.baseUsed };
+          return { sim, endTotal, oasClaw, oasNet, Einfo, EopenUsed: openT };
         };
 
         let best = null;
@@ -4910,7 +4907,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Tax_On_RRSP: Math.round(chosen.taxOnRRSP),
 
           Liq_Added: Math.round(chosen.liq),
-          Taxable_Drag: 0,
+          Taxable_Drag: Math.round(chosen.taxDragAmt),   // <-- fixed: show display drag during retirement
 
           // opening balances (debug)
           Open_Taxable: Math.round(openT),
@@ -4924,7 +4921,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           OAS_Base_TaxInc: taxIncE,
           OAS_TaxInc_Method: best.Einfo.method,
           OAS_TaxInc_openT: Math.round(best.EopenUsed),
-          OAS_TaxInc_baseUsed: Math.round(best.Einfo.baseUsed),
+          OAS_TaxInc_baseUsed: Math.round(best.Einfo.baseUsed ?? best.EopenUsed),
           OAS_TaxInc_rAfter: +(best.Einfo.rAfter || 0).toFixed(6),
           OAS_TaxInc_drag: +(cfg.taxable_drag || 0).toFixed(6),
           OAS_TaxInc_flat: +(best.Einfo.flat || 0).toFixed(6),
@@ -5024,6 +5021,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Optimizer (OAS gated/capped + E overrides + open-balance debug) ============== -->
+
 
 
 
