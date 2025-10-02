@@ -2908,7 +2908,17 @@ function ensureLayout(layout, seriesForAxis){
       /* keep header readable if it sticks */
       #litev1_tax_table thead th { background: #fff; }
     </style>
+    <style>
+      /* keep auto layout so cells can size to their content */
+      #litev1_tax_table { table-layout: auto; }
 
+      /* give the rightmost column room so it doesn't sit under the scrollbar */
+      #litev1_tax_table th:last-child,
+      #litev1_tax_table td:last-child {
+        padding-right: 18px !important;  /* bump to 22px if your OS scrollbars are wider */
+        white-space: nowrap;
+      }
+    </style>
 
 
 
