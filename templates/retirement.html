@@ -2869,6 +2869,35 @@ function ensureLayout(layout, seriesForAxis){
 <!-- === /Tax-aware visuals ============================================== -->
 
 
+    <!-- Results table -->
+    <div class="table-responsive">
+      <table class="table table-sm" id="litev1_tax_table">
+        <thead>
+          <tr>
+            <th>Age</th>
+            <th>Baseline Assets (100% Taxable)</th>
+            <th>From Taxable</th>
+            <th>From TFSA</th>
+            <th>From RRSP (Gross)</th>
+            <th>RRIF Min %</th>
+            <th>OAS (Gross)</th>
+            <th>OAS Clawback</th>
+            <th>OAS (Net)</th>
+            <th>Tax on Taxable (overlay)</th>
+            <th>Tax on RRSP (overlay)</th>
+            <th>Taxable Drag</th>
+            <th>End Taxable</th>
+            <th>End TFSA</th>
+            <th>End RRSP</th>
+            <th>End Total</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="small text-muted mb-0" id="litev1_tax_meta"></p>
+  </div>
+</div>
 
 
 
@@ -2912,35 +2941,6 @@ function ensureLayout(layout, seriesForAxis){
 
 
 
-    <!-- Results table -->
-    <div class="table-responsive">
-      <table class="table table-sm" id="litev1_tax_table">
-        <thead>
-          <tr>
-            <th>Age</th>
-            <th>Baseline Assets (100% Taxable)</th>
-            <th>From Taxable</th>
-            <th>From TFSA</th>
-            <th>From RRSP (Gross)</th>
-            <th>RRIF Min %</th>
-            <th>OAS (Gross)</th>
-            <th>OAS Clawback</th>
-            <th>OAS (Net)</th>
-            <th>Tax on Taxable (overlay)</th>
-            <th>Tax on RRSP (overlay)</th>
-            <th>Taxable Drag</th>
-            <th>End Taxable</th>
-            <th>End TFSA</th>
-            <th>End RRSP</th>
-            <th>End Total</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p class="small text-muted mb-0" id="litev1_tax_meta"></p>
-  </div>
-</div>
 
 <script>
 (function () {
@@ -4697,113 +4697,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return String(v);
   }
 
-  // ===== Part A: Baseline table right under the JS visual graph =====
-  function findGraphAnchor() {
-    return pickEl(
-      "js_visual_graph","visual_graph","chart_container","plan_chart","chart",
-      "#js_visual_graph",".js-visual-graph",".visual-graph",".chart-host",".chart-container",
-      "litev1_chart","litev1_graph"
-    ) || document.querySelector("canvas");
-  }
 
-  function ensureBaselineUI() {
-    const graph = findGraphAnchor();
-    if (!graph || !graph.parentElement) return null;
-
-    let host = document.getElementById("baseline_table_host");
-    if (!host) {
-      host = document.createElement("div");
-      host.id = "baseline_table_host";
-      host.style.marginTop = "10px";
-      graph.parentElement.insertBefore(host, graph.nextSibling);
-
-      // Controls row
-      const ctr = document.createElement("div");
-      ctr.id = "baseline_controls_row";
-      ctr.style.display = "flex";
-      ctr.style.gap = "8px";
-      ctr.style.alignItems = "center";
-      ctr.style.flexWrap = "wrap";
-      host.appendChild(ctr);
-
-      // CSV button
-      const btn = document.createElement("button");
-      btn.id = "baseline_csv_btn";
-      btn.className = "btn btn-sm";
-      btn.textContent = "Download CSV (baseline)";
-      btn.onclick = () => {
-        const rows = window.__baselineRows || [];
-        const csv = toCSV(rows, BASELINE_COLS);
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "baseline_table.csv";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-      };
-      ctr.appendChild(btn);
-
-      // Scroll container (≈10 rows visible)
-      const scroller = document.createElement("div");
-      scroller.id = "baseline_scroller";
-      scroller.style.overflowY = "auto";
-      scroller.style.maxWidth = "100%";
-      scroller.style.border = "1px solid #eee";
-      scroller.style.borderRadius = "4px";
-      scroller.style.marginTop = "6px";
-      scroller.style.maxHeight = (28 * 11) + "px"; // header + ~10 rows
-      host.appendChild(scroller);
-
-      const tbl = document.createElement("table");
-      tbl.id = "baseline_table";
-      tbl.style.borderCollapse = "collapse";
-      tbl.style.width = "100%";
-      tbl.style.fontSize = "12px";
-      scroller.appendChild(tbl);
-    }
-    return host;
-  }
-
-  function renderBaselineTable(rows) {
-    ensureBaselineUI();
-    const table = document.getElementById("baseline_table");
-    if (!table) return;
-
-    table.innerHTML = "";
-
-    // header
-    const thead = document.createElement("thead");
-    const trh = document.createElement("tr");
-    BASELINE_COLS.forEach(c => {
-      const th = document.createElement("th");
-      th.textContent = c.replace(/_/g, " ");
-      th.style.position = "sticky";
-      th.style.top = "0";
-      th.style.background = "white";
-      th.style.borderBottom = "1px solid #ddd";
-      th.style.padding = "6px 8px";
-      th.style.textAlign = (c === "Age") ? "left" : "right";
-      trh.appendChild(th);
-    });
-    thead.appendChild(trh);
-    table.appendChild(thead);
-
-    // body
-    const tbody = document.createElement("tbody");
-    (rows || []).forEach((r) => {
-      const tr = document.createElement("tr");
-      BASELINE_COLS.forEach(c => {
-        const td = document.createElement("td");
-        td.textContent = fmt(r[c]);
-        td.style.borderBottom = "1px solid #f0f0f0";
-        td.style.padding = "4px 8px";
-        td.style.textAlign = (c === "Age") ? "left" : "right";
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-  }
 
   // ===== Part B: Optimizer table (full-width host) =====
   function ensureWideHost() {
