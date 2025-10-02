@@ -3622,27 +3622,9 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
     return map;
   }
 
-  // Render (LIMIT tbody to 10 visible rows with sticky header + scrolling)
+  // Render
   function renderTable(rows, baselineMap, meta){
-    const table = $("litev1_tax_table");
-    const tb = table.querySelector("tbody");
-    tb.innerHTML = "";
-
-    // --- ensure a scroll wrapper around the table (once) ---
-    let wrap = document.getElementById("litev1_tax_table_wrap");
-    if (!wrap) {
-      wrap = document.createElement("div");
-      wrap.id = "litev1_tax_table_wrap";
-      wrap.style.display = "block";
-      wrap.style.overflowY = "auto";            // vertical scroll
-      wrap.style.overflowX = "hidden";
-      wrap.style.borderTop = "1px solid #eee";
-      wrap.style.scrollbarGutter = "stable both-edges";
-      table.parentNode.insertBefore(wrap, table);
-      wrap.appendChild(table);
-    }
-
-    // --- fill rows as before ---
+    const tb=$("litev1_tax_table").querySelector("tbody"); tb.innerHTML="";
     (rows||[]).forEach(r=>{
       const tr=document.createElement("tr");
       tr.innerHTML=`<td>${r.Age}</td>
@@ -3663,34 +3645,6 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
         <td>${iFmt(r.End_Total||0)}</td>`;
       tb.appendChild(tr);
     });
-
-    // --- sticky header so it stays in view while scrolling ---
-    const ths = table.querySelectorAll("thead th");
-    ths.forEach(th => {
-      th.style.position = "sticky";
-      th.style.top = "0";
-      th.style.background = "#fff";
-      th.style.zIndex = "2";
-    });
-
-    // --- cap visible area to ~10 rows (header + 10 body rows) ---
-    const capToTenRows = () => {
-      const thead = table.tHead;
-      const firstRow = table.tBodies[0]?.rows?.[0];
-      const headH = thead ? thead.getBoundingClientRect().height : 32;
-      const rowH  = firstRow ? firstRow.getBoundingClientRect().height : 28;
-      const maxH  = Math.round(headH + 10 * rowH) + 2;   // header + 10 rows
-      wrap.style.maxHeight = maxH + "px";
-    };
-    // compute after layout
-    requestAnimationFrame(capToTenRows);
-    // keep responsive
-    if (!window.__litev1TaxResizeBound) {
-      window.__litev1TaxResizeBound = true;
-      window.addEventListener("resize", capToTenRows);
-    }
-
-    // --- meta line (unchanged) ---
     const orderText = readDrawOrder().join(" → ").toUpperCase();
     $("litev1_tax_meta").textContent =
       `Flat tax = ${(meta.flat_tax*100).toFixed(1)}% | ` +
@@ -3698,7 +3652,6 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
       `Earliest depletion age = ${meta.earliest_depletion_age ?? "—"} | ` +
       `Rows: ${rows?.length ?? 0} | Order: ${orderText}`;
   }
-
 
   // Run end-to-end
   async function runAll(){
