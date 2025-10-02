@@ -4697,113 +4697,180 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return String(v);
   }
 
-  // ===== Part A: Baseline table right under the JS visual graph =====
-  function findGraphAnchor() {
-    return pickEl(
+
+// ===== Part A: Baseline table right under the JS visual graph =====
+function findGraphAnchor() {
+  // Try obvious chart containers first
+  return (
+    pickEl(
       "js_visual_graph","visual_graph","chart_container","plan_chart","chart",
       "#js_visual_graph",".js-visual-graph",".visual-graph",".chart-host",".chart-container",
       "litev1_chart","litev1_graph"
-    ) || document.querySelector("canvas");
+    ) ||
+    document.querySelector("canvas, .apexcharts-canvas, .highcharts-container")
+  );
+}
+
+/**
+ * We want the baseline table immediately BELOW the JS visual graph and
+ * ABOVE the "Optimize withdrawals (beta)" card. The most reliable anchor
+ * in this app is the optimizer summary node — so we insert our baseline
+ * host *before* that card. If that fails, we fall back to dropping it
+ * right after the graph container.
+ */
+function ensureBaselineUI() {
+  // Prefer to anchor *before* the optimizer card/panel
+  const optSum = pickEl("opt_summary", "#opt_summary");
+  let insertBeforeEl = null;
+
+  if (optSum) {
+    const optPanel =
+      optSum.closest(".card, .panel, section, .container, .box, .group") ||
+      optSum.parentElement;
+    if (optPanel && optPanel.parentElement) insertBeforeEl = optPanel;
   }
 
-  function ensureBaselineUI() {
-    const graph = findGraphAnchor();
-    if (!graph || !graph.parentElement) return null;
+  // Fallback: if we didn't find the optimizer panel, place directly after the graph
+  const graph = findGraphAnchor();
+  const fallbackAfterGraph = graph && graph.parentElement ? graph : null;
 
-    let host = document.getElementById("baseline_table_host");
-    if (!host) {
-      host = document.createElement("div");
-      host.id = "baseline_table_host";
-      host.style.marginTop = "10px";
-      graph.parentElement.insertBefore(host, graph.nextSibling);
+  if (!insertBeforeEl && !fallbackAfterGraph) return null;
 
-      // Controls row
-      const ctr = document.createElement("div");
-      ctr.id = "baseline_controls_row";
-      ctr.style.display = "flex";
-      ctr.style.gap = "8px";
-      ctr.style.alignItems = "center";
-      ctr.style.flexWrap = "wrap";
-      host.appendChild(ctr);
+  let host = document.getElementById("baseline_table_host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "baseline_table_host";
+    host.style.marginTop = "10px";
 
-      // CSV button
-      const btn = document.createElement("button");
-      btn.id = "baseline_csv_btn";
-      btn.className = "btn btn-sm";
-      btn.textContent = "Download CSV (baseline)";
-      btn.onclick = () => {
-        const rows = window.__baselineRows || [];
-        const csv = toCSV(rows, BASELINE_COLS);
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "baseline_table.csv";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-      };
-      ctr.appendChild(btn);
+    // Controls row
+    const ctr = document.createElement("div");
+    ctr.id = "baseline_controls_row";
+    ctr.style.display = "flex";
+    ctr.style.gap = "8px";
+    ctr.style.alignItems = "center";
+    ctr.style.flexWrap = "wrap";
+    host.appendChild(ctr);
 
-      // Scroll container (≈10 rows visible)
-      const scroller = document.createElement("div");
-      scroller.id = "baseline_scroller";
-      scroller.style.overflowY = "auto";
-      scroller.style.maxWidth = "100%";
-      scroller.style.border = "1px solid #eee";
-      scroller.style.borderRadius = "4px";
-      scroller.style.marginTop = "6px";
-      scroller.style.maxHeight = (28 * 11) + "px"; // header + ~10 rows
-      host.appendChild(scroller);
+    // CSV button
+    const btn = document.createElement("button");
+    btn.id = "baseline_csv_btn";
+    btn.className = "btn btn-sm";
+    btn.textContent = "Download CSV (baseline)";
+    btn.onclick = () => {
+      const rows = window.__baselineRows || [];
+      const cols = [
+        "Age",
+        "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP","Liq_Added","Taxable_Drag",
+        "End_Taxable","End_TFSA","End_RRSP","End_Total"
+      ];
+      const csv = (function toCSV(rows, cols) {
+        if (!rows?.length) return "";
+        const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+        const header = cols.join(",");
+        const body = rows.map(r => cols.map(c => esc(r[c])).join(",")).join("\n");
+        return header + "\n" + body;
+      })(rows, cols);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "baseline_table.csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    };
+    ctr.appendChild(btn);
 
-      const tbl = document.createElement("table");
-      tbl.id = "baseline_table";
-      tbl.style.borderCollapse = "collapse";
-      tbl.style.width = "100%";
-      tbl.style.fontSize = "12px";
-      scroller.appendChild(tbl);
+    // Scroll container – force visible height ~ header + 10 rows
+    const scroller = document.createElement("div");
+    scroller.id = "baseline_scroller";
+    scroller.style.display = "block";
+    scroller.style.overflowY = "auto";
+    scroller.style.border = "1px solid #eee";
+    scroller.style.borderRadius = "4px";
+    scroller.style.marginTop = "6px";
+    // fixed height so a scrollbar appears reliably after ~10 rows
+    const ROW_H = 28, HEAD_H = 34;
+    scroller.style.height = (HEAD_H + ROW_H * 10) + "px";
+    scroller.style.maxWidth = "100%";
+    host.appendChild(scroller);
+
+    const tbl = document.createElement("table");
+    tbl.id = "baseline_table";
+    tbl.style.borderCollapse = "collapse";
+    tbl.style.width = "100%";
+    tbl.style.fontSize = "12px";
+    tbl.style.tableLayout = "fixed";
+    scroller.appendChild(tbl);
+
+    // Insert in the right spot
+    if (insertBeforeEl) {
+      insertBeforeEl.parentElement.insertBefore(host, insertBeforeEl);
+    } else {
+      // fallback: just after the graph
+      fallbackAfterGraph.parentElement.insertBefore(host, fallbackAfterGraph.nextSibling);
     }
-    return host;
+  } else {
+    // If it already exists but isn't right above the optimizer card, move it
+    if (insertBeforeEl && host.nextSibling !== insertBeforeEl) {
+      insertBeforeEl.parentElement.insertBefore(host, insertBeforeEl);
+    }
   }
+  return host;
+}
 
-  function renderBaselineTable(rows) {
-    ensureBaselineUI();
-    const table = document.getElementById("baseline_table");
-    if (!table) return;
+function renderBaselineTable(rows) {
+  ensureBaselineUI();
+  const table = document.getElementById("baseline_table");
+  if (!table) return;
 
-    table.innerHTML = "";
+  const COLS = [
+    "Age",
+    "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP","Liq_Added","Taxable_Drag",
+    "End_Taxable","End_TFSA","End_RRSP","End_Total"
+  ];
+  const fmt = (v) => {
+    if (v === "" || v === null || v === undefined) return "";
+    if (typeof v === "string" && v.endsWith("%")) return v;
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : String(v);
+  };
 
-    // header
-    const thead = document.createElement("thead");
-    const trh = document.createElement("tr");
-    BASELINE_COLS.forEach(c => {
-      const th = document.createElement("th");
-      th.textContent = c.replace(/_/g, " ");
-      th.style.position = "sticky";
-      th.style.top = "0";
-      th.style.background = "white";
-      th.style.borderBottom = "1px solid #ddd";
-      th.style.padding = "6px 8px";
-      th.style.textAlign = (c === "Age") ? "left" : "right";
-      trh.appendChild(th);
+  table.innerHTML = "";
+
+  // header
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  COLS.forEach(c => {
+    const th = document.createElement("th");
+    th.textContent = c.replace(/_/g, " ");
+    th.style.position = "sticky";
+    th.style.top = "0";
+    th.style.background = "white";
+    th.style.borderBottom = "1px solid #ddd";
+    th.style.padding = "6px 8px";
+    th.style.textAlign = (c === "Age") ? "left" : "right";
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  // body
+  const tbody = document.createElement("tbody");
+  (rows || []).forEach((r) => {
+    const tr = document.createElement("tr");
+    COLS.forEach(c => {
+      const td = document.createElement("td");
+      td.textContent = fmt(r[c]);
+      td.style.borderBottom = "1px solid #f0f0f0";
+      td.style.padding = "4px 8px";
+      td.style.textAlign = (c === "Age") ? "left" : "right";
+      tr.appendChild(td);
     });
-    thead.appendChild(trh);
-    table.appendChild(thead);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+}
+// ===== /Part A =====
 
-    // body
-    const tbody = document.createElement("tbody");
-    (rows || []).forEach((r) => {
-      const tr = document.createElement("tr");
-      BASELINE_COLS.forEach(c => {
-        const td = document.createElement("td");
-        td.textContent = fmt(r[c]);
-        td.style.borderBottom = "1px solid #f0f0f0";
-        td.style.padding = "4px 8px";
-        td.style.textAlign = (c === "Age") ? "left" : "right";
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-  }
 
   // ===== Part B: Optimizer table (full-width host) =====
   function ensureWideHost() {
