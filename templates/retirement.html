@@ -4376,7 +4376,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
-<!<!-- === Optimizer (OAS gated/capped + explicit E override & base override, with column profiles + baseline table under graph) ==== -->
+
+<!-- === Optimizer (OAS gated/capped + explicit E override & base override, with column profiles; NO baseline UI here) ==== -->
 <script>
 (function () {
   "use strict";
@@ -4690,10 +4691,13 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const rA   = Math.max(0, cfg.return_rate_after || 0);
     const drag = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
 
+    // 1) Hard override for E
     const fixed = Math.max(0, Number(cfg.oas_tax_inc_fixed || 0));
     if (fixed > 0) return { E: fixed, method: "fixed", baseUsed: fixed, rAfter: rA, drag, flat };
 
+    // 2) Balance override for the proxy base (else use provided baseForProxy)
     const base = Math.max(0, Number(cfg.oas_tax_base_override || baseForProxy || 0));
+
     const taxDollars = base * rA * drag;
     const proxyE = flat > 0 ? (taxDollars / flat) : 0;
     return { E: proxyE, method: (cfg.oas_tax_base_override ? "proxy(base-override)" : "proxy"),
@@ -4801,13 +4805,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     audit: [...ALL_COLS]
   };
 
-  // Columns for A (baseline) table — non-tax/graph data
-  const BASELINE_COLS = [
-    "Age",
-    "Contrib_Taxable","Contrib_TFSA","Contrib_RRSP","Liq_Added","Taxable_Drag",
-    "End_Taxable","End_TFSA","End_RRSP","End_Total"
-  ];
-
   function toCSV(rows, cols) {
     if (!rows?.length) return "";
     const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
@@ -4824,114 +4821,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     const n = Number(v);
     if (Number.isFinite(n)) return fmt(n);
     return String(v);
-  }
-
-  // ===== Part A: Baseline table right under the JS visual graph =====
-  function findGraphAnchor() {
-    return pickEl(
-      "js_visual_graph","visual_graph","chart_container","plan_chart","chart",
-      "#js_visual_graph",".js-visual-graph",".visual-graph",".chart-host",".chart-container",
-      "litev1_chart","litev1_graph"
-    ) || document.querySelector("canvas");
-  }
-
-  function ensureBaselineUI() {
-    const graph = findGraphAnchor();
-    if (!graph || !graph.parentElement) return null;
-
-    let host = document.getElementById("baseline_table_host");
-    if (!host) {
-      host = document.createElement("div");
-      host.id = "baseline_table_host";
-      host.style.marginTop = "10px";
-      graph.parentElement.insertBefore(host, graph.nextSibling);
-
-      // Controls row
-      const ctr = document.createElement("div");
-      ctr.id = "baseline_controls_row";
-      ctr.style.display = "flex";
-      ctr.style.gap = "8px";
-      ctr.style.alignItems = "center";
-      ctr.style.flexWrap = "wrap";
-      host.appendChild(ctr);
-
-      // CSV button
-      const btn = document.createElement("button");
-      btn.id = "baseline_csv_btn";
-      btn.className = "btn btn-sm";
-      btn.textContent = "Download CSV (baseline)";
-      btn.onclick = () => {
-        const rows = window.__baselineRows || [];
-        const csv = toCSV(rows, BASELINE_COLS);
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "baseline_table.csv";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-      };
-      ctr.appendChild(btn);
-
-      // Scroll container (≈10 rows visible)
-      const scroller = document.createElement("div");
-      scroller.id = "baseline_scroller";
-      scroller.style.overflowY = "auto";
-      scroller.style.maxWidth = "100%";
-      scroller.style.border = "1px solid #eee";
-      scroller.style.borderRadius = "4px";
-      scroller.style.marginTop = "6px";
-      scroller.style.maxHeight = (28 * 11) + "px"; // header + ~10 rows
-      host.appendChild(scroller);
-
-      const tbl = document.createElement("table");
-      tbl.id = "baseline_table";
-      tbl.style.borderCollapse = "collapse";
-      tbl.style.width = "100%";
-      tbl.style.fontSize = "12px";
-      scroller.appendChild(tbl);
-    }
-    return host;
-  }
-
-  function renderBaselineTable(rows) {
-    ensureBaselineUI();
-    const table = document.getElementById("baseline_table");
-    if (!table) return;
-
-    table.innerHTML = "";
-
-    // header
-    const thead = document.createElement("thead");
-    const trh = document.createElement("tr");
-    BASELINE_COLS.forEach(c => {
-      const th = document.createElement("th");
-      th.textContent = c.replace(/_/g, " ");
-      th.style.position = "sticky";
-      th.style.top = "0";
-      th.style.background = "white";
-      th.style.borderBottom = "1px solid #ddd";
-      th.style.padding = "6px 8px";
-      th.style.textAlign = (c === "Age") ? "left" : "right";
-      trh.appendChild(th);
-    });
-    thead.appendChild(trh);
-    table.appendChild(thead);
-
-    // body
-    const tbody = document.createElement("tbody");
-    (rows || []).forEach((r) => {
-      const tr = document.createElement("tr");
-      BASELINE_COLS.forEach(c => {
-        const td = document.createElement("td");
-        td.textContent = fmt(r[c]);
-        td.style.borderBottom = "1px solid #f0f0f0";
-        td.style.padding = "4px 8px";
-        td.style.textAlign = (c === "Age") ? "left" : "right";
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
   }
 
   // ===== Part B: Optimizer table (full-width host) =====
@@ -5256,15 +5145,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
     try {
       const toggle = document.getElementById("opt_toggle");
+      // Only skip when the toggle exists AND is OFF. If it's missing, run.
       if (toggle && !toggle.checked) return;
 
       const cfg     = buildCfgLight();
-      const preRows = buildPreRetRows(cfg);               // baseline (graph, non-tax)
+      const preRows = buildPreRetRows(cfg);               // baseline computation only (no UI here)
       const preLast = preRows[preRows.length - 1] || null;
-
-      // Make Part A visible (under graph) with 10-row scroller + CSV
-      window.__baselineRows = preRows;
-      renderBaselineTable(preRows);
 
       let tBal  = preLast ? Number(preLast.End_Taxable || 0) : Number(cfg.taxable0 || 0);
       let fBal  = preLast ? Number(preLast.End_TFSA    || 0) : Number(cfg.tfsa0    || 0);
@@ -5287,7 +5173,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const endAge = Number.isFinite(cfg.life_expectancy) && cfg.life_expectancy >= rAge ? cfg.life_expectancy : rAge;
 
       const ORDERS = ['TFR','TRF','FTR','FRT','RTF','RFT'];
-      const FRACS = [0];
+      const FRACS = [0]; // TFSA prefill exploration disabled by default
 
       for (let age = rAge; age <= endAge; age++) {
         const openT = tBal, openF = fBal, openR = rBal;
@@ -5298,6 +5184,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           let guessRRSPGross = 0, lastRRSPGross = -1;
           let sim = null, oasClaw = 0, oasNet = oasGross;
 
+          // iterate E with average taxable base: openT + 0.5 * (net RRIF-min deposited)
           let Einfo = computeTaxIncForOAS(openT, cfg);
 
           for (let it = 0; it < 3; it++) {
@@ -5320,6 +5207,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
             lastRRSPGross = guessRRSPGross;
             guessRRSPGross = sim.fromRRSP_GROSS;
 
+            // recompute E using average taxable base including 0.5 * RRIF-min net added
             const addNetToTaxable = Math.max(0, sim.extraNetFromRRIFMin || 0);
             const avgBaseForE = openT + 0.5 * addNetToTaxable;
             Einfo = computeTaxIncForOAS(avgBaseForE, cfg);
@@ -5372,7 +5260,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           Tax_On_RRSP: Math.round(chosen.taxOnRRSP),
 
           Liq_Added: Math.round(chosen.liq),
-          Taxable_Drag: Math.round(chosen.taxDragAmt),
+          Taxable_Drag: Math.round(chosen.taxDragAmt),   // display-only drag for the year
 
           // opening balances (debug)
           Open_Taxable: Math.round(openT),
@@ -5480,7 +5368,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   })();
 })();
 </script>
-<!-- === /Optimizer (profiles + baseline under graph, full-width optimizer table) ============== -->
+<!-- === /Optimizer (profiles; no baseline UI injected here) ============== -->
+
 
 
 
