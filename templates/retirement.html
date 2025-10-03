@@ -4945,94 +4945,111 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return wide;
   }
 
-  // ---------- table rendering (profiles) ----------
-  function ensureControls() {
-    const host = pickEl("opt_summary", "#opt_summary");
-    if (!host || !host.parentElement) return null;
 
-    // wrapper row for controls and CSV button
-    let ctr = document.getElementById("opt_controls_row");
-    if (!ctr) {
-      ctr = document.createElement("div");
-      ctr.id = "opt_controls_row";
-      ctr.style.display = "flex";
-      ctr.style.gap = "8px";
-      ctr.style.alignItems = "center";
-      ctr.style.flexWrap = "wrap";
-      // keep controls near summary (right card), not the table
-      host.parentElement.appendChild(ctr);
+    // ---------- table rendering (profiles) ----------
+    function ensureControls() {
+      // Make sure the wide table host (and scroller/table) exist
+      const wide = ensureWideHost();
+      const scroller = document.getElementById("opt_table_scroller");
+
+      // Full-width header bar above the table
+      let header = document.getElementById("opt_table_header");
+      if (!header) {
+        header = document.createElement("div");
+        header.id = "opt_table_header";
+        header.style.display = "flex";
+        header.style.alignItems = "center";
+        header.style.justifyContent = "space-between";
+        header.style.gap = "12px";
+        header.style.margin = "8px 0 6px";
+        // place header just above the table
+        wide.insertBefore(header, scroller);
+      }
+
+      // Left: short description
+      let desc = document.getElementById("opt_table_desc");
+      if (!desc) {
+        desc = document.createElement("div");
+        desc.id = "opt_table_desc";
+        desc.className = "small text-muted";
+        desc.style.flex = "1 1 auto";
+        desc.innerHTML =
+          "<strong>Optimized withdrawals ledger</strong>: Year-by-year cash flow and balances — " +
+          "opening balances; gross flows (Taxable/TFSA/RRSP); taxes; OAS; and ending totals.";
+        header.appendChild(desc);
+      }
+
+      // Right: controls container
+      let ctr = document.getElementById("opt_controls_row");
+      if (!ctr) {
+        ctr = document.createElement("div");
+        ctr.id = "opt_controls_row";
+        ctr.style.display = "flex";
+        ctr.style.alignItems = "center";
+        ctr.style.gap = "8px";
+        header.appendChild(ctr);
+      }
+
+      // View selector
+      let sel = document.getElementById("opt_view");
+      if (!sel) {
+        const label = document.createElement("label");
+        label.textContent = "View:";
+        label.style.fontSize = "0.9rem";
+        label.setAttribute("for", "opt_view");
+
+        sel = document.createElement("select");
+        sel.id = "opt_view";
+        ["compact", "standard", "audit"].forEach((v) => {
+          const o = document.createElement("option");
+          o.value = v;
+          o.textContent = v.charAt(0).toUpperCase() + v.slice(1);
+          sel.appendChild(o);
+        });
+        sel.value = "standard";
+        sel.addEventListener("change", () => {
+          renderOptTable(window.__optRows || []);
+          updateCsvButton();
+        });
+
+        const wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.alignItems = "center";
+        wrap.style.gap = "6px";
+        wrap.appendChild(label);
+        wrap.appendChild(sel);
+        ctr.appendChild(wrap);
+      }
+
+      // CSV button
+      let btn = document.getElementById("opt_csv_btn");
+      if (!btn) {
+        btn = document.createElement("button");
+        btn.id = "opt_csv_btn";
+        btn.className = "btn btn-sm btn-outline-secondary";
+        btn.textContent = "Download CSV (standard)";
+        btn.addEventListener("click", () => {
+          const cols = getCurrentCols();
+          const csv = toCSV(window.__optRows || [], cols);
+          const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `optimized_withdrawals_${(document.getElementById("opt_view")?.value) || "standard"}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        });
+        ctr.appendChild(btn);
+      }
+
+      updateCsvButton();
+      return document.getElementById("opt_view");
     }
 
-    // --- NEW: short description shown above the table (left side) ---
-    let desc = document.getElementById("opt_table_desc");
-    if (!desc) {
-      desc = document.createElement("p");
-      desc.id = "opt_table_desc";
-      desc.className = "small text-muted mb-0";
-      desc.style.marginRight = "12px";
-      desc.innerHTML =
-        '<strong>Optimized withdrawals ledger:</strong> ' +
-        'Year-by-year cash flow and balances — opening balances, gross flows (Taxable/TFSA/RRSP), ' +
-        'taxes, OAS, and ending totals.';
-      // place the description at the start of the controls row
-      ctr.insertBefore(desc, ctr.firstChild);
-    }
 
-    // View selector
-    let sel = document.getElementById("opt_view");
-    if (!sel) {
-      const label = document.createElement("label");
-      label.textContent = "View:";
-      label.style.fontSize = "0.9rem";
 
-      sel = document.createElement("select");
-      sel.id = "opt_view";
-      sel.style.marginLeft = "4px";
-      ["compact","standard","audit"].forEach(v => {
-        const o = document.createElement("option");
-        o.value = v; o.textContent = v.charAt(0).toUpperCase()+v.slice(1);
-        sel.appendChild(o);
-      });
-      sel.value = "standard";
-      sel.addEventListener("change", () => {
-        renderOptTable(window.__optRows || []);
-        updateCsvButton();
-      });
-
-      const wrap = document.createElement("div");
-      wrap.style.display = "flex";
-      wrap.style.alignItems = "center";
-      wrap.appendChild(label);
-      wrap.appendChild(sel);
-      ctr.appendChild(wrap);
-    }
-
-    // CSV button
-    let btn = document.getElementById("opt_csv_btn");
-    if (!btn) {
-      btn = document.createElement("button");
-      btn.id = "opt_csv_btn";
-      btn.className = "btn btn-sm";
-      btn.style.marginLeft = "8px";
-      btn.textContent = "Download CSV (standard)";
-      btn.onclick = () => {
-        const cols = getCurrentCols();
-        const csv = toCSV(window.__optRows || [], cols);
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "optimized_withdrawals.csv";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-      };
-      ctr.appendChild(btn);
-    }
-
-    // ensure wide table host exists (separate from controls)
-    ensureWideHost();
-    updateCsvButton();
-    return sel;
-  }
 
   function getCurrentCols() {
     const sel = document.getElementById("opt_view");
