@@ -2177,10 +2177,14 @@ function ensureLayout(layout, seriesForAxis){
 
     {% if table %}
     <div class="mt-5" id="basic_table_host">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <h5 class="text-center mb-0">📊 Retirement Projection Table</h5>
-        <button id="basic_download_csv" class="btn btn-sm btn-outline-secondary">Download CSV</button>
-      </div>
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <h5 class="text-center mb-0">📊 Retirement Projection Table</h5>
+      <button id="basic_download_csv" class="btn btn-sm btn-outline-secondary">Download CSV</button>
+    </div>
+    <p class="small text-muted mb-2">
+      Baseline deterministic table (no optimizer): treats all assets as <strong>Taxable</strong> and shows
+      yearly spending, extra income, taxes, pre-retirement savings, assets, and withdrawal rate.
+    </p>
 
       <!-- sticky header + ~10 visible rows -->
       <div id="basic_table_wrap"
@@ -2941,6 +2945,14 @@ function ensureLayout(layout, seriesForAxis){
 <!-- === /Tax-aware visuals ============================================== -->
 
 
+
+    <!-- Short description (Part A) -->
+    <p class="small text-muted mb-2">
+      <strong>Part A — Six-withdrawal ledger:</strong>
+      Year-by-year retirement flows by source using your chosen withdrawal order
+      (e.g., Taxable → TFSA → RRSP), with OAS and RRIF-minimum overlays, tax on
+      taxable and RRSP, and ending balances by account. Use the CSV to view all rows.
+    </p>
 
     <!-- Results table -->
     <div class="table-responsive">
@@ -4949,6 +4961,21 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       ctr.style.flexWrap = "wrap";
       // keep controls near summary (right card), not the table
       host.parentElement.appendChild(ctr);
+    }
+
+    // --- NEW: short description shown above the table (left side) ---
+    let desc = document.getElementById("opt_table_desc");
+    if (!desc) {
+      desc = document.createElement("p");
+      desc.id = "opt_table_desc";
+      desc.className = "small text-muted mb-0";
+      desc.style.marginRight = "12px";
+      desc.innerHTML =
+        '<strong>Optimized withdrawals ledger:</strong> ' +
+        'Year-by-year cash flow and balances — opening balances, gross flows (Taxable/TFSA/RRSP), ' +
+        'taxes, OAS, and ending totals.';
+      // place the description at the start of the controls row
+      ctr.insertBefore(desc, ctr.firstChild);
     }
 
     // View selector
