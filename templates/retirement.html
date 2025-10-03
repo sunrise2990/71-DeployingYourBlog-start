@@ -3690,7 +3690,6 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
 
 
 
-// ---------- Part A — Six-withdrawal ledger ----------
 
   // Baseline (100% taxable) via backend
   async function runBaselineMap(cfg) {
@@ -3802,19 +3801,15 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
       `Earliest depletion age = ${meta.earliest_depletion_age ?? "—"} | ` +
       `Rows: ${rows?.length ?? 0} | Order: ${orderText}`;
 
-    // NEW: one flex row that contains the meta (left) and the button (right)
-    let metaWrap = document.getElementById("litev1_tax_meta_wrap");
-    if (!metaWrap) {
-      metaWrap = document.createElement("div");
-      metaWrap.id = "litev1_tax_meta_wrap";
-      metaWrap.style.display = "flex";
-      metaWrap.style.alignItems = "center";
-      metaWrap.style.justifyContent = "space-between";
-      metaWrap.style.gap = "8px";
-      metaWrap.style.marginTop = "6px";
-      // insert wrapper before the existing <p> and move the <p> inside it
-      metaEl.parentNode.insertBefore(metaWrap, metaEl);
-      metaWrap.appendChild(metaEl);
+    // create a small row under the meta line for the button (once)
+    let csvRow = document.getElementById("litev1_tax_csv_row");
+    if (!csvRow) {
+      csvRow = document.createElement("div");
+      csvRow.id = "litev1_tax_csv_row";
+      csvRow.style.display = "flex";
+      csvRow.style.justifyContent = "flex-end";
+      csvRow.style.marginTop = "6px";
+      metaEl.insertAdjacentElement("afterend", csvRow);
     }
 
     // the button (once)
@@ -3824,8 +3819,7 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
       csvBtn.id = "litev1_tax_csv_btn";
       csvBtn.className = "btn btn-sm btn-outline-secondary";
       csvBtn.textContent = "Download CSV (Part A)";
-      csvBtn.style.whiteSpace = "nowrap";
-      metaWrap.appendChild(csvBtn);
+      csvRow.appendChild(csvBtn);
     }
 
     // build + download CSV matching the visible Part A columns
@@ -3868,7 +3862,7 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
       a.remove();
       URL.revokeObjectURL(url);
     };
-
+    }
 
 
 
@@ -5056,6 +5050,12 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
+
+    // ensure wide table host exists (separate from controls)
+    ensureWideHost();
+    updateCsvButton();
+    return sel;
+  }
 
   function getCurrentCols() {
     const sel = document.getElementById("opt_view");
