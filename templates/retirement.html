@@ -2175,52 +2175,124 @@ function ensureLayout(layout, seriesForAxis){
 
 
 
+    {% if table %}
+    <div class="mt-5" id="basic_table_host">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h5 class="text-center mb-0">📊 Retirement Projection Table</h5>
+        <button id="basic_download_csv" class="btn btn-sm btn-outline-secondary">Download CSV</button>
+      </div>
 
-        {% if table %}
-        <div class="table-responsive mt-5">
-            <h5 class="text-center mb-3">📊 Retirement Projection Table</h5>
-            <table class="table table-bordered table-sm text-center align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>Age</th>
-                        <th>Year</th>
-                        <th>Retire?</th>
-                        <th>Living Exp.</th>
-                        <th>CPP / Extra Income</th>
-                        <th>Income Tax Payment</th>
-                        <th>Living Exp. – Ret.</th>
-                        <th>Asset Liquidation</th>
-                        <th>Savings – Before Retire</th>
-                        <th>Asset</th>
-                        <th>Asset – Retirement</th>
-                        <th>Investment Return</th>
-                        <th>Return Rate</th>
-                        <th>Withdrawal Rate</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for row in table %}
-                  <tr>
-                    {% for cell in row %}
-                      <td>
-                        {% if cell is number %}
-                          {% if loop.index0 in [11, 12] %}
-                            {{ "{:.1f}%".format(cell) }}
-                          {% else %}
-                            {{ "{:,.0f}".format(cell) }}
-                          {% endif %}
-                        {% else %}
-                          {{ cell }}
-                        {% endif %}
-                      </td>
-                    {% endfor %}
-                  </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
- </div>
+      <!-- sticky header + ~10 visible rows -->
+      <div id="basic_table_wrap"
+           style="overflow-y:auto; border:1px solid #eee; border-radius:4px;">
+        <table id="basic_table"
+               class="table table-bordered table-sm text-center align-middle"
+               style="font-size:12px; margin-bottom:0;">
+          <thead class="table-light">
+            <tr>
+              <th>Age</th>
+              <th>Year</th>
+              <th>Retire?</th>
+              <th>Living Exp.</th>
+              <th>CPP / Extra Income</th>
+              <th>Income Tax Payment</th>
+              <th>Living Exp. – Ret.</th>
+              <th>Asset Liquidation</th>
+              <th>Savings – Before Retire</th>
+              <th>Asset</th>
+              <th>Asset – Retirement</th>
+              <th>Investment Return</th>
+              <th>Return Rate</th>
+              <th>Withdrawal Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for row in table %}
+            <tr>
+              {% for cell in row %}
+                <td style="padding:4px 6px;">
+                  {% if cell is number %}
+                    {% if loop.index0 in [11, 12] %}
+                      {{ "{:.1f}%".format(cell) }}
+                    {% else %}
+                      {{ "{:,.0f}".format(cell) }}
+                    {% endif %}
+                  {% else %}
+                    {{ cell }}
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <script>
+    (function(){
+      const wrap  = document.getElementById('basic_table_wrap');
+      const table = document.getElementById('basic_table');
+
+      // sticky header styling
+      if (table && table.tHead) {
+        Array.from(table.tHead.querySelectorAll('th')).forEach(th => {
+          th.style.position = 'sticky';
+          th.style.top = '0';
+          th.style.background = '#fff';
+          th.style.zIndex = '2';
+        });
+      }
+
+      // cap visible area to header + ~10 body rows
+      function capToTenRows(){
+        if (!wrap || !table) return;
+        const thead = table.tHead;
+        const firstRow = table.tBodies[0]?.rows?.[0];
+        const headH = thead ? thead.getBoundingClientRect().height : 32;
+        const rowH  = firstRow ? firstRow.getBoundingClientRect().height : 28;
+        const maxH  = Math.round(headH + 10 * rowH) + 2; // header + 10 rows
+        wrap.style.maxHeight = maxH + 'px';
+      }
+      requestAnimationFrame(capToTenRows);
+      window.addEventListener('resize', capToTenRows);
+
+      // Download CSV (mirrors table display; % for cols 12 & 13)
+      const btn = document.getElementById('basic_download_csv');
+      btn?.addEventListener('click', () => {
+        const headers = Array.from(table.tHead?.rows[0]?.cells || []).map(th => th.textContent.trim());
+        const rows = {{ table | tojson }};
+        const esc = s => `"${String(s ?? '').replace(/"/g,'""')}"`;
+
+        const out = [];
+        out.push(headers.join(','));
+
+        rows.forEach(r => {
+          const line = r.map((val, idx) => {
+            if (val == null) return '""';
+            if (typeof val === 'number') {
+              // indices 11,12 (0-based) => "Return Rate", "Withdrawal Rate" shown as %
+              if (idx === 11 || idx === 12) return esc(val.toFixed(1) + '%');
+              return String(Math.round(val)); // currency-like columns shown without decimals
+            }
+            return esc(val);
+          });
+          out.push(line.join(','));
+        });
+
+        const blob = new Blob([out.join('\n')], {type:'text/csv;charset=utf-8'});
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = 'retirement_projection_table.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      });
+    })();
+    </script>
+
+
+</div>
 
 <!-- 1) Expose login state from Flask -->
 <script type="text/javascript">
