@@ -3801,15 +3801,16 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
       `Earliest depletion age = ${meta.earliest_depletion_age ?? "—"} | ` +
       `Rows: ${rows?.length ?? 0} | Order: ${orderText}`;
 
-    // create a small row under the meta line for the button (once)
+    // create a small row *above* the meta line for the button (once)
     let csvRow = document.getElementById("litev1_tax_csv_row");
     if (!csvRow) {
       csvRow = document.createElement("div");
       csvRow.id = "litev1_tax_csv_row";
       csvRow.style.display = "flex";
       csvRow.style.justifyContent = "flex-end";
-      csvRow.style.marginTop = "6px";
-      metaEl.insertAdjacentElement("afterend", csvRow);
+      csvRow.style.marginBottom = "6px"; // since it's above the meta text now
+      // 👇 move row ABOVE meta paragraph
+      metaEl.insertAdjacentElement("beforebegin", csvRow);
     }
 
     // the button (once)
