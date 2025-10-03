@@ -4946,7 +4946,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   }
 
 
-    // ---------- table rendering (profiles) ----------
+   // ---------- table rendering (profiles) ----------
     function ensureControls() {
       // Make sure the wide table host (and scroller/table) exist
       const wide = ensureWideHost();
@@ -5048,14 +5048,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       return document.getElementById("opt_view");
     }
 
-
-
-
-    // ensure wide table host exists (separate from controls)
-    ensureWideHost();
-    updateCsvButton();
-    return sel;
-  }
 
   function getCurrentCols() {
     const sel = document.getElementById("opt_view");
