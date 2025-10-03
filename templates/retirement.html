@@ -4053,28 +4053,63 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   }
 
   // ---------- exact copy of engine logic, parametric on order ----------
-  function prerollToRetirementCopy(cfg) {
-    let { current_age, retirement_age, return_rate, annual_saving, saving_increase_rate,
-          taxable0, rrsp0, tfsa0, asset_liquidations } = cfg;
+    // REPLACE the existing prerollToRetirementCopy with this version
+    function prerollToRetirementCopy(cfg) {
+      let {
+        current_age, retirement_age,
+        return_rate,               // pre-ret growth rate
+        annual_saving, saving_increase_rate,
+        taxable0, rrsp0, tfsa0,
+        asset_liquidations
+      } = cfg;
 
-    let age = current_age;
-    let taxable = taxable0, rrsp = rrsp0, tfsa = tfsa0;
-    let save = annual_saving;
+      const startYear = Number(cfg.start_year) || new Date().getFullYear();
+      const lm = liqMap(asset_liquidations);
+      const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
+      const gN = 1 + (cfg.return_rate || return_rate);
+      const gT = 1 + (cfg.return_rate || return_rate) * (1 - d);
 
-    const lm = liqMap(asset_liquidations);
-    const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const gN = 1 + return_rate;
-    const gT = 1 + return_rate * (1 - d);
+      let age = current_age;
+      let taxable = Number(taxable0 || 0);
+      let rrsp    = Number(rrsp0    || 0);
+      let tfsa    = Number(tfsa0    || 0);
+      let save    = Math.max(0, annual_saving || 0);
 
-    while (age < retirement_age) {
-      const t0 = taxable;
-      taxable = t0 * gT; rrsp *= gN; tfsa *= gN;
-      taxable += save + (lm[age] || 0);
-      save *= (1 + (cfg.saving_increase_rate||0));
-      age += 1;
+      while (age < retirement_age) {
+        // grow existing balances first
+        const t0 = taxable;
+        taxable = t0 * gT; rrsp *= gN; tfsa *= gN;
+
+        // yearly TFSA cap growth (same rule as engine)
+        const year     = startYear + (age - current_age);
+        const baseTFSA = Math.max(0, cfg.pre_tfsa_annual || 0);
+        const tfsaCagr = (cfg.tfsa_cagr_after_2025 ?? 0.021);
+        const tfsaCap  = (year <= 2025) ? baseTFSA
+                                        : baseTFSA * Math.pow(1 + tfsaCagr, Math.max(0, year - 2025));
+
+        // RRSP yearly target
+        const rrspCap  = Math.max(0, cfg.pre_rrsp_annual || 0);
+
+        // split savings: TFSA -> RRSP -> Taxable
+        const toTFSA    = Math.min(save, tfsaCap);
+        const afterTFSA = Math.max(0, save - toTFSA);
+        const toRRSP    = Math.min(afterTFSA, rrspCap);
+        const toTaxable = Math.max(0, afterTFSA - rrspCap);
+
+        tfsa    += toTFSA;
+        rrsp    += toRRSP;
+        taxable += toTaxable;
+
+        // add any one-off liquidations to taxable pre-ret
+        if (lm[age]) taxable += lm[age];
+
+        // next year's savings
+        save *= (1 + (saving_increase_rate || 0));
+        age  += 1;
+      }
+      return { taxable, rrsp, tfsa };
     }
-    return { taxable, rrsp, tfsa };
-  }
+
 
   function simulateEndTotalWithOrder(cfg, orderArr) {
     const lm = liqMap(cfg.asset_liquidations);
