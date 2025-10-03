@@ -3801,76 +3801,68 @@ function runTaxYearByYearLocal(cfg, balances, baselineMap) {
       `Earliest depletion age = ${meta.earliest_depletion_age ?? "—"} | ` +
       `Rows: ${rows?.length ?? 0} | Order: ${orderText}`;
 
-    // Keep the meta text on the left and the CSV button on the right (single row)
-    let metaWrap = document.getElementById("litev1_tax_meta_wrap");
-    if (!metaWrap && metaEl && metaEl.parentNode) {
-      metaWrap = document.createElement("div");
-      metaWrap.id = "litev1_tax_meta_wrap";
-      metaWrap.style.display = "flex";
-      metaWrap.style.alignItems = "center";
-      metaWrap.style.justifyContent = "space-between";
-      metaWrap.style.gap = "8px";
-      metaWrap.style.marginTop = "6px";
-      // insert wrapper before the existing <p> and move the <p> into it
-      metaEl.parentNode.insertBefore(metaWrap, metaEl);
-      metaWrap.appendChild(metaEl);
+    // create a small row under the meta line for the button (once)
+    let csvRow = document.getElementById("litev1_tax_csv_row");
+    if (!csvRow) {
+      csvRow = document.createElement("div");
+      csvRow.id = "litev1_tax_csv_row";
+      csvRow.style.display = "flex";
+      csvRow.style.justifyContent = "flex-end";
+      csvRow.style.marginTop = "6px";
+      metaEl.insertAdjacentElement("afterend", csvRow);
     }
 
     // the button (once)
     let csvBtn = document.getElementById("litev1_tax_csv_btn");
-    if (!csvBtn && metaWrap) {
+    if (!csvBtn) {
       csvBtn = document.createElement("button");
       csvBtn.id = "litev1_tax_csv_btn";
       csvBtn.className = "btn btn-sm btn-outline-secondary";
       csvBtn.textContent = "Download CSV (Part A)";
-      csvBtn.style.whiteSpace = "nowrap";
-      metaWrap.appendChild(csvBtn);
+      csvRow.appendChild(csvBtn);
     }
 
     // build + download CSV matching the visible Part A columns
-    if (csvBtn) {
-      csvBtn.onclick = () => {
-        const headers = [
-          "Age","Baseline Assets (100% Taxable)","From Taxable","From TFSA","From RRSP (Gross)",
-          "RRIF Min %","OAS (Gross)","OAS Clawback","OAS (Net)",
-          "Tax on Taxable (overlay)","Tax on RRSP (overlay)","Taxable Drag",
-          "End Taxable","End TFSA","End RRSP","End Total"
-        ];
-        const esc = s => `"${String(s ?? "").replace(/"/g,'""')}"`;
+    csvBtn.onclick = () => {
+      const headers = [
+        "Age","Baseline Assets (100% Taxable)","From Taxable","From TFSA","From RRSP (Gross)",
+        "RRIF Min %","OAS (Gross)","OAS Clawback","OAS (Net)",
+        "Tax on Taxable (overlay)","Tax on RRSP (overlay)","Taxable Drag",
+        "End Taxable","End TFSA","End RRSP","End Total"
+      ];
+      const esc = s => `"${String(s ?? "").replace(/"/g,'""')}"`;
 
-        const lines = (rows || []).map(r => ([
-          r.Age,
-          (baselineMap[r.Age] || 0),
-          (r.From_Taxable || 0),
-          (r.From_TFSA || 0),
-          (r.From_RRSP_Gross || 0),
-          (r.RRIF_Min_Pct || "0.00%"),
-          (r.OAS_Gross || 0),
-          (r.OAS_Clawback || 0),
-          (r.OAS_Net || 0),
-          (r.Tax_On_Taxable || 0),
-          (r.Tax_On_RRSP || 0),
-          (r.Taxable_Drag || 0),
-          (r.End_Taxable || 0),
-          (r.End_TFSA || 0),
-          (r.End_RRSP || 0),
-          (r.End_Total || 0)
-        ].map(esc).join(",")));
+      const lines = (rows || []).map(r => ([
+        r.Age,
+        (baselineMap[r.Age] || 0),
+        (r.From_Taxable || 0),
+        (r.From_TFSA || 0),
+        (r.From_RRSP_Gross || 0),
+        (r.RRIF_Min_Pct || "0.00%"),
+        (r.OAS_Gross || 0),
+        (r.OAS_Clawback || 0),
+        (r.OAS_Net || 0),
+        (r.Tax_On_Taxable || 0),
+        (r.Tax_On_RRSP || 0),
+        (r.Taxable_Drag || 0),
+        (r.End_Taxable || 0),
+        (r.End_TFSA || 0),
+        (r.End_RRSP || 0),
+        (r.End_Total || 0)
+      ].map(esc).join(",")));
 
-        const csv = headers.join(",") + "\n" + lines.join("\n");
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "partA_results.csv";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      };
+      const csv = headers.join(",") + "\n" + lines.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "partA_results.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    };
     }
-    // --- end Part A meta + CSV row ---
-
 
 
 
