@@ -4385,7 +4385,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           {
             label: "End Taxable",
             data: endT,
-            borderWidth: 2,
+            borderWidth: 1.5,
             borderColor: "#9ca3af",               // gray-400
             backgroundColor: "#9ca3af",
             pointBackgroundColor: "#9ca3af",
@@ -4395,7 +4395,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           {
             label: "End TFSA",
             data: endF,
-            borderWidth: 2,
+            borderWidth: 1.5,
             borderColor: "#10b981",               // emerald-500
             backgroundColor: "#10b981",
             pointBackgroundColor: "#10b981",
@@ -4405,7 +4405,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           {
             label: "End RRSP",
             data: endR,
-            borderWidth: 2,
+            borderWidth: 1.5,
             borderColor: "#7c3aed",               // violet-600
             backgroundColor: "#7c3aed",
             pointBackgroundColor: "#7c3aed",
@@ -4415,11 +4415,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           {
             label: "End Total",
             data: endTot,
-            borderWidth: 4,
+            borderWidth: 3,
             borderColor: "#111827",               // gray-900
             backgroundColor: "#111827",
             pointBackgroundColor: "#111827",
-            pointRadius: 2.5, pointHoverRadius: 5, pointHitRadius: 10
+            pointRadius: 2.5, pointHoverRadius: 5, pointHitRadius: 8
           },
           // Optimizer — gold (already gold, kept here explicitly)
           ...(optAligned ? [{
