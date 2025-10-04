@@ -4379,27 +4379,61 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       type: "line",
       data: {
         labels: ages,
+
         datasets: [
-          // slightly thicker + better hover
-          { label: "End Taxable", data: endT, borderWidth: 2, pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8 },
-          { label: "End TFSA",    data: endF, borderWidth: 2, pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8 },
-          { label: "End RRSP",    data: endR, borderWidth: 2, pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8 },
-
-          // keep End Total emphasized
-          { label: "End Total",   data: endTot, borderWidth: 4, pointRadius: 2.5, pointHoverRadius: 5, pointHitRadius: 10 },
-
-          // optional: optimizer overlay (gold) with hover enabled
+          // End Taxable — cool gray
+          {
+            label: "End Taxable",
+            data: endT,
+            borderWidth: 2,
+            borderColor: "#9ca3af",               // gray-400
+            backgroundColor: "#9ca3af",
+            pointBackgroundColor: "#9ca3af",
+            pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8
+          },
+          // End TFSA — teal/green
+          {
+            label: "End TFSA",
+            data: endF,
+            borderWidth: 2,
+            borderColor: "#10b981",               // emerald-500
+            backgroundColor: "#10b981",
+            pointBackgroundColor: "#10b981",
+            pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8
+          },
+          // End RRSP — violet
+          {
+            label: "End RRSP",
+            data: endR,
+            borderWidth: 2,
+            borderColor: "#7c3aed",               // violet-600
+            backgroundColor: "#7c3aed",
+            pointBackgroundColor: "#7c3aed",
+            pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8
+          },
+          // End Total — dark gray (kept bold)
+          {
+            label: "End Total",
+            data: endTot,
+            borderWidth: 4,
+            borderColor: "#111827",               // gray-900
+            backgroundColor: "#111827",
+            pointBackgroundColor: "#111827",
+            pointRadius: 2.5, pointHoverRadius: 5, pointHitRadius: 10
+          },
+          // Optimizer — gold (already gold, kept here explicitly)
           ...(optAligned ? [{
             label: "End Total (optimizer)",
             data: optAligned,
             borderWidth: 3,
-            borderColor: "rgba(255,165,0,1)",
-            pointRadius: 1,
-            pointHoverRadius: 4,
-            pointHitRadius: 8,
-            spanGaps: true   // draws a continuous line even if some ages are null
+            borderColor: "#f59e0b",               // amber-500
+            backgroundColor: "#f59e0b",
+            pointBackgroundColor: "#f59e0b",
+            pointRadius: 1, pointHoverRadius: 4, pointHitRadius: 8,
+            spanGaps: true
           }] : [])
         ]
+
       },
       options: {
         responsive:false, maintainAspectRatio:false, devicePixelRatio:1, animation:false,
