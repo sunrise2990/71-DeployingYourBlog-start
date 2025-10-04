@@ -4419,7 +4419,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
             borderColor: "#111827",               // gray-900
             backgroundColor: "#111827",
             pointBackgroundColor: "#111827",
-            pointRadius: 2, pointHoverRadius: 4, pointHitRadius: 8
+            pointRadius: 2.5, pointHoverRadius: 4, pointHitRadius: 8
           },
           // Optimizer — gold (already gold, kept here explicitly)
           ...(optAligned ? [{
@@ -4429,7 +4429,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
             borderColor: "#f59e0b",               // amber-500
             backgroundColor: "#f59e0b",
             pointBackgroundColor: "#f59e0b",
-            pointRadius: 1.5, pointHoverRadius: 4, pointHitRadius: 8,
+            pointRadius: 1, pointHoverRadius: 4, pointHitRadius: 8,
             spanGaps: true
           }] : [])
         ]
