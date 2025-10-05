@@ -4499,18 +4499,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   if (window.__taxMCLoaded) return; window.__taxMCLoaded = true;
 
   // ------------------------- tiny config -------------------------
-  const MC_RUNS    = 300;       // paths
-  const MC_SEED    = 12345;     // reproducible
-  const SIGMA_PRE  = 0.12;      // annual pre-ret vol (12%)
-  const SIGMA_POST = 0.12;      // annual post-ret vol (12%)
+  const MC_RUNS = 300;        // paths
+  const MC_SEED = 12345;      // reproducible
+
+  // σ will be set from scenario/page just before running
+  let SIGMA_PRE  = 0.12;      // fallback pre-ret vol (12%)
+  let SIGMA_POST = 0.12;      // fallback post-ret vol (12%)
 
   // --------------------- DOM helpers --------------------
   const $ = (id)=> document.getElementById(id);
-
-  // We rely on the placeholder created by the main visuals block (#taxviz_mc)
-  function ensureMCCanvas(){
-    return $("taxviz_mc") || null;
-  }
+  function ensureMCCanvas(){ return $("taxviz_mc") || null; }
 
   // --------------------------- RNG ------------------------------
   function mulberry32(seed) {
@@ -4531,6 +4529,21 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   // ------------------------ small utils -------------------------
   const num = (n) => (typeof n === "number" && isFinite(n)) ? n : 0;
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  const within = (x,a,b)=> x>=a && x<=b;
+
+  // Parse "18", "18%", "Balanced (18%)", or decimals like 0.18
+  function readSigmaFromUIOrDefault(def = 0.12) {
+    const el = document.querySelector('[name="return_std"], #return_std');
+    if (!el) return def;
+    let s = String(el.value ?? el.textContent ?? "").trim();
+    if (!s) return def;
+    if (s.includes("(") && s.includes(")")) s = s.slice(s.indexOf("(")+1, s.indexOf(")"));
+    s = s.replace("%","").trim();
+    const x = parseFloat(s);
+    if (!Number.isFinite(x)) return def;
+    return x > 1.5 ? x/100 : x;   // 18 -> 0.18 ; 0.18 stays 0.18
+  }
+
   const ORDER_MAP = {
     "taxable_tfsa_rrsp": ["taxable","tfsa","rrsp"],
     "tfsa_taxable_rrsp": ["tfsa","taxable","rrsp"],
@@ -4540,8 +4553,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     "rrsp_tfsa_taxable": ["rrsp","tfsa","taxable"]
   };
   const ALL_ORDER_KEYS = Object.keys(ORDER_MAP);
-
-  const within = (x,a,b)=> x>=a && x<=b;
 
   function rrifMinPct(age){
     const t = {71:0.0528,72:0.0540,73:0.0553,74:0.0567,75:0.0582,76:0.0598,77:0.0617,78:0.0636,79:0.0658,
@@ -4643,9 +4654,11 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     let save    = Math.max(0, cfg.annual_saving || 0);
 
     while (age < cfg.retirement_age) {
-      const rPre   = Math.max(-0.95, (cfg.return_rate || 0) + (preReturns[age] || 0));
-      const gN     = 1 + rPre;
-      const gT     = 1 + rPre * (1 - d);
+      // μ = CAGR + ½σ² (use pre-ret σ)
+      const muPre = (cfg.return_rate || 0) + 0.5 * SIGMA_PRE * SIGMA_PRE;
+      const rPre  = Math.max(-0.95, muPre + (preReturns[age] || 0));
+      const gN    = 1 + rPre;
+      const gT    = 1 + rPre * (1 - d);
 
       taxable = taxable * gT;
       rrsp    = rrsp    * gN;
@@ -4766,7 +4779,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     }
 
     for (let age = cfg.retirement_age; age <= cfg.life_expectancy; age++){
-      const rAfter = Math.max(-0.95, (cfg.return_rate_after || 0) + (postRetShocks[age] || 0));
+      // μ = CAGR + ½σ² (use post-ret σ)
+      const muAfter = (cfg.return_rate_after || 0) + 0.5 * SIGMA_POST * SIGMA_POST;
+      const rAfter  = Math.max(-0.95, muAfter + (postRetShocks[age] || 0));
 
       let orderKey = selectedOrderKey;
       if (policy === "optimizer") {
@@ -4826,18 +4841,18 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     if (!mc) return;
     try { window.__taxCMC?.destroy(); } catch(_) {}
 
-    // IMPORTANT: p10 must be VISIBLE (not hidden) so p90 can fill to it.
-    // Make p10 "invisible" by using transparent borders/points, not hidden:true.
+    // NOTE: p10 must be visible (not hidden) so p90 can fill to it.
+    // We make p10 invisible by using transparent borders.
     const dataSets = [
       // --- Optimizer band (gold) ---
-      { label:"Optimizer p10", data:A.p10, pointRadius:0, borderWidth:0, borderColor:"rgba(0,0,0,0)", fill:false, order:0 },
+      { label:"Optimizer p10", data:A.p10, pointRadius:0, borderWidth:0.5, borderColor:"rgba(0,0,0,0)", fill:false, order:0 },
       { label:"Optimizer p10–p90", data:A.p90, pointRadius:0, borderWidth:0, borderColor:"rgba(0,0,0,0)",
-        backgroundColor:"rgba(218,165,32,0.18)", fill:"-1", order:0 },
+        backgroundColor:"rgba(218,165,32,0.18)", fill:{target:"-1"}, order:0 },
 
       // --- Selected band (blue) ---
-      { label:"Selected p10", data:B.p10, pointRadius:0, borderWidth:0, borderColor:"rgba(0,0,0,0)", fill:false, order:0 },
+      { label:"Selected p10", data:B.p10, pointRadius:0, borderWidth:0.5, borderColor:"rgba(0,0,0,0)", fill:false, order:0 },
       { label:"Selected p10–p90", data:B.p90, pointRadius:0, borderWidth:0, borderColor:"rgba(0,0,0,0)",
-        backgroundColor:"rgba(37,99,235,0.15)", fill:"-1", order:0 },
+        backgroundColor:"rgba(37,99,235,0.15)", fill:{target:"-1"}, order:0 },
 
       // --- Medians on top ---
       { label:"Optimizer median", data:A.p50, borderColor:"rgb(180,137,12)", borderWidth:2.5, pointRadius:0, fill:false, order:1, spanGaps:true },
@@ -4852,7 +4867,13 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         interaction:{ mode:"nearest", intersect:false },
         scales:{ y:{ position:"right", beginAtZero:false, title:{display:true,text:"$"}, ticks:{ callback:kFmt } } },
         plugins:{
-          legend:{ position:"top" },
+          // hide legend entries for the two p10 lines (bands remain)
+          legend:{
+            position:"top",
+            labels:{
+              filter: (item) => !/p10$/.test(item.text)  // remove "Optimizer p10" and "Selected p10"
+            }
+          },
           tooltip:{ callbacks:{ label: (ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } },
           title:{ display:false }
         }
@@ -4871,6 +4892,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
       const selEl = $("wd_order");
       const selectedKey = selEl?.value || "taxable_tfsa_rrsp";
+
+      // --- decide σ (scenario → page → default 12%)
+      let sigmaFromCfg = null;
+      if (typeof cfg.return_std === "number")   sigmaFromCfg = cfg.return_std;
+      if (typeof cfg.return_sigma === "number") sigmaFromCfg = cfg.return_sigma;
+
+      let sigma = (sigmaFromCfg != null) ? sigmaFromCfg : readSigmaFromUIOrDefault(0.12);
+      if (!(sigma > 0 && sigma < 1)) sigma = 0.12;
+      SIGMA_PRE  = sigma;
+      SIGMA_POST = sigma;
 
       const pathsA = []; // optimizer-like
       const pathsB = []; // selected order
@@ -4916,6 +4947,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Tax-aware Monte Carlo panel ================================================ -->
+
 
 
 
