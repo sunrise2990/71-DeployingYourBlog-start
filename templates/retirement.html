@@ -4499,8 +4499,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   if (window.__taxMCLoaded) return; window.__taxMCLoaded = true;
 
   // ------------------------- tiny config -------------------------
-  const MC_RUNS   = 300;        // paths
-  const MC_SEED   = 12345;      // reproducible
+  const MC_RUNS    = 300;       // paths
+  const MC_SEED    = 12345;     // reproducible
   const SIGMA_PRE  = 0.12;      // annual pre-ret vol (12%)
   const SIGMA_POST = 0.12;      // annual post-ret vol (12%)
 
@@ -4826,17 +4826,22 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     if (!mc) return;
     try { window.__taxCMC?.destroy(); } catch(_) {}
 
+    // IMPORTANT: p10 must be VISIBLE (not hidden) so p90 can fill to it.
+    // Make p10 "invisible" by using transparent borders/points, not hidden:true.
     const dataSets = [
-      { label:"Selected p10", data:B.p10, pointRadius:0, borderWidth:0, fill:false, hidden:true },
-      { label:"Selected p10–p90", data:B.p90, pointRadius:0, borderWidth:0, fill:"-1",
-        backgroundColor:"rgba(37,99,235,0.15)" },
+      // --- Optimizer band (gold) ---
+      { label:"Optimizer p10", data:A.p10, pointRadius:0, borderWidth:0, borderColor:"rgba(0,0,0,0)", fill:false, order:0 },
+      { label:"Optimizer p10–p90", data:A.p90, pointRadius:0, borderWidth:0, borderColor:"rgba(0,0,0,0)",
+        backgroundColor:"rgba(218,165,32,0.18)", fill:"-1", order:0 },
 
-      { label:"Optimizer p10", data:A.p10, pointRadius:0, borderWidth:0, fill:false, hidden:true },
-      { label:"Optimizer p10–p90", data:A.p90, pointRadius:0, borderWidth:0, fill:"-1",
-        backgroundColor:"rgba(218,165,32,0.18)" },
+      // --- Selected band (blue) ---
+      { label:"Selected p10", data:B.p10, pointRadius:0, borderWidth:0, borderColor:"rgba(0,0,0,0)", fill:false, order:0 },
+      { label:"Selected p10–p90", data:B.p90, pointRadius:0, borderWidth:0, borderColor:"rgba(0,0,0,0)",
+        backgroundColor:"rgba(37,99,235,0.15)", fill:"-1", order:0 },
 
-      { label:"Optimizer median", data:A.p50, borderColor:"rgb(180,137,12)", borderWidth:2.5, pointRadius:0, fill:false },
-      { label:"Selected median",  data:B.p50, borderColor:"rgb(37,99,235)",  borderWidth:2.5, pointRadius:0, fill:false }
+      // --- Medians on top ---
+      { label:"Optimizer median", data:A.p50, borderColor:"rgb(180,137,12)", borderWidth:2.5, pointRadius:0, fill:false, order:1, spanGaps:true },
+      { label:"Selected median",  data:B.p50, borderColor:"rgb(37,99,235)",  borderWidth:2.5, pointRadius:0, fill:false, order:1, spanGaps:true }
     ];
 
     window.__taxCMC = new Chart(mc.getContext("2d"), {
@@ -4844,6 +4849,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       data: { labels: ages, datasets: dataSets },
       options: {
         responsive:false, maintainAspectRatio:false, devicePixelRatio:1, animation:false,
+        interaction:{ mode:"nearest", intersect:false },
         scales:{ y:{ position:"right", beginAtZero:false, title:{display:true,text:"$"}, ticks:{ callback:kFmt } } },
         plugins:{
           legend:{ position:"top" },
@@ -4910,6 +4916,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Tax-aware Monte Carlo panel ================================================ -->
+
 
 
 
