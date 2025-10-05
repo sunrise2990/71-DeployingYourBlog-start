@@ -4642,7 +4642,102 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     };
   }
 
-  // Pre-ret with random returns + contribution split
+  // ---------------- Greedy mixing optimizer (per-year) ----------------
+  // Mirrors your deterministic optimizer: RRIF-min first, then meet net need
+  // using small steps from RRSP/Taxable/TFSA based on marginal cost (tax + OAS).
+  function oneYearGreedyMixStep(state, cfg, age, rAfter, bracketsOn){
+    const STEP = 500; // net dollars per increment
+    const rrspFlat = clamp01(cfg.income_tax_rate || 0);
+    const drag     = clamp01(cfg.taxable_drag || 0);
+    const lm       = cfg.__lm || {};
+    const brackets = bracketsOn ? (cfg.tax_brackets || null) : null;
+
+    let T = state.taxable, F = state.tfsa, R = state.rrsp;
+
+    const living = livingExpenseAtAge(cfg, age);
+    const cpp    = cppAtAge(cfg, age);
+    const oasG   = oasGrossAtAge(cfg, age);
+    const oasOn  = (cfg.oas_monthly>0 && cfg.oas_start_age>0 && age>=cfg.oas_start_age &&
+                    cfg.oas_threshold>0 && cfg.oas_clawback_rate>0);
+    const oasThr = oasOn ? (cfg.oas_threshold||0) : Infinity;
+    const oasRt  = oasOn ? (cfg.oas_clawback_rate||0) : 0;
+
+    // ---- RRIF minimum first: deposit *net* to taxable; gross adds to income
+    let baseIncome = cpp + oasG;
+    const minPct = rrifMinPct(age);
+    if (cfg.rrif_start_age > 0 && age >= cfg.rrif_start_age && minPct > 0 && R > 0){
+      const mustGross = R * minPct;
+      const taxMin    = brackets ? incrementalTax(mustGross, baseIncome, brackets)
+                                 : mustGross * rrspFlat;
+      const netMin    = Math.max(0, mustGross - taxMin);
+      R -= mustGross; T += netMin;
+      baseIncome += mustGross; // counts toward OAS clawback
+    }
+
+    // ---- Meet net need with small steps
+    let need = Math.max(0, living - cpp - oasG);
+
+    function oasClawAtIncome(inc){
+      return Math.max(0, inc - oasThr) * oasRt;
+    }
+
+    while (need > 1e-6 && (T+F+R) > 0){
+      // marginal from RRSP
+      const rrspGrossTry = Math.min(R, STEP / (1 - (brackets ? 0 : rrspFlat)));
+      const rrspTax      = brackets ? incrementalTax(rrspGrossTry, baseIncome, brackets)
+                                    : rrspGrossTry * rrspFlat;
+      const oasBefore    = oasOn ? Math.min(oasClawAtIncome(baseIncome), oasG) : 0;
+      const oasAfterR    = oasOn ? Math.min(oasClawAtIncome(baseIncome + rrspGrossTry), oasG) : 0;
+      const rrspOASinc   = Math.max(0, oasAfterR - oasBefore);
+      const rrspNet      = Math.max(0, rrspGrossTry - rrspTax - rrspOASinc);
+      const rrspCostPer  = rrspNet > 0 ? (rrspTax + rrspOASinc) / rrspNet : Infinity;
+
+      // marginal from Taxable (no tax here; only possible OAS effect)
+      const taxNetTry    = Math.min(STEP, T);
+      const oasAfterT    = oasOn ? Math.min(oasClawAtIncome(baseIncome + taxNetTry), oasG) : 0;
+      const taxOASinc    = Math.max(0, oasAfterT - oasBefore);
+      const taxCostPer   = taxNetTry > 0 ? taxOASinc / taxNetTry : Infinity;
+
+      // marginal from TFSA (no tax, no OAS; add tiny tie-breaker penalty so we don't
+      // burn TFSA unless it helps materially)
+      const tfsaNetTry   = Math.min(STEP, F);
+      const tfsaCostPer  = tfsaNetTry > 0 ? (cfg.tfsa_penalty_rate || 0.01) : Infinity;
+
+      // choose cheapest source
+      let src = "tfsa", takeNet = tfsaNetTry, takeGross = tfsaNetTry, addIncome = 0;
+      let best = tfsaCostPer;
+      if (taxCostPer < best){ src="taxable"; takeNet=taxNetTry; takeGross=taxNetTry; addIncome=taxNetTry; best=taxCostPer; }
+      if (rrspCostPer < best){ src="rrsp";    takeNet=rrspNet;   takeGross=rrspGrossTry; addIncome=rrspGrossTry; best=rrspCostPer; }
+
+      if (takeNet <= 0) break;
+
+      if (src === "rrsp"){
+        R -= takeGross;
+        // taxes & OAS already accounted in rrspNet; increase income base by gross
+        baseIncome += addIncome;
+      } else if (src === "taxable"){
+        T -= takeGross;
+        baseIncome += addIncome;
+      } else {
+        F -= takeGross;
+      }
+      need -= takeNet;
+    }
+
+    // one-off liquidation at this age
+    if (lm[age]) T += lm[age];
+
+    // grow to end-of-year
+    const gN = 1 + rAfter;
+    const gT = 1 + rAfter * (1 - drag);
+    T = Math.max(0, T) * gT;
+    F = Math.max(0, F) * gN;
+    R = Math.max(0, R) * gN;
+
+    return { taxable:T, tfsa:F, rrsp:R };
+  }
+
+  // ---------------- Pre-ret with random returns + contrib split ----------------
   function prerollWithRandomReturns(cfg, preReturns, lmObj){
     const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
     const startYear = Number(cfg.start_year) || new Date().getFullYear();
@@ -4654,9 +4749,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     let save    = Math.max(0, cfg.annual_saving || 0);
 
     while (age < cfg.retirement_age) {
-    // MC uses the *CAGR* directly; no +½σ² bump
-    const muPre = (cfg.return_rate || 0);
-    const rPre  = Math.max(-0.95, muPre + (preReturns[age] || 0));
+      // MC uses the CAGR directly; no +½σ² bump
+      const muPre = (cfg.return_rate || 0);
+      const rPre  = Math.max(-0.95, muPre + (preReturns[age] || 0));
 
       const gN    = 1 + rPre;
       const gT    = 1 + rPre * (1 - d);
@@ -4690,6 +4785,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return { taxable, rrsp, tfsa };
   }
 
+  // ---------------- Fixed-order retirement step (used for "selected") ----------
   function oneYearRetirementStep(state, cfg, age, orderKey, rAfter, bracketsOn){
     const orderArr = ORDER_MAP[orderKey] || ORDER_MAP["taxable_tfsa_rrsp"];
     const rrspFlat = (cfg.income_tax_rate || 0);
@@ -4761,7 +4857,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return { taxable:T, tfsa:F, rrsp:R };
   }
 
-  // One full path for a policy
+  // ---------------- One full path ----------------
   function runOnePath(cfg, preRetShocks, postRetShocks, policy, selectedOrderKey){
     const ages = [];
     for (let a=cfg.current_age; a<=cfg.life_expectancy; a++) ages.push(a);
@@ -4780,31 +4876,22 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     }
 
     for (let age = cfg.retirement_age; age <= cfg.life_expectancy; age++){
-    // MC uses the *CAGR* directly; no +½σ² bump
-    const muAfter = (cfg.return_rate_after || 0);
-    const rAfter  = Math.max(-0.95, muAfter + (postRetShocks[age] || 0));
+      // MC uses the *CAGR* directly; no +½σ² bump
+      const muAfter = (cfg.return_rate_after || 0);
+      const rAfter  = Math.max(-0.95, muAfter + (postRetShocks[age] || 0));
 
-
-      let orderKey = selectedOrderKey;
       if (policy === "optimizer") {
-        let bestKey = ALL_ORDER_KEYS[0];
-        let bestTot = -1;
-        for (const k of ALL_ORDER_KEYS) {
-          const test = oneYearRetirementStep({ ...state }, cfg, age, k, rAfter, bracketsOn);
-          const tot  = test.taxable + test.tfsa + test.rrsp;
-          if (tot > bestTot) { bestTot = tot; bestKey = k; }
-        }
-        orderKey = bestKey;
+        state = oneYearGreedyMixStep(state, cfg, age, rAfter, bracketsOn);
+      } else {
+        state = oneYearRetirementStep(state, cfg, age, selectedOrderKey, rAfter, bracketsOn);
       }
-
-      state = oneYearRetirementStep(state, cfg, age, orderKey, rAfter, bracketsOn);
       endTotals.push(state.taxable + state.tfsa + state.rrsp);
     }
 
     return endTotals;
   }
 
-  // Quantiles
+  // ---------------- Quantiles ----------------
   function quantile(sorted, q){
     const n = sorted.length;
     if (!n) return 0;
@@ -4815,7 +4902,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return sorted[lo]*(1-w) + sorted[hi]*w;
   }
 
-  // Build common random shocks for A & B
+  // ---------------- Shocks ----------------
   function buildShocks(cfg, rand){
     const pre = {};
     const post = {};
@@ -4872,9 +4959,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
           // hide legend entries for the two p10 lines (bands remain)
           legend:{
             position:"top",
-            labels:{
-              filter: (item) => !/p10$/.test(item.text)  // remove "Optimizer p10" and "Selected p10"
-            }
+            labels:{ filter: (item) => !/p10$/.test(item.text) }
           },
           tooltip:{ callbacks:{ label: (ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } },
           title:{ display:false }
@@ -4883,7 +4968,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     });
   }
 
-  // Main entry — called automatically after your renderTaxCharts
+  // ---------------- Main entry — called automatically after your renderTaxCharts
   window.renderTaxMC = function(rows, cfg){
     try{
       const mcCanvas = ensureMCCanvas();
@@ -4905,8 +4990,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       SIGMA_PRE  = sigma;
       SIGMA_POST = sigma;
 
-      const pathsA = []; // optimizer-like
-      const pathsB = []; // selected order
+      const pathsA = []; // optimizer (greedy mix)
+      const pathsB = []; // selected fixed order
 
       const rand = mulberry32(MC_SEED);
       for (let i=0; i<MC_RUNS; i++){
@@ -4949,6 +5034,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Tax-aware Monte Carlo panel ================================================ -->
+
 
 
 
