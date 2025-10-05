@@ -4247,9 +4247,60 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   };
   Chart.register(vlinePlugin);
 
+  // ---------- layout: make a bottom row with left (balances) + right (MC placeholder) ----------
+  function ensureVizLayout(){
+    const bal = document.getElementById("taxviz_balances");
+    if (!bal) return;
+
+    // If already wrapped, nothing to do.
+    if (document.getElementById("taxviz_row2")) return;
+
+    // Create row container
+    const row = document.createElement("div");
+    row.id = "taxviz_row2";
+    row.style.display = "flex";
+    row.style.gap = "8px";
+    row.style.marginTop = "6px";
+
+    const parent = bal.parentElement;
+    parent.insertBefore(row, bal);
+
+    // Left holder (balances)
+    const left = document.createElement("div");
+    left.id = "taxviz_left_holder";
+    left.style.flex = "1 1 50%";
+    left.style.minWidth = "0";
+    row.appendChild(left);
+    left.appendChild(bal);
+
+    // Right holder (MC)
+    const right = document.createElement("div");
+    right.id = "taxviz_right_holder";
+    right.style.flex = "1 1 50%";
+    right.style.minWidth = "0";
+    row.appendChild(right);
+
+    const title = document.createElement("div");
+    title.className = "small text-muted";
+    title.style.margin = "2px 0 4px";
+    title.textContent = "Monte Carlo Balances (p10–p90 bands, medians)";
+    right.appendChild(title);
+
+    const mc = document.createElement("canvas");
+    mc.id = "taxviz_mc";
+    mc.width = 560;
+    mc.height = 280;
+    mc.style.border = "1px solid #eee";
+    mc.style.borderRadius = "4px";
+    right.appendChild(mc);
+  }
+
   // ---------- main render hook ----------
   window.renderTaxCharts = function(rows, cfg){
     try{
+      // Make sure the bottom row exists (avoids any overlap with MC)
+      ensureVizLayout();
+
       const ages     = rows.map(r => r.Age);
       const endT     = rows.map(r => num(r.End_Taxable));
       const endF     = rows.map(r => num(r.End_TFSA));
@@ -4373,77 +4424,31 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         }
       });
 
-    // (3) BALANCES  (+ optimizer overlay if present)
-    const optAligned = getOptimizerEndTotalsAlignedTo(ages);
+      // (3) BALANCES  (+ optimizer overlay if present)
+      const optAligned = getOptimizerEndTotalsAlignedTo(ages);
 
-    window.__taxC3 = new Chart(cBal.getContext("2d"), {
-      type: "line",
-      data: {
-        labels: ages,
-
-        datasets: [
-          // End Taxable — cool gray
-          {
-            label: "End Taxable",
-            data: endT,
-            borderWidth: 1.5,
-            borderColor: "#9ca3af",               // gray-400
-            backgroundColor: "#9ca3af",
-            pointBackgroundColor: "#9ca3af",
-            pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8
-          },
-          // End TFSA — teal/green
-          {
-            label: "End TFSA",
-            data: endF,
-            borderWidth: 1.5,
-            borderColor: "#10b981",               // emerald-500
-            backgroundColor: "#10b981",
-            pointBackgroundColor: "#10b981",
-            pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8
-          },
-          // End RRSP — violet
-          {
-            label: "End RRSP",
-            data: endR,
-            borderWidth: 1.5,
-            borderColor: "#7c3aed",               // violet-600
-            backgroundColor: "#7c3aed",
-            pointBackgroundColor: "#7c3aed",
-            pointRadius: 0.75, pointHoverRadius: 4, pointHitRadius: 8
-          },
-          // End Total — dark gray (kept bold)
-          {
-            label: "End Total",
-            data: endTot,
-            borderWidth: 3,
-            borderColor: "#111827",               // gray-900
-            backgroundColor: "#111827",
-            pointBackgroundColor: "#111827",
-            pointRadius: 2, pointHoverRadius: 4, pointHitRadius: 8
-          },
-          // Optimizer — gold (already gold, kept here explicitly)
-          ...(optAligned ? [{
-            label: "End Total (optimizer)",
-            data: optAligned,
-            borderWidth: 3,
-            borderColor: "#f59e0b",               // amber-500
-            backgroundColor: "#f59e0b",
-            pointBackgroundColor: "#f59e0b",
-            pointRadius: 1.5, pointHoverRadius: 4, pointHitRadius: 8,
-            spanGaps: true
-          }] : [])
-        ]
-
-      },
-      options: {
-        responsive:false, maintainAspectRatio:false, devicePixelRatio:1, animation:false,
-        interaction: { mode: "nearest", intersect: false },   // easier hover on lines
-        scales:{ y:{ position:"right", beginAtZero:false, title:{display:true,text:"$"}, ticks:{ callback:kFmt } } },
-        plugins:{ legend:{position:"top"}, tooltip:{ callbacks:{ label:(ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } } }
-      }
-    });
-
+      window.__taxC3 = new Chart(cBal.getContext("2d"), {
+        type: "line",
+        data: {
+          labels: ages,
+          datasets: [
+            { label:"End Taxable", data:endT, borderWidth:1.5, borderColor:"#9ca3af", backgroundColor:"#9ca3af", pointBackgroundColor:"#9ca3af", pointRadius:0.75, pointHoverRadius:4, pointHitRadius:8 },
+            { label:"End TFSA",    data:endF, borderWidth:1.5, borderColor:"#10b981", backgroundColor:"#10b981", pointBackgroundColor:"#10b981", pointRadius:0.75, pointHoverRadius:4, pointHitRadius:8 },
+            { label:"End RRSP",    data:endR, borderWidth:1.5, borderColor:"#7c3aed", backgroundColor:"#7c3aed", pointBackgroundColor:"#7c3aed", pointRadius:0.75, pointHoverRadius:4, pointHitRadius:8 },
+            { label:"End Total",   data:endTot, borderWidth:3, borderColor:"#111827", backgroundColor:"#111827", pointBackgroundColor:"#111827", pointRadius:2, pointHoverRadius:4, pointHitRadius:8 },
+            ...(optAligned ? [{
+              label:"End Total (optimizer)", data:optAligned, borderWidth:3, borderColor:"#f59e0b", backgroundColor:"#f59e0b",
+              pointBackgroundColor:"#f59e0b", pointRadius:1.5, pointHoverRadius:4, pointHitRadius:8, spanGaps:true
+            }] : [])
+          ]
+        },
+        options: {
+          responsive:false, maintainAspectRatio:false, devicePixelRatio:1, animation:false,
+          interaction:{ mode:"nearest", intersect:false },
+          scales:{ y:{ position:"right", beginAtZero:false, title:{display:true,text:"$"}, ticks:{ callback:kFmt } } },
+          plugins:{ legend:{position:"top"}, tooltip:{ callbacks:{ label:(ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } } }
+        }
+      });
 
       // If the optimizer hasn't finished yet, refresh once it arrives so visuals pick it up
       if (!window.__optRows || !window.__optRows.length) {
@@ -4464,6 +4469,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
 
 
+
 <!-- === Tax-aware Monte Carlo panel (stand-alone) ======================================= -->
 <script>
 (function () {
@@ -4475,66 +4481,15 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   const SIGMA_PRE  = 0.12;      // annual pre-ret vol (12%)
   const SIGMA_POST = 0.12;      // annual post-ret vol (12%)
 
-  // --------------------- DOM helpers & wiring --------------------
-  function $(id){ return document.getElementById(id); }
+  // --------------------- DOM helpers --------------------
+  const $ = (id)=> document.getElementById(id);
 
-  // Create bottom row with two side-by-side canvases:
-  // left: existing balances chart (#taxviz_balances), right: new MC chart (#taxviz_mc)
-  function ensureMCPanel() {
-    const bal = $("taxviz_balances");
-    if (!bal) return null;
-
-    // Wrap balances canvas + MC canvas into a single flex row, 50% each
-    let row = $("taxviz_row2");
-    if (!row) {
-      row = document.createElement("div");
-      row.id = "taxviz_row2";
-      row.style.display = "flex";
-      row.style.gap = "8px";
-      row.style.marginTop = "6px";
-
-      // Insert the row just before balances (and then move balances inside)
-      const parent = bal.parentElement;
-      parent.insertBefore(row, bal);
-      // left holder
-      const left = document.createElement("div");
-      left.style.flex = "1 1 50%";
-      left.style.minWidth = "0";
-      row.appendChild(left);
-      left.appendChild(bal);
-    }
-
-    // Right holder + canvas
-    let right = $("taxviz_right_holder");
-    if (!right) {
-      right = document.createElement("div");
-      right.id = "taxviz_right_holder";
-      right.style.flex = "1 1 50%";
-      right.style.minWidth = "0";
-      row.appendChild(right);
-    }
-
-    let mc = $("taxviz_mc");
-    if (!mc) {
-      const title = document.createElement("div");
-      title.className = "small text-muted";
-      title.style.margin = "2px 0 4px";
-      title.textContent = "Monte Carlo Balances (p10–p90 bands, medians)";
-      right.appendChild(title);
-
-      mc = document.createElement("canvas");
-      mc.id = "taxviz_mc";
-      mc.width = 560;            // fixed pixels like other charts
-      mc.height = 280;
-      mc.style.border = "1px solid #eee";
-      mc.style.borderRadius = "4px";
-      right.appendChild(mc);
-    }
-    return mc;
+  // We rely on the placeholder created by the main visuals block (#taxviz_mc)
+  function ensureMCCanvas(){
+    return $("taxviz_mc") || null;
   }
 
   // --------------------------- RNG ------------------------------
-  // Mulberry32 + Box-Muller for standard normals
   function mulberry32(seed) {
     let t = seed >>> 0;
     return function() {
@@ -4545,7 +4500,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     };
   }
   function randnBM(rand) {
-    // Box-Muller (one normal)
     const u = Math.max(1e-12, rand());
     const v = Math.max(1e-12, rand());
     return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
@@ -4564,7 +4518,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   };
   const ALL_ORDER_KEYS = Object.keys(ORDER_MAP);
 
-  function within(x,a,b){ return x>=a && x<=b; }
+  const within = (x,a,b)=> x>=a && x<=b;
 
   function rrifMinPct(age){
     const t = {71:0.0528,72:0.0540,73:0.0553,74:0.0567,75:0.0582,76:0.0598,77:0.0617,78:0.0636,79:0.0658,
@@ -4596,7 +4550,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     }); return m;
   }
 
-  // Flat/bracket tax helpers (same shapes as your visual)
   function taxFromBrackets(income, bracketsObj) {
     const y  = Math.max(0, Number(income) || 0);
     const br = (bracketsObj?.bands?.length)
@@ -4618,7 +4571,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return Math.max(0, taxFromBrackets(b + d, bracketsObj) - taxFromBrackets(b, bracketsObj));
   }
 
-  // Allocate by order (same logic as your visual for per-year net need)
   function allocateByOrder(netNeed, balances, order, rrspFlat){
     let need = Math.max(0, netNeed);
     let {taxable:t, tfsa:f, rrsp:r} = balances;
@@ -4644,7 +4596,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         need             -= netTake;
       }
     }
-    if (need > 0 && t > 0) { // safety
+    if (need > 0 && t > 0) {
       const draw = Math.min(need, t);
       fromTax += draw; t -= draw; need -= draw;
     }
@@ -4656,7 +4608,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     };
   }
 
-  // Pre-retirement roll with contribution split + **path returns**
+  // Pre-ret with random returns + contribution split
   function prerollWithRandomReturns(cfg, preReturns, lmObj){
     const d  = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
     const startYear = Number(cfg.start_year) || new Date().getFullYear();
@@ -4672,9 +4624,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const gN     = 1 + rPre;
       const gT     = 1 + rPre * (1 - d);
 
-      // grow
-      const t0 = taxable;
-      taxable = t0 * gT; rrsp *= gN; tfsa *= gN;
+      taxable = taxable * gT;
+      rrsp    = rrsp    * gN;
+      tfsa    = tfsa    * gN;
 
       // TFSA cap rule
       const year     = startYear + (age - cfg.current_age);
@@ -4684,7 +4636,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
                                       : baseTFSA * Math.pow(1 + tfsaCagr, Math.max(0, year - 2025));
       const rrspCap  = Math.max(0, cfg.pre_rrsp_annual || 0);
 
-      // split savings: TFSA -> RRSP -> Taxable
       const toTFSA    = Math.min(save, tfsaCap);
       const afterTFSA = Math.max(0, save - toTFSA);
       const toRRSP    = Math.min(afterTFSA, rrspCap);
@@ -4702,22 +4653,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return { taxable, rrsp, tfsa };
   }
 
-  // Simulate **one retirement year** given an order, returns end balances for the year
   function oneYearRetirementStep(state, cfg, age, orderKey, rAfter, bracketsOn){
     const orderArr = ORDER_MAP[orderKey] || ORDER_MAP["taxable_tfsa_rrsp"];
     const rrspFlat = (cfg.income_tax_rate || 0);
     const drag     = Math.max(0, Math.min(1, cfg.taxable_drag || 0));
-    const lm = cfg.__lm; // precomputed liq map
+    const lm = cfg.__lm;
 
     const living = livingExpenseAtAge(cfg, age);
     const cpp    = cppAtAge(cfg, age);
     const oasG   = oasGrossAtAge(cfg, age);
 
-    // First pass using OAS gross
     let pass = allocateByOrder(Math.max(0, living - cpp - oasG),
                                state, orderArr, rrspFlat);
 
-    // OAS clawback and top-up
     const bracketsObj = cfg.tax_brackets || null;
     let oasClaw = 0;
     if (cfg.oas_monthly>0 && cfg.oas_start_age>0 && age>=cfg.oas_start_age &&
@@ -4735,7 +4683,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       pass.endBalancesBeforeGrowth = top.endBalancesBeforeGrowth;
     }
 
-    // RRIF minimum
     let T = pass.endBalancesBeforeGrowth.taxable;
     let F = pass.endBalancesBeforeGrowth.tfsa;
     let R = pass.endBalancesBeforeGrowth.rrsp;
@@ -4757,13 +4704,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       }
     }
 
-    // Overlay rule (display-only tax on taxable taken from taxable)
-    if (bracketsOn) {
-      // If using brackets AND drag==0, remove bracketed RRIF-min tax from taxable as overlay
-      // (keeps parity with your visual’s overlay behavior)
-      // This is a simplified parity: we don't recompute bracket RRIF-min tax separately here.
-    } else {
-      // Flat overlay if no drag and flat tax > 0
+    if (!bracketsOn) {
       const useOverlay = (drag === 0) && (rrspFlat > 0);
       if (useOverlay) {
         const grossUp = rrspFlat / (1 - rrspFlat);
@@ -4772,10 +4713,8 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       }
     }
 
-    // One-off liquidations
     if (lm[age]) T += lm[age];
 
-    // Grow to end-of-year with **path return**
     const gN = 1 + rAfter;
     const gT = 1 + rAfter * (1 - drag);
     T = Math.max(0, T) * gT;
@@ -4786,21 +4725,18 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   }
 
   // One full path for a policy
-  // policy: "selected" (uses current dropdown order) or "optimizer" (per-year best-of-6)
   function runOnePath(cfg, preRetShocks, postRetShocks, policy, selectedOrderKey){
     const ages = [];
     for (let a=cfg.current_age; a<=cfg.life_expectancy; a++) ages.push(a);
 
     const lmObj = liqMap(cfg.asset_liquidations);
-    cfg.__lm = lmObj; // stash
+    cfg.__lm = lmObj;
 
-    // Pre-roll to retirement age with path shocks
     const pre = prerollWithRandomReturns(cfg, preRetShocks, lmObj);
     let state = { taxable: pre.taxable, tfsa: pre.tfsa, rrsp: pre.rrsp };
 
     const bracketsOn = !!(cfg.tax_brackets && (cfg.tax_brackets.enabled || cfg.tax_brackets.bands));
 
-    // Collect end-of-year totals per age
     const endTotals = [];
     for (let age = cfg.current_age; age < cfg.retirement_age; age++) {
       endTotals.push(state.taxable + state.tfsa + state.rrsp);
@@ -4811,7 +4747,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
       let orderKey = selectedOrderKey;
       if (policy === "optimizer") {
-        // pick per-year best among the 6 orders by end-of-year total
         let bestKey = ALL_ORDER_KEYS[0];
         let bestTot = -1;
         for (const k of ALL_ORDER_KEYS) {
@@ -4826,7 +4761,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       endTotals.push(state.taxable + state.tfsa + state.rrsp);
     }
 
-    return endTotals; // aligned to ages
+    return endTotals;
   }
 
   // Quantiles
@@ -4840,7 +4775,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     return sorted[lo]*(1-w) + sorted[hi]*w;
   }
 
-  // Build common random shocks for A & B (so their difference is cleaner)
+  // Build common random shocks for A & B
   function buildShocks(cfg, rand){
     const pre = {};
     const post = {};
@@ -4864,25 +4799,19 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   function intFmt(v){ return "$" + Math.round(v).toLocaleString(); }
 
   function renderChart(ages, A, B){
-    const mc = ensureMCPanel();
+    const mc = ensureMCCanvas();
     if (!mc) return;
-
-    // destroy previous
     try { window.__taxCMC?.destroy(); } catch(_) {}
 
-    // datasets: A=optimizer (gold), B=selected (blue)
     const dataSets = [
-      // Blue band (selected order): p10 then p90 filled to previous
       { label:"Selected p10", data:B.p10, pointRadius:0, borderWidth:0, fill:false, hidden:true },
       { label:"Selected p10–p90", data:B.p90, pointRadius:0, borderWidth:0, fill:"-1",
         backgroundColor:"rgba(37,99,235,0.15)" },
 
-      // Gold band (optimizer): p10 then p90 filled
       { label:"Optimizer p10", data:A.p10, pointRadius:0, borderWidth:0, fill:false, hidden:true },
       { label:"Optimizer p10–p90", data:A.p90, pointRadius:0, borderWidth:0, fill:"-1",
         backgroundColor:"rgba(218,165,32,0.18)" },
 
-      // Median lines on top
       { label:"Optimizer median", data:A.p50, borderColor:"rgb(180,137,12)", borderWidth:2.5, pointRadius:0, fill:false },
       { label:"Selected median",  data:B.p50, borderColor:"rgb(37,99,235)",  borderWidth:2.5, pointRadius:0, fill:false }
     ];
@@ -4895,11 +4824,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         scales:{ y:{ position:"right", beginAtZero:false, title:{display:true,text:"$"}, ticks:{ callback:kFmt } } },
         plugins:{
           legend:{ position:"top" },
-          tooltip:{
-            callbacks:{
-              label: (ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}`
-            }
-          },
+          tooltip:{ callbacks:{ label: (ctx)=> ` ${ctx.dataset.label}: ${intFmt(ctx.parsed.y)}` } },
           title:{ display:false }
         }
       }
@@ -4909,18 +4834,16 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   // Main entry — called automatically after your renderTaxCharts
   window.renderTaxMC = function(rows, cfg){
     try{
-      const mcCanvas = ensureMCPanel();
+      const mcCanvas = ensureMCCanvas();
       if (!mcCanvas) return;
 
       const ages = [];
       for (let a=cfg.current_age; a<=cfg.life_expectancy; a++) ages.push(a);
 
-      // Selected order from dropdown (fallback to taxable→TFSA→RRSP)
       const selEl = $("wd_order");
       const selectedKey = selEl?.value || "taxable_tfsa_rrsp";
 
-      // Collect paths
-      const pathsA = []; // optimizer-like (per-year best of 6)
+      const pathsA = []; // optimizer-like
       const pathsB = []; // selected order
 
       const rand = mulberry32(MC_SEED);
@@ -4932,7 +4855,6 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
         pathsA.push(A);
       }
 
-      // Compute p10/p50/p90 by age
       function summarize(paths){
         const p10=[], p50=[], p90=[];
         for (let idx=0; idx<ages.length; idx++){
@@ -4965,6 +4887,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 })();
 </script>
 <!-- === /Tax-aware Monte Carlo panel ================================================ -->
+
+
+
 
 
 
