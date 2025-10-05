@@ -4288,8 +4288,7 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
 
     const mc = document.createElement("canvas");
     mc.id = "taxviz_mc";
-    mc.width = 560;
-    mc.height = 280;
+    // NOTE: no fixed width/height here — we normalize sizes right before rendering.
     mc.style.border = "1px solid #eee";
     mc.style.borderRadius = "4px";
     right.appendChild(mc);
@@ -4327,6 +4326,27 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
       const cTaxes  = document.getElementById("taxviz_taxes");
       const cBal    = document.getElementById("taxviz_balances");
       if (!cOrders || !cTaxes || !cBal) return;
+
+      // ---- normalize canvas sizes so bottom-left balances exactly matches top-left bar ----
+      (function normalizeCanvasSizes(){
+        const refW = (cOrders && cOrders.width)  || 560;
+        const refH = (cOrders && cOrders.height) || 280;
+
+        // bottom-left balances canvas
+        cBal.width  = refW;
+        cBal.height = refH;
+        cBal.style.width  = refW + "px";
+        cBal.style.height = refH + "px";
+
+        // bottom-right MC canvas (if present)
+        const mc = document.getElementById("taxviz_mc");
+        if (mc) {
+          mc.width  = refW;
+          mc.height = refH;
+          mc.style.width  = refW + "px";
+          mc.style.height = refH + "px";
+        }
+      })();
 
       // destroy old charts
       ["__taxC1","__taxC2","__taxC3"].forEach(k => { try{ window[k]?.destroy(); }catch(e){} });
@@ -4466,6 +4486,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
   };
 })();
 </script>
+
+
+
 
 
 
