@@ -4654,10 +4654,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     let save    = Math.max(0, cfg.annual_saving || 0);
 
     while (age < cfg.retirement_age) {
-    // MC uses the *CAGR* directly; no +½σ² bump
-    const muPre = (cfg.return_rate || 0);
-    const rPre  = Math.max(-0.95, muPre + (preReturns[age] || 0));
-
+      // μ = CAGR + ½σ² (use pre-ret σ)
+      const muPre = (cfg.return_rate || 0) + 0.5 * SIGMA_PRE * SIGMA_PRE;
+      const rPre  = Math.max(-0.95, muPre + (preReturns[age] || 0));
       const gN    = 1 + rPre;
       const gT    = 1 + rPre * (1 - d);
 
@@ -4780,10 +4779,9 @@ if (window.renderTaxCharts) window.renderTaxCharts(mergedRows, cfg);
     }
 
     for (let age = cfg.retirement_age; age <= cfg.life_expectancy; age++){
-    // MC uses the *CAGR* directly; no +½σ² bump
-    const muAfter = (cfg.return_rate_after || 0);
-    const rAfter  = Math.max(-0.95, muAfter + (postRetShocks[age] || 0));
-
+      // μ = CAGR + ½σ² (use post-ret σ)
+      const muAfter = (cfg.return_rate_after || 0) + 0.5 * SIGMA_POST * SIGMA_POST;
+      const rAfter  = Math.max(-0.95, muAfter + (postRetShocks[age] || 0));
 
       let orderKey = selectedOrderKey;
       if (policy === "optimizer") {
