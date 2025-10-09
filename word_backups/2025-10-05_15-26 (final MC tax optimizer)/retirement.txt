@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
 
-{% block title %}Financial Planner{% endblock %}
+{% block title %}Retirement Planner{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-  <h2 class="text-center mb-4">🧼 Financial Planner</h2>
+  <h2 class="text-center mb-4">🧼 Retirement Planner</h2>
 
   <!-- ===== CALCULATE FORM (self-contained) ===== -->
   <form method="POST" action="{{ url_for('projects.retirement') }}">
